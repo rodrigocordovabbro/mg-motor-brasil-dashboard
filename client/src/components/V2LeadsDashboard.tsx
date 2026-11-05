@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+import V2DispatchControl from "./V2DispatchControl";
 import { trpc } from "@/lib/trpc";
 import {
   addIsoDays,
@@ -38,7 +40,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 
 export type V2AuthUser = { id: number; username: string };
 export type V2DashboardFilters = V2Filters;
@@ -1468,32 +1470,8 @@ function CrmDonut({ items }: { items: V2DistributionItem[] }) {
   );
 }
 
-function StoresCrmTab({ data }: { data: V2LeadsResponse }) {
-  return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <Card className="overflow-hidden">
-        <CardHeading eyebrow="Rede" title="Concessionárias" icon={Users} />
-        <DistributionList items={data.dealers} limit={15} />
-      </Card>
-      <Card className="overflow-hidden">
-        <CardHeading
-          eyebrow="Integração"
-          title="CRM"
-          description="A fonte atual não possui metadado confiável de envio ao CRM."
-          icon={Check}
-        />
-        <div className="p-5">
-          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-center">
-            <p className="text-sm font-bold text-slate-700">Indisponível</p>
-            <p className="mt-2 text-xs leading-5 text-slate-500">
-              Os status de lead por canal não são tratados como entrega ao CRM.
-              Taxa e volume entregue permanecem sem dado.
-            </p>
-          </div>
-        </div>
-      </Card>
-    </div>
-  );
+function StoresCrmTab() {
+  return <V2DispatchControl authenticated clientMode={false} embedded />;
 }
 
 function LeadsTableTab({
@@ -1663,7 +1641,14 @@ export default function V2LeadsDashboard({
   authenticated: boolean;
   clientMode?: boolean;
 }) {
-  const cutoff = getDashboardCutoffDate();
+  const [cutoff, setCutoff] = useState(() => getDashboardCutoffDate());
+  useEffect(() => {
+    const id = window.setInterval(
+      () => setCutoff(getDashboardCutoffDate()),
+      60000
+    );
+    return () => window.clearInterval(id);
+  }, []);
   const firstMonthDay = `${cutoff.slice(0, 7)}-01`;
   const initialFilters = useMemo<V2DashboardFilters>(
     () => ({ dateFrom: `${cutoff.slice(0, 7)}-01`, dateTo: cutoff, page: 1 }),
@@ -1672,8 +1657,39 @@ export default function V2LeadsDashboard({
   const [draft, setDraft] = useState<V2DashboardFilters>(initialFilters);
   const [applied, setApplied] = useState<V2DashboardFilters>(initialFilters);
   const [selectedPreset, setSelectedPreset] = useState("Mês");
+  const priorCutoff = useRef(cutoff);
+  useEffect(() => {
+    const previous = priorCutoff.current;
+    if (previous === cutoff) return;
+    priorCutoff.current = cutoff;
+    const advance = (current: V2DashboardFilters) =>
+      current.dateTo !== previous
+        ? current
+        : {
+            ...current,
+            dateTo: cutoff,
+            dateFrom:
+              current.dateFrom === `${previous.slice(0, 7)}-01`
+                ? `${cutoff.slice(0, 7)}-01`
+                : current.dateFrom,
+            page: 1,
+          };
+    setDraft(advance);
+    setApplied(advance);
+  }, [cutoff]);
   const [dateError, setDateError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<V2Tab>("Visão Geral");
+  const [activeTab, setActiveTab] = useState<V2Tab>(() =>
+    new URLSearchParams(window.location.search).get("tab") === "stores"
+      ? "Lojas & CRM"
+      : "Visão Geral"
+  );
+  const selectTab = (tab: V2Tab) => {
+    setActiveTab(tab);
+    const url = new URL(window.location.href);
+    if (tab === "Lojas & CRM") url.searchParams.set("tab", "stores");
+    else url.searchParams.delete("tab");
+    window.history.replaceState({}, "", url);
+  };
   const dashboardQuery = v2Trpc.leads.dashboard.useQuery(applied, {
     enabled: authenticated,
     retry: false,
@@ -1708,6 +1724,32 @@ export default function V2LeadsDashboard({
   const refresh = () => void dashboardQuery.refetch();
 
   if (!authenticated) return null;
+  if (activeTab === "Lojas & CRM")
+    return (
+      <div className="space-y-4">
+        <div className="overflow-x-auto">
+          <div
+            className="flex min-w-max gap-1 rounded-xl border border-slate-200 bg-white p-1"
+            role="tablist"
+            aria-label="Módulos de leads"
+          >
+            {TABS.map(tab => (
+              <button
+                key={tab}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab}
+                onClick={() => selectTab(tab)}
+                className={`rounded-lg px-3 py-2 text-xs font-semibold ${activeTab === tab ? "bg-[#e2212d] text-white" : "text-slate-500 hover:bg-slate-100"}`}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+        </div>
+        <StoresCrmTab />
+      </div>
+    );
   if (dashboardQuery.isLoading && !data) return <LoadingPanel />;
   if (dashboardQuery.error && !data) return <QueryError onRetry={refresh} />;
   if (!data) return <QueryError onRetry={refresh} />;
@@ -1759,7 +1801,7 @@ export default function V2LeadsDashboard({
                   type="button"
                   role="tab"
                   aria-selected={activeTab === tab}
-                  onClick={() => setActiveTab(tab)}
+                  onClick={() => selectTab(tab)}
                   className={`rounded-lg px-3 py-2 text-xs font-semibold transition sm:px-4 ${activeTab === tab ? "bg-[#e2212d] text-white shadow-sm" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"}`}
                 >
                   {tab}
@@ -1777,7 +1819,6 @@ export default function V2LeadsDashboard({
           {activeTab === "Regiões" ? <RegionsTab data={data} /> : null}
           {activeTab === "Horários" ? <HoursTab data={data} /> : null}
           {activeTab === "Modelos" ? <ModelsTab data={data} /> : null}
-          {activeTab === "Lojas & CRM" ? <StoresCrmTab data={data} /> : null}
           {activeTab === "Leads" ? (
             <LeadsTableTab
               data={data}

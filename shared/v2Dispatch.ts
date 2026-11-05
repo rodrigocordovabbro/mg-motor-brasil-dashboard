@@ -6,12 +6,15 @@ export type DispatchReportSummary = {
   dateTo: string;
   generatedLabel: string;
 };
+
 export type DispatchDay = {
   date: string;
   label: string;
-  sourceTotal: number;
-  computedTotal: number;
+  sourceTotal: number | null;
+  computedTotal: number | null;
+  pending?: boolean;
 };
+
 export type DispatchValidation = {
   isOk: boolean;
   version: number;
@@ -19,15 +22,18 @@ export type DispatchValidation = {
   updatedBy: string;
   updatedAt: string;
 };
+
 export type DispatchCell = {
   id: number;
   rowNumber: number;
   date: string;
   syonet: string;
   sourceManual: string;
-  volume: number;
+  volume: number | null;
+  sourcePending?: boolean;
   validation: DispatchValidation | null;
 };
+
 export type DispatchRow = {
   id: number;
   rowNumber: number;
@@ -37,6 +43,7 @@ export type DispatchRow = {
   bbroIntegration: string;
   cells: DispatchCell[];
 };
+
 export type DispatchReport = DispatchReportSummary & {
   importedAt: string;
   information: { label: string; value: string }[];
@@ -49,9 +56,11 @@ export type DispatchReport = DispatchReportSummary & {
     sourceManualOk: number;
     auditedOk: number;
     manualOverridden: number;
+    pendingDays?: number;
   };
   notes: string[];
 };
+
 export type DispatchAuditEntry = {
   id: number;
   isOk: boolean;
@@ -61,6 +70,7 @@ export type DispatchAuditEntry = {
   createdAt: string;
   version: number;
 };
+
 export function effectiveManualOk(
   cell: Pick<DispatchCell, "sourceManual" | "validation">
 ) {

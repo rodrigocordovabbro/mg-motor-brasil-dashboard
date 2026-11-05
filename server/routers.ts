@@ -11,6 +11,8 @@ import {
   setDispatchManual,
   getDispatchHistory,
 } from "./v2Dispatch";
+import { prepareDispatchDay } from "./v2DispatchDaily";
+import { importDispatchWorkbook } from "./v2DispatchXlsx";
 import {
   getDashboardCutoffDate,
   isIsoCalendarDate,
@@ -107,6 +109,25 @@ export const appRouter = router({
     history: v2Procedure
       .input(z.object({ cellId: z.number().int().positive() }))
       .query(({ input }) => getDispatchHistory(input.cellId)),
+    prepareDay: v2Procedure
+      .input(z.object({ reportId: z.number().int().positive() }))
+      .mutation(({ input }) => prepareDispatchDay(input.reportId)),
+    importWorkbook: v2Procedure
+      .input(
+        z.object({
+          reportId: z.number().int().positive(),
+          fileName: z.string().min(1).max(255),
+          base64: z.string().min(1).max(1_400_000),
+        })
+      )
+      .mutation(({ ctx, input }) =>
+        importDispatchWorkbook(
+          input.reportId,
+          input.fileName,
+          input.base64,
+          ctx.v2User
+        )
+      ),
   }),
   leads: router({
     dashboard: v2Procedure

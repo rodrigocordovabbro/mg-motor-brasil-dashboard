@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { getDashboardCutoffDate } from "@shared/dashboardDates";
 import type {
   DispatchAuditEntry,
   DispatchCell,
@@ -14,6 +15,7 @@ import {
   LockKeyhole,
   RefreshCw,
   Search,
+  Upload,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -44,9 +46,11 @@ type ManualFilter = "all" | "pending" | "ok";
 type V2DispatchControlProps = {
   authenticated?: boolean;
   clientMode?: boolean;
+  embedded?: boolean;
 };
 
-function numberFormat(value: number) {
+function numberFormat(value: number | null) {
+  if (value === null) return "—";
   return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 }).format(
     value
   );
@@ -401,13 +405,40 @@ function DispatchTable({
     error: unknown;
   };
 }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const lastDate = report.days.at(-1)?.date;
+  useEffect(() => {
+    if (scrollRef.current)
+      scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
+  }, [lastDate]);
   const tableMinWidth = 700 + report.days.length * 310;
   const crmResponsibleLabel = (row: DispatchRow) =>
     clientMode ? "Restrito" : row.crmResponsible;
 
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
-      <div className="max-h-[70vh] overflow-auto">
+      <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-xs text-slate-500">
+        <span>
+          Deslize a tabela para consultar os dias. Os checks ficam em Manual.
+        </span>
+        <button
+          type="button"
+          className="shrink-0 rounded-lg border border-slate-200 px-3 py-2 font-semibold text-slate-700"
+          onClick={() => {
+            if (scrollRef.current)
+              scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
+          }}
+        >
+          Ir ao último dia
+        </button>
+      </div>
+      <div
+        ref={scrollRef}
+        className="max-h-[70vh] overflow-auto"
+        tabIndex={0}
+        role="region"
+        aria-label="Tabela de controle por loja e dia"
+      >
         <table
           className="dispatch-table border-separate border-spacing-0 text-left text-xs"
           style={{
@@ -580,9 +611,10 @@ function DispatchTable({
                       <td
                         key={`${cell.id}-syonet`}
                         className="border-b border-r border-slate-200 px-2 py-2.5 text-center text-[11px] text-slate-600"
-                        title={`SYONET · ${cell.syonet}`}
+                        title={`SYONET · ${cell.syonet || (cell.volume === null ? "Aguardando" : "—")}`}
                       >
-                        {cell.syonet}
+                        {cell.syonet ||
+                          (cell.volume === null ? "Aguardando" : "—")}
                       </td>,
                       <td
                         key={`${cell.id}-manual`}
@@ -604,7 +636,11 @@ function DispatchTable({
                       <td
                         key={`${cell.id}-volume`}
                         className="border-b border-r border-slate-200 px-2 py-2.5 text-center text-[11px] font-semibold text-slate-700"
-                        title={`Vol.Lead · ${cell.volume}`}
+                        title={
+                          cell.volume === null
+                            ? "Volume aguardando arquivo atualizado"
+                            : `Vol. Lead · ${cell.volume}`
+                        }
                       >
                         {numberFormat(cell.volume)}
                       </td>,
@@ -658,7 +694,11 @@ function DispatchTable({
                   key={`${day.date}-source-volume`}
                   className="border-r border-t border-slate-300 px-1 py-3 text-center text-[11px] font-bold text-slate-800"
                   style={{ backgroundColor: "#fafafa" }}
-                  title={`Total original da fonte em ${day.date}`}
+                  title={
+                    day.sourceTotal === null
+                      ? "Total aguardando fonte"
+                      : `Total informado na fonte em ${day.date}`
+                  }
                 >
                   {numberFormat(day.sourceTotal)}
                 </td>,
@@ -668,9 +708,10 @@ function DispatchTable({
         </table>
       </div>
       <div className="border-t border-slate-100 px-4 py-3 text-[11px] leading-5 text-slate-500">
-        Totais no rodapé são os 5 totais diários originais do arquivo e não
-        mudam com os filtros. SYONET e Vol.Lead são somente leitura; apenas o
-        check Manual grava uma validação.
+        Totais no rodapé são os totais informados pela fonte para os dias
+        exibidos e não mudam com a busca por loja. Dias sem fonte ficam sem
+        volume. SYONET e Vol.Lead são somente leitura; apenas o check Manual
+        grava uma validação.
       </div>
     </div>
   );
@@ -732,6 +773,7 @@ function ErrorPanel({
 export default function V2DispatchControl({
   authenticated = true,
   clientMode = true,
+  embedded = false,
 }: V2DispatchControlProps = {}) {
   const [selectedReportId, setSelectedReportId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
@@ -745,6 +787,41 @@ export default function V2DispatchControl({
   const [historyCellId, setHistoryCellId] = useState<number | null>(null);
   const activeRequests = useRef(new Set<number>());
   const utils = trpc.useUtils();
+  const [cutoff, setCutoff] = useState(() => getDashboardCutoffDate());
+  const [showCrm, setShowCrm] = useState(() => embedded || !clientMode);
+  const [integrationFilter, setIntegrationFilter] = useState("all");
+  const [dateFrom, setDateFrom] = useState(
+    () => `${getDashboardCutoffDate().slice(0, 7)}-01`
+  );
+  const [dateTo, setDateTo] = useState(() => getDashboardCutoffDate());
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [updateNotice, setUpdateNotice] = useState<string | null>(null);
+  const [preparing, setPreparing] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const preparedKey = useRef<string | null>(null);
+  const [prepareRetry, setPrepareRetry] = useState(0);
+  const uploadRef = useRef<HTMLInputElement>(null);
+  const prepareDayMutation = trpc.dispatch.prepareDay.useMutation();
+  const importWorkbookMutation = trpc.dispatch.importWorkbook.useMutation();
+  useEffect(() => {
+    const id = window.setInterval(
+      () => setCutoff(getDashboardCutoffDate()),
+      60000
+    );
+    return () => window.clearInterval(id);
+  }, []);
+  const previousCutoff = useRef(cutoff);
+  useEffect(() => {
+    const previous = previousCutoff.current;
+    if (previous === cutoff) return;
+    previousCutoff.current = cutoff;
+    setDateTo(current => (current === previous ? cutoff : current));
+    setDateFrom(current =>
+      current === `${previous.slice(0, 7)}-01`
+        ? `${cutoff.slice(0, 7)}-01`
+        : current
+    );
+  }, [cutoff]);
 
   const reportsQuery = trpc.dispatch.reports.useQuery(undefined, {
     enabled: authenticated,
@@ -785,28 +862,193 @@ export default function V2DispatchControl({
   const setManualMutation = trpc.dispatch.setManual.useMutation();
 
   const report = reportQuery.data;
+  const preparePreviousDay = async () => {
+    if (selectedReportId === null) return null;
+    setPreparing(true);
+    setUpdateError(null);
+    setUpdateNotice(null);
+    try {
+      const result = await prepareDayMutation.mutateAsync({
+        reportId: selectedReportId,
+      });
+      await utils.dispatch.report.invalidate({ reportId: selectedReportId });
+      if (result.added)
+        setUpdateNotice(
+          `Dia ${result.date.split("-").reverse().join("/")} preparado. Check Manual pendente; SYONET e volume aguardam o arquivo atualizado.`
+        );
+      preparedKey.current = `${selectedReportId}:${result.date}`;
+      return result;
+    } catch (error) {
+      preparedKey.current = null;
+      setUpdateNotice(null);
+      setUpdateError(errorMessage(error));
+      return null;
+    } finally {
+      setPreparing(false);
+    }
+  };
+  useEffect(() => {
+    if (!authenticated || selectedReportId === null) return;
+    const key = `${selectedReportId}:${cutoff}`;
+    if (preparedKey.current === key) return;
+    preparedKey.current = key;
+    let active = true;
+    const retryTimer = window.setTimeout(() => {
+      if (active && preparedKey.current !== key && prepareRetry < 1)
+        setPrepareRetry(current => current + 1);
+    }, 15000);
+    void preparePreviousDay();
+    return () => {
+      active = false;
+      window.clearTimeout(retryTimer);
+    };
+  }, [authenticated, selectedReportId, cutoff, prepareRetry]);
+  const visibleReport = useMemo<DispatchReport | undefined>(() => {
+    if (!report) return undefined;
+    const days = report.days.filter(
+      day => day.date >= dateFrom && day.date <= dateTo && day.date <= cutoff
+    );
+    const dates = new Set(days.map(day => day.date));
+    const rows = report.rows.map(row => ({
+      ...row,
+      cells: row.cells.filter(cell => dates.has(cell.date)),
+    }));
+    const cells = rows.flatMap(row => row.cells);
+    return {
+      ...report,
+      days,
+      rows,
+      totals: {
+        ...report.totals,
+        computed: cells.reduce((sum, cell) => sum + (cell.volume ?? 0), 0),
+        sourceDailySum: days.reduce(
+          (sum, day) => sum + (day.sourceTotal ?? 0),
+          0
+        ),
+        sourceManualOk: cells.filter(
+          cell => cell.sourceManual.trim().toUpperCase() === "OK"
+        ).length,
+        auditedOk: cells.filter(cell => cell.validation?.isOk).length,
+        manualOverridden: cells.filter(cell => cell.validation !== null).length,
+      },
+    };
+  }, [report, dateFrom, dateTo, cutoff]);
+  const refreshDaily = async () => {
+    const prepared = await preparePreviousDay();
+    if (!prepared) return;
+    const results = await Promise.all([
+      reportsQuery.refetch(),
+      reportQuery.refetch(),
+    ]);
+    if (results.some(result => result.error)) {
+      setUpdateNotice(null);
+      setUpdateError(
+        "Dia preparado, mas não foi possível recarregar os dados. Use Atualizar novamente."
+      );
+    }
+  };
+  const uploadWorkbook = async (file: File | undefined) => {
+    if (!file || selectedReportId === null) return;
+    if (uploading || preparing || savingCellIds.size > 0) return;
+    setUpdateError(null);
+    setUpdateNotice(null);
+    if (!file.name.toLowerCase().endsWith(".xlsx") || file.size > 1024 * 1024) {
+      setUpdateError("Envie um arquivo Envios .xlsx de até 1 MB.");
+      return;
+    }
+    try {
+      setUploading(true);
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(",")[1]);
+        reader.onerror = () =>
+          reject(new Error("Não foi possível ler o arquivo"));
+        reader.readAsDataURL(file);
+      });
+      const imported = await importWorkbookMutation.mutateAsync({
+        reportId: selectedReportId,
+        fileName: file.name,
+        base64,
+      });
+      const prepared = await preparePreviousDay();
+      if (!prepared) {
+        setUpdateNotice(null);
+        setUpdateError(
+          "Arquivo recebido, mas não foi possível concluir a preparação D-1. Use Atualizar para tentar novamente; checks anteriores preservados."
+        );
+        return;
+      }
+      await Promise.all([
+        utils.dispatch.report.invalidate({ reportId: selectedReportId }),
+        utils.dispatch.reports.invalidate(),
+      ]);
+      const refreshed = await reportQuery.refetch();
+      if (refreshed.error) {
+        setUpdateNotice(null);
+        setUpdateError(
+          "Arquivo recebido, mas a tela não foi atualizada. Use Atualizar para recarregar; checks preservados."
+        );
+        return;
+      }
+      const future = imported.skippedFutureDays
+        ? ` ${imported.skippedFutureDays} dia(s) posterior(es) a D-1 ignorado(s).`
+        : "";
+      const pending = prepared.missingSource
+        ? " D-1 continua aguardando a fonte de envio."
+        : "";
+      setUpdateNotice(
+        imported.alreadyImported
+          ? `Arquivo já importado; dados e checks mantidos.${future}${pending}`
+          : imported.daysImported === 0
+            ? `Arquivo sem dias aplicáveis até D-1; nenhum volume diário atualizado.${future}${pending}`
+            : `${imported.daysImported} dia(s) de fonte processado(s) e ${imported.rowsUpdated} loja(s) conciliada(s). Checks e histórico preservados.${future}${pending}`
+      );
+    } catch (error) {
+      setUpdateError(errorMessage(error));
+    } finally {
+      setUploading(false);
+      if (uploadRef.current) uploadRef.current.value = "";
+    }
+  };
+
   const filteredRows = useMemo(() => {
-    if (!report) return [];
+    if (!visibleReport) return [];
     const normalizedSearch = search.trim().toLocaleLowerCase("pt-BR");
-    return report.rows.filter(row => {
+    return visibleReport.rows.filter(row => {
       const matchesSearch =
         !normalizedSearch ||
         row.storeName.toLocaleLowerCase("pt-BR").includes(normalizedSearch) ||
-        (!clientMode &&
+        (showCrm &&
           row.crmResponsible
             .toLocaleLowerCase("pt-BR")
             .includes(normalizedSearch));
       if (!matchesSearch) return false;
+      const syonet = row.syonetIntegration.trim().toUpperCase();
+      const bbro = row.bbroIntegration.trim().toUpperCase();
+      if (integrationFilter === "syonet-ok" && syonet !== "OK") return false;
+      if (
+        integrationFilter === "syonet-no" &&
+        syonet !== "NÃO" &&
+        syonet !== "NAO"
+      )
+        return false;
+      if (integrationFilter === "bbro-ok" && bbro !== "OK") return false;
       if (manualFilter === "all") return true;
       const hasOk = row.cells.some(cell => effectiveManualOk(cell));
       return manualFilter === "ok"
         ? hasOk
         : row.cells.some(cell => !effectiveManualOk(cell));
     });
-  }, [clientMode, manualFilter, report, search]);
+  }, [showCrm, manualFilter, visibleReport, search, integrationFilter]);
 
   const onToggle = async (cell: DispatchCell, isOk: boolean) => {
-    if (activeRequests.current.has(cell.id)) return;
+    if (
+      activeRequests.current.has(cell.id) ||
+      preparing ||
+      importWorkbookMutation.isPending ||
+      uploading
+    )
+      return;
     activeRequests.current.add(cell.id);
     setSavingCellIds(current => {
       const next = new Set(current);
@@ -928,10 +1170,14 @@ export default function V2DispatchControl({
               Envios · conferência operacional
             </p>
             <h1 className="mt-1 text-xl font-bold tracking-tight text-slate-950">
-              Controle de Envios
+              {embedded
+                ? "Lojas & CRM — controle de envios"
+                : "Controle de Envios"}
             </h1>
             <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-500">
-              {report.title}. Conferência do campo Manual: Wini.
+              {report.title}. Cadastro e integrações conforme o arquivo;
+              conferência Manual por Wini. O período operacional termina em D-1
+              (São Paulo).
             </p>
           </div>
           <div className="shrink-0 text-left text-xs text-slate-500 lg:text-right">
@@ -947,11 +1193,13 @@ export default function V2DispatchControl({
           summaries={summaries}
           selectedReportId={selectedReportId}
           onChange={setSelectedReportId}
-          isFetching={reportsQuery.isFetching || reportQuery.isFetching}
-          onRefresh={() => {
-            void reportsQuery.refetch();
-            void reportQuery.refetch();
-          }}
+          isFetching={
+            reportsQuery.isFetching ||
+            reportQuery.isFetching ||
+            preparing ||
+            importWorkbookMutation.isPending
+          }
+          onRefresh={() => void refreshDaily()}
         />
       </div>
 
@@ -979,6 +1227,102 @@ export default function V2DispatchControl({
           onRetry={() => void reportQuery.refetch()}
         />
       ) : null}
+      {updateError ? (
+        <div
+          role="alert"
+          className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+        >
+          {updateError}
+        </div>
+      ) : null}
+      {updateNotice ? (
+        <div
+          role="status"
+          className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"
+        >
+          {updateNotice}
+        </div>
+      ) : null}
+      <section className="rounded-2xl border border-slate-200 bg-white p-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <label>
+            <span className="v2-label">Envios de</span>
+            <input
+              type="date"
+              className="v2-input"
+              value={dateFrom}
+              max={dateTo}
+              onChange={event => setDateFrom(event.target.value)}
+            />
+          </label>
+          <label>
+            <span className="v2-label">Até ontem (D-1)</span>
+            <input
+              type="date"
+              className="v2-input"
+              value={dateTo}
+              min={dateFrom}
+              max={cutoff}
+              onChange={event =>
+                setDateTo(
+                  event.target.value > cutoff ? cutoff : event.target.value
+                )
+              }
+            />
+          </label>
+          <label>
+            <span className="v2-label">Integração cadastrada</span>
+            <select
+              className="v2-input"
+              value={integrationFilter}
+              onChange={event => setIntegrationFilter(event.target.value)}
+            >
+              <option value="all">Todas as lojas</option>
+              <option value="syonet-ok">Syonet integrado (OK)</option>
+              <option value="syonet-no">Syonet não integrado</option>
+              <option value="bbro-ok">API BBRO integrada (OK)</option>
+            </select>
+          </label>
+          <label className="flex min-h-11 items-center gap-2 text-xs text-slate-600">
+            <input
+              type="checkbox"
+              checked={showCrm}
+              onChange={event => setShowCrm(event.target.checked)}
+              className="h-4 w-4 accent-[#e2212d]"
+            />{" "}
+            Mostrar responsáveis CRM
+          </label>
+          <input
+            ref={uploadRef}
+            type="file"
+            accept=".xlsx"
+            className="sr-only"
+            aria-label="Arquivo atualizado de Envios"
+            onChange={event => void uploadWorkbook(event.target.files?.[0])}
+          />
+          <button
+            type="button"
+            disabled={
+              preparing ||
+              importWorkbookMutation.isPending ||
+              savingCellIds.size > 0
+            }
+            onClick={() => uploadRef.current?.click()}
+            className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#e2212d] px-4 text-xs font-bold text-white disabled:opacity-50"
+          >
+            <Upload className="h-4 w-4" />
+            {importWorkbookMutation.isPending
+              ? "Importando…"
+              : "Atualizar arquivo Envios"}
+          </button>
+        </div>
+        <p className="mt-3 text-xs leading-5 text-slate-500">
+          Atualizar prepara os dias ausentes até ontem, sem alterar conferências
+          anteriores. Envie o Envios atualizado para preencher volumes e status
+          reais. Integração cadastrada não comprova entrega diária. Não há
+          conexão live com o CRM.
+        </p>
+      </section>
       {manualError ? (
         <div
           role="alert"
@@ -1004,13 +1348,19 @@ export default function V2DispatchControl({
         manualFilter={manualFilter}
         onManualFilter={setManualFilter}
         rowCount={`${filteredRows.length} de ${report.rows.length} linhas`}
-        clientMode={clientMode}
+        clientMode={!showCrm}
       />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <SummaryFact
-          label="Leads no período"
-          value={numberFormat(report.totals.computed)}
+          label="Volume informado no período"
+          value={
+            visibleReport?.rows.some(row =>
+              row.cells.some(cell => cell.volume !== null)
+            )
+              ? numberFormat(visibleReport.totals.computed)
+              : "Aguardando fonte"
+          }
         />
         <SummaryFact
           label="Linhas na tabela"
@@ -1018,37 +1368,75 @@ export default function V2DispatchControl({
         />
         <SummaryFact
           label="OKs do arquivo"
-          value={numberFormat(report.totals.sourceManualOk)}
+          value={numberFormat(visibleReport?.totals.sourceManualOk ?? 0)}
         />
         <SummaryFact
           label="Validações OK"
-          value={numberFormat(report.totals.auditedOk)}
+          value={numberFormat(visibleReport?.totals.auditedOk ?? 0)}
         />
         <SummaryFact
           label="Células conferidas"
-          value={numberFormat(report.totals.manualOverridden)}
+          value={numberFormat(visibleReport?.totals.manualOverridden ?? 0)}
         />
       </div>
 
-      <DispatchTable
-        report={report}
-        rows={filteredRows}
-        clientMode={clientMode}
-        savingCellIds={savingCellIds}
-        savedCellId={savedCellId}
-        onToggle={onToggle}
-        historyCellId={historyCellId}
-        onHistoryCellChange={(cellId, open) =>
-          setHistoryCellId(open ? cellId : null)
-        }
-        historyQuery={historyQuery}
-      />
+      <div className="flex flex-wrap gap-3 text-xs text-slate-600">
+        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2">
+          Syonet integrado:{" "}
+          <strong>
+            {
+              report.rows.filter(
+                row => row.syonetIntegration.trim().toUpperCase() === "OK"
+              ).length
+            }
+          </strong>{" "}
+          de {report.rows.length} linhas
+        </span>
+        <span className="rounded-full border border-slate-200 bg-white px-3 py-2">
+          BBRO integrado:{" "}
+          <strong>
+            {
+              report.rows.filter(
+                row => row.bbroIntegration.trim().toUpperCase() === "OK"
+              ).length
+            }
+          </strong>{" "}
+          de {report.rows.length} linhas
+        </span>
+        <span className="rounded-full border border-slate-200 bg-white px-3 py-2">
+          Dias aguardando fonte:{" "}
+          <strong>
+            {visibleReport?.days.filter(day => day.sourceTotal === null)
+              .length ?? 0}
+          </strong>
+        </span>
+      </div>
+      {!visibleReport?.days.length ? (
+        <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
+          Nenhum dia nesse intervalo. Ajuste o período ou use Atualizar para
+          preparar D-1.
+        </div>
+      ) : (
+        <DispatchTable
+          report={visibleReport}
+          rows={filteredRows}
+          clientMode={!showCrm}
+          savingCellIds={savingCellIds}
+          savedCellId={savedCellId}
+          onToggle={onToggle}
+          historyCellId={historyCellId}
+          onHistoryCellChange={(cellId, open) =>
+            setHistoryCellId(open ? cellId : null)
+          }
+          historyQuery={historyQuery}
+        />
+      )}
 
       <p className="px-1 text-[11px] leading-5 text-slate-500">
-        Esta tela é uma fotografia importada, não uma visão viva do CRM. Os
-        dados SYONET, os volumes e todos os status da fonte permanecem
-        inalterados. Somente o check de validação manual é persistido, sem
-        disparar envio de e-mail ou operação de CRM.
+        Dados de despacho são atualizados somente pelo arquivo Envios, sem
+        conexão live ao CRM. Dias novos recebem check Manual pendente e aguardam
+        a fonte. Marcar OK registra a conferência, mas não dispara e-mail, envio
+        ou operação de CRM.
       </p>
     </div>
   );

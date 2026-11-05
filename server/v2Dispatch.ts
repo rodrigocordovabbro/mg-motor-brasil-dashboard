@@ -7,6 +7,7 @@ import type {
   DispatchValidation,
   DispatchAuditEntry,
   DispatchRow,
+  DispatchDay,
 } from "../shared/v2Dispatch";
 import type { V2Identity } from "./v2Auth";
 
@@ -19,6 +20,49 @@ const summary = (row: RowDataPacket): DispatchReportSummary => ({
   dateTo: String(row.dateTo),
   generatedLabel: String(row.generatedLabel),
 });
+
+function metadataObject(value: unknown): Record<string, unknown> {
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === "object"
+        ? (parsed as Record<string, unknown>)
+        : {};
+    } catch {
+      return {};
+    }
+  }
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function metadataDays(value: unknown): DispatchDay[] {
+  const metadata = metadataObject(value);
+  return (Array.isArray(metadata.days) ? metadata.days : [])
+    .filter(
+      day =>
+        day &&
+        typeof day === "object" &&
+        typeof (day as { date?: unknown }).date === "string"
+    )
+    .map(day => {
+      const source = day as Record<string, unknown>;
+      return {
+        date: String(source.date),
+        label: String(source.label ?? source.date),
+        sourceTotal:
+          typeof source.sourceTotal === "number" ? source.sourceTotal : null,
+        computedTotal:
+          typeof source.computedTotal === "number"
+            ? source.computedTotal
+            : null,
+        ...(source.pending === true ? { pending: true } : {}),
+      };
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
 export async function listDispatchReports(): Promise<DispatchReportSummary[]> {
   const [rows] = await getV2Pool().query<RowDataPacket[]>(
     "SELECT id,title,fileName,dateFrom,dateTo,generatedLabel FROM v2_dispatch_reports ORDER BY dateTo DESC,id DESC"
@@ -40,16 +84,13 @@ export async function getDispatchReport(
       message: "Controle de envios não encontrado",
     });
   const report = reports[0];
-  const metadata =
-    typeof report.metadata === "string"
-      ? JSON.parse(report.metadata)
-      : report.metadata;
+  const days = metadataDays(report.metadata);
   const [rawRows] = await db.execute<RowDataPacket[]>(
     "SELECT id,rowNumber,storeName,crmResponsible,syonetIntegration,bbroIntegration FROM v2_dispatch_rows WHERE reportId=? ORDER BY rowNumber",
     [reportId]
   );
   const [rawCells] = await db.execute<RowDataPacket[]>(
-    "SELECT c.id,c.rowId,r.rowNumber,c.dispatchDate,c.syonet,c.sourceManual,c.volume,k.isOk,k.version,k.reviewerLabel,k.updatedAt,a.username AS updatedBy FROM v2_dispatch_cells c INNER JOIN v2_dispatch_rows r ON r.id=c.rowId LEFT JOIN v2_dispatch_checks k ON k.cellId=c.id LEFT JOIN v2_accounts a ON a.id=k.updatedBy WHERE r.reportId=? ORDER BY r.rowNumber,c.dispatchDate",
+    "SELECT c.id,c.rowId,r.rowNumber,c.dispatchDate,c.syonet,c.sourceManual,c.volume,c.sourcePending,k.isOk,k.version,k.reviewerLabel,k.updatedAt,a.username AS updatedBy FROM v2_dispatch_cells c INNER JOIN v2_dispatch_rows r ON r.id=c.rowId LEFT JOIN v2_dispatch_checks k ON k.cellId=c.id LEFT JOIN v2_accounts a ON a.id=k.updatedBy WHERE r.reportId=? ORDER BY r.rowNumber,c.dispatchDate",
     [reportId]
   );
   const byRow = new Map<number, DispatchRow>();
@@ -65,56 +106,80 @@ export async function getDispatchReport(
     })
   );
   rawCells.forEach(c =>
-    byRow
-      .get(Number(c.rowId))
-      ?.cells.push({
-        id: Number(c.id),
-        rowNumber: Number(c.rowNumber),
-        date: String(c.dispatchDate),
-        syonet: String(c.syonet),
-        sourceManual: String(c.sourceManual),
-        volume: Number(c.volume),
-        validation:
-          c.version == null
-            ? null
-            : {
-                isOk: Boolean(c.isOk),
-                version: Number(c.version),
-                reviewerLabel: String(c.reviewerLabel),
-                updatedBy: String(c.updatedBy),
-                updatedAt: iso(c.updatedAt),
-              },
-      })
+    byRow.get(Number(c.rowId))?.cells.push({
+      id: Number(c.id),
+      rowNumber: Number(c.rowNumber),
+      date: String(c.dispatchDate),
+      syonet: String(c.syonet ?? ""),
+      sourceManual: String(c.sourceManual ?? ""),
+      volume: c.volume == null ? null : Number(c.volume),
+      sourcePending: Boolean(c.sourcePending),
+      validation:
+        c.version == null
+          ? null
+          : {
+              isOk: Boolean(c.isOk),
+              version: Number(c.version),
+              reviewerLabel: String(c.reviewerLabel),
+              updatedBy: String(c.updatedBy),
+              updatedAt: iso(c.updatedAt),
+            },
+    })
   );
-  const days = (
-    metadata.days as { date: string; label: string; sourceTotal: number }[]
-  ).map(d => ({
-    ...d,
-    computedTotal: rawCells
-      .filter(c => String(c.dispatchDate) === d.date)
-      .reduce((s, c) => s + Number(c.volume), 0),
+
+  const cellsByDate = new Map<string, RowDataPacket[]>();
+  rawCells.forEach(cell => {
+    const list = cellsByDate.get(String(cell.dispatchDate)) ?? [];
+    list.push(cell);
+    cellsByDate.set(String(cell.dispatchDate), list);
+  });
+  const computedForDate = (date: string, pending?: boolean): number | null => {
+    if (pending) return null;
+    return (cellsByDate.get(date) ?? []).reduce(
+      (sum, cell) => sum + (cell.volume == null ? 0 : Number(cell.volume)),
+      0
+    );
+  };
+  const reportDays = days.map(day => ({
+    ...day,
+    computedTotal: computedForDate(day.date, day.pending),
   }));
+  const knownVolumes = rawCells.reduce(
+    (sum, cell) => sum + (cell.volume == null ? 0 : Number(cell.volume)),
+    0
+  );
+  const sourceDailySum = reportDays.reduce(
+    (sum, day) => sum + (day.sourceTotal == null ? 0 : day.sourceTotal),
+    0
+  );
+  const pendingDays = reportDays.filter(day => day.pending === true).length;
+
   return {
     ...summary(report),
     importedAt: iso(report.importedAt),
     information: [],
-    days,
+    days: reportDays,
     rows: [...byRow.values()],
     totals: {
-      computed: rawCells.reduce((s, c) => s + Number(c.volume), 0),
-      sourceDailySum: days.reduce((s, d) => s + Number(d.sourceTotal), 0),
+      computed: knownVolumes,
+      sourceDailySum,
       declaredInInstructions: null,
       sourceManualOk: rawCells.filter(
-        c => String(c.sourceManual).trim().toUpperCase() === "OK"
+        c =>
+          String(c.sourceManual ?? "")
+            .trim()
+            .toUpperCase() === "OK"
       ).length,
       auditedOk: rawCells.filter(c => c.version != null && Boolean(c.isOk))
         .length,
       manualOverridden: rawCells.filter(c => c.version != null).length,
+      ...(pendingDays > 0 ? { pendingDays } : {}),
     },
     notes: [
       "Controle reproduzido da aba Envios do arquivo importado. Os dados de despacho são uma fotografia da fonte, não uma integração em tempo real.",
       "Somente Manual é editável. A conferência do fluxo Wini registra a conta autenticada e o horário de quem salva; não realiza envios, nem altera SYONET ou volumes.",
       "Os OK que já constavam no arquivo são identificados como origem arquivo e não são atribuídos automaticamente ao Wini.",
+      "Volume informado soma somente valores presentes; dias aguardando fonte permanecem pendentes e não são tratados como zero.",
     ],
   };
 }
@@ -127,6 +192,7 @@ export function assertDispatchVersion(actual: number, expected: number) {
         "Outra pessoa atualizou esta célula. Atualize o controle antes de confirmar novamente.",
     });
 }
+
 export async function setDispatchManual(
   cellId: number,
   isOk: boolean,
@@ -136,7 +202,6 @@ export async function setDispatchManual(
   const connection = await getV2Pool().getConnection();
   try {
     await connection.beginTransaction();
-    // Lock the source cell even when no check exists, preventing two initial writes.
     const [cells] = await connection.execute<RowDataPacket[]>(
       "SELECT id FROM v2_dispatch_cells WHERE id=? FOR UPDATE",
       [cellId]
