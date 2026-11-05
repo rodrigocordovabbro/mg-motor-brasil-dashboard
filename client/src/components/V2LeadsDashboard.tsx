@@ -1,3 +1,5 @@
+import V2CommercialUploads from "./V2CommercialUploads";
+import V2MonthlyGoalEditor from "./V2MonthlyGoalEditor";
 import { useEffect } from "react";
 import V2DispatchControl from "./V2DispatchControl";
 import { trpc } from "@/lib/trpc";
@@ -598,43 +600,21 @@ function SelectFilter({
 function PacingCard({
   data,
   onUpdated,
-  clientMode,
 }: {
   data: V2LeadsResponse;
   onUpdated: () => void;
   clientMode: boolean;
 }) {
   const pacing = data.pacing;
-  const [editing, setEditing] = useState(false);
-  const [goalDraft, setGoalDraft] = useState(
-    pacing.goal == null ? "" : String(pacing.goal)
-  );
-  const [goalError, setGoalError] = useState<string | null>(null);
-  const updateGoal = v2Trpc.leads.updateGoal.useMutation();
-
-  const saveGoal = async () => {
-    const goal = Number(goalDraft);
-    if (!Number.isFinite(goal) || goal <= 0) {
-      setGoalError("Informe uma meta mensal maior que zero.");
-      return;
-    }
-    setGoalError(null);
-    try {
-      await updateGoal.mutateAsync({
-        competence: pacing.competence,
-        goal: Math.round(goal),
-      });
-      setEditing(false);
-      onUpdated();
-    } catch {
-      setGoalError("Não foi possível salvar a meta. Tente novamente.");
-    }
-  };
-
   const progressRatio =
     pacing.progressPercent == null ? null : pacing.progressPercent / 100;
   const progressWidth =
-    progressRatio == null ? 0 : Math.min(100, Math.max(0, progressRatio * 100));
+    progressRatio == null
+      ? 0
+      : Math.min(100, Math.max(0, pacing.progressPercent ?? 0));
+  const narrowed = data.notes.some(note =>
+    note.includes("Meta mensal global não aplicada")
+  );
   return (
     <Card className="overflow-hidden">
       <CardHeading
@@ -643,11 +623,17 @@ function PacingCard({
         description="Pacing MTD da competência até D-1; as demais métricas respeitam o período filtrado."
         icon={Target}
         action={
-          <span
-            className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${statusTone(pacing.status)}`}
-          >
-            {statusText(pacing.status)}
-          </span>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <span
+              className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${statusTone(pacing.status)}`}
+            >
+              {statusText(pacing.status)}
+            </span>
+            <V2MonthlyGoalEditor
+              competence={pacing.competence}
+              onUpdated={onUpdated}
+            />
+          </div>
         }
       />
       <div className="grid gap-5 p-5 lg:grid-cols-[1.25fr_1fr]">
@@ -660,22 +646,33 @@ function PacingCard({
               <p className="mt-1 text-3xl font-bold tracking-tight text-slate-950">
                 {numberFormat(pacing.current)}
               </p>
-              <p className="text-xs text-slate-500">leads MTD da competência</p>
+              <p className="text-xs text-slate-500">Leads MTD da competência</p>
             </div>
             <div className="text-right">
-              <p className="text-xs font-semibold text-slate-500">Meta</p>
-              {pacing.goal == null ? (
-                <p className="mt-1 text-sm font-bold text-slate-400">
-                  Indisponível
-                </p>
-              ) : (
-                <p className="mt-1 text-xl font-bold text-slate-900">
-                  {numberFormat(pacing.goal)}
-                </p>
-              )}
+              <p className="text-xs font-semibold text-slate-500">
+                Meta mensal
+              </p>
+              <p
+                className={`mt-1 text-xl font-bold ${pacing.goal == null ? "text-slate-400" : "text-slate-900"}`}
+              >
+                {pacing.goal == null
+                  ? "Indisponível"
+                  : numberFormat(pacing.goal)}
+              </p>
             </div>
           </div>
-          <div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100">
+          <div
+            className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100"
+            role="progressbar"
+            aria-label="Atingimento da meta de Leads"
+            aria-valuenow={
+              pacing.progressPercent == null
+                ? undefined
+                : Math.min(100, pacing.progressPercent)
+            }
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
             <div
               className="h-full rounded-full bg-[#e2212d] transition-all"
               style={{ width: `${progressWidth}%` }}
@@ -683,9 +680,9 @@ function PacingCard({
           </div>
           <div className="mt-2 flex justify-between gap-3 text-[11px] text-slate-500">
             <span>
-              {pacing.progressPercent == null
+              {progressRatio == null
                 ? "Percentual indisponível sem meta"
-                : `${percentFormat(progressRatio ?? 0)} da meta`}
+                : `${percentFormat(progressRatio)} da meta`}
             </span>
             <span>
               {pacing.closedDays}/{pacing.daysInMonth} dias fechados
@@ -693,70 +690,17 @@ function PacingCard({
           </div>
           {pacing.goal == null ? (
             <p className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2.5 text-xs leading-5 text-slate-500">
-              {clientMode
-                ? "Meta mensal indisponível na fonte para esta apresentação."
-                : "Defina uma meta para habilitar projeção comparável, diferença projetada e restante para a meta."}
+              {narrowed
+                ? "Recorte ativo: a meta global não é comparada a um subconjunto de Leads. Remova os filtros para acompanhar a meta mensal."
+                : "Clique em Atualizar metas para definir o objetivo do mês e habilitar os KPIs de atingimento."}
             </p>
           ) : null}
-          {clientMode ? (
-            <p className="mt-4 text-[11px] leading-5 text-slate-400">
-              Meta e acompanhamento são ajustados no modo operação.
-            </p>
-          ) : editing ? (
-            <div className="mt-4 rounded-xl border border-red-100 bg-red-50/50 p-3">
-              <div className="flex flex-wrap items-end gap-2">
-                <label className="flex-1">
-                  <span className="v2-label">Nova meta mensal</span>
-                  <input
-                    autoFocus
-                    type="number"
-                    min="1"
-                    step="1"
-                    value={goalDraft}
-                    onChange={event => setGoalDraft(event.target.value)}
-                    className="v2-input bg-white"
-                  />
-                </label>
-                <button
-                  type="button"
-                  onClick={saveGoal}
-                  disabled={updateGoal.isPending}
-                  className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-[#e2212d] px-3 text-xs font-bold text-white disabled:opacity-60"
-                >
-                  <Check className="h-3.5 w-3.5" /> Salvar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setEditing(false)}
-                  className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600"
-                >
-                  <X className="h-3.5 w-3.5" /> Cancelar
-                </button>
-              </div>
-              {goalError ? (
-                <p className="mt-2 text-xs text-[#b41b26]">{goalError}</p>
-              ) : (
-                <p className="mt-2 text-[11px] text-slate-500">
-                  A alteração será registrada pela mutation de meta da
-                  competência.
-                </p>
-              )}
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                setGoalDraft(pacing.goal == null ? "" : String(pacing.goal));
-                setEditing(true);
-              }}
-              className="mt-4 inline-flex items-center gap-1.5 text-xs font-bold text-[#e2212d] hover:underline"
-            >
-              <Edit3 className="h-3.5 w-3.5" />{" "}
-              {pacing.goal == null ? "Definir meta" : "Editar meta"}
-            </button>
-          )}
+          <p className="mt-3 text-[11px] leading-5 text-slate-400">
+            Meta salva por competência. Alterações atualizam os KPIs e mantêm os
+            meses anteriores.
+          </p>
         </div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-2">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-2">
           <PacingMetric
             label="Média/dia"
             value={numberFormat(Math.round(pacing.averagePerDay))}
@@ -779,6 +723,26 @@ function PacingCard({
               pacing.remainingToGoal == null
                 ? "N/D"
                 : numberFormat(Math.max(0, pacing.remainingToGoal))
+            }
+          />
+          <PacingMetric
+            label="Esperado até D-1"
+            value={
+              pacing.goal == null
+                ? "N/D"
+                : numberFormat(
+                    Math.round(
+                      (pacing.goal * pacing.closedDays) / pacing.daysInMonth
+                    )
+                  )
+            }
+          />
+          <PacingMetric
+            label="Projeção vs. meta"
+            value={
+              pacing.projectedDifference == null
+                ? "N/D"
+                : `${pacing.projectedDifference >= 0 ? "+" : ""}${numberFormat(pacing.projectedDifference)}`
             }
           />
         </div>
@@ -812,7 +776,13 @@ function performancePercent(value: number | null, available: boolean) {
   return percentFormat(value);
 }
 
-function DealerPerformanceCard({ data }: { data: V2LeadsResponse }) {
+function DealerPerformanceCard({
+  data,
+  onUpdated,
+}: {
+  data: V2LeadsResponse;
+  onUpdated: () => void;
+}) {
   const performance = data.dealerPerformance;
   const available = performance.available;
   const totals = performance.totals;
@@ -850,16 +820,77 @@ function DealerPerformanceCard({ data }: { data: V2LeadsResponse }) {
       <CardHeading
         eyebrow="Acompanhamento comercial"
         title="Vendas e metas por concessionária"
-        description="Leads reais por dealer; vendas, conversão e metas somente quando a base correspondente está disponível."
+        description="Leads da base do dashboard; metas mensais e vendas por dealer importadas de arquivos separados."
         icon={TrendingUp}
         action={
           <span
             className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${available ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-500"}`}
           >
-            {available ? "Fonte disponível" : "Fonte não configurada"}
+            {available ? "Fonte disponível" : "Aguardando arquivos"}
           </span>
         }
       />
+      <V2CommercialUploads
+        competence={data.pacing.competence}
+        onUpdated={onUpdated}
+      />
+      {performance.warnings?.length ? (
+        <div
+          className="mx-5 mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900"
+          role="status"
+        >
+          <p className="font-bold">Leitura das fontes comerciais</p>
+          <ul className="mt-1 list-disc space-y-1 pl-4">
+            {performance.warnings.map(warning => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {performance.unmapped?.length ? (
+        <details className="mx-5 mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs">
+          <summary className="cursor-pointer font-semibold text-slate-700">
+            {performance.unmapped.length} linhas comerciais sem vínculo com
+            dealer — ver metas de origem
+          </summary>
+          <p className="mt-2 leading-5 text-slate-500">
+            Totais dos arquivos permanecem preservados. Não repetimos metas
+            coletivas por loja. Reenvie o arquivo e ajuste o de-para no preview
+            para vincular os nomes originais.
+          </p>
+          <div className="mt-2 max-h-64 overflow-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr>
+                  <th className="py-2">Fonte</th>
+                  <th>Nome original</th>
+                  <th className="text-right">Meta/quantidade</th>
+                </tr>
+              </thead>
+              <tbody>
+                {performance.unmapped.map(row => (
+                  <tr
+                    key={`${row.kind}:${row.key}`}
+                    className="border-t border-slate-200"
+                  >
+                    <td className="py-2">
+                      {row.kind === "lead-goals"
+                        ? "Meta de Leads"
+                        : row.kind === "sales-goals"
+                          ? "Meta de Vendas"
+                          : "Vendas"}
+                    </td>
+                    <td>{row.sourceLabel}</td>
+                    <td className="text-right">
+                      {row.value == null ? "N/D" : numberFormat(row.value)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      ) : null}
       <div className="grid gap-3 border-b border-slate-100 p-5 sm:grid-cols-2 lg:grid-cols-5">
         <SummaryFact label="Leads reais" value={numberFormat(totals.leads)} />
         <SummaryFact
@@ -1237,7 +1268,7 @@ function OverviewTab({
           <DistributionList items={data.dealers} />
         </Card>
       </div>
-      <DealerPerformanceCard data={data} />
+      <DealerPerformanceCard data={data} onUpdated={onGoalUpdated} />
       {data.notes.length ? <Notes notes={data.notes} /> : null}
     </div>
   );

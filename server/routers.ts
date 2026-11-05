@@ -1,9 +1,15 @@
+import {
+  previewCommercialUpload,
+  commitCommercialUpload,
+  readCommercialStatus,
+} from "./v2Commercial";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { publicProcedure, router } from "./_core/trpc";
 import { loginV2, logoutV2, readV2Session } from "./v2Auth";
 import { getV2Dashboard } from "./v2Leads";
-import { saveV2Goal } from "./v2Db";
+import { getV2Goal, saveV2Goal } from "./v2Db";
+import { MAX_GOAL } from "../shared/v2Goals";
 import { MEDIA_PLANS } from "./mediaPlans";
 import {
   listDispatchReports,
@@ -11,10 +17,7 @@ import {
   setDispatchManual,
   getDispatchHistory,
 } from "./v2Dispatch";
-import {
-  getLeadControl,
-  prepareLeadControl,
-} from "./v2DispatchLeads";
+import { getLeadControl, prepareLeadControl } from "./v2DispatchLeads";
 import { prepareDispatchDay } from "./v2DispatchDaily";
 import { importDispatchWorkbook } from "./v2DispatchXlsx";
 import {
@@ -57,6 +60,14 @@ const filters = z
         path: ["dateFrom"],
       });
   });
+const commercialUpload = z.object({
+  kind: z.enum(["lead-goals", "sales-goals", "sales"]),
+  competence: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
+  asOf: date.optional(),
+  sourceWeek: z.number().int().min(1).max(6).optional(),
+  fileName: z.string().min(1).max(255),
+  base64: z.string().min(1).max(1400000),
+});
 const v2Procedure = publicProcedure.use(async ({ ctx, next }) => {
   const identity = await readV2Session(ctx.req);
   if (!identity)
@@ -121,7 +132,9 @@ export const appRouter = router({
       .mutation(({ input }) => prepareDispatchDay(input.reportId)),
     prepareLeadControl: v2Procedure
       .input(z.object({ reportId: z.number().int().positive(), filters }))
-      .mutation(({ input }) => prepareLeadControl(input.reportId, input.filters)),
+      .mutation(({ input }) =>
+        prepareLeadControl(input.reportId, input.filters)
+      ),
     importWorkbook: v2Procedure
       .input(
         z.object({
@@ -139,15 +152,42 @@ export const appRouter = router({
         )
       ),
   }),
+  commercial: router({
+    status: v2Procedure
+      .input(
+        z.object({ competence: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/) })
+      )
+      .query(({ input }) => readCommercialStatus(input.competence)),
+    preview: v2Procedure
+      .input(commercialUpload)
+      .mutation(({ input }) => previewCommercialUpload(input)),
+    commit: v2Procedure
+      .input(
+        commercialUpload.extend({
+          mappings: z
+            .record(z.string(), z.array(z.string().max(250)).max(500))
+            .optional(),
+        })
+      )
+      .mutation(({ ctx, input }) => commitCommercialUpload(input, ctx.v2User)),
+  }),
   leads: router({
     dashboard: v2Procedure
       .input(filters)
       .query(({ input }) => getV2Dashboard(input)),
+    goal: v2Procedure
+      .input(
+        z.object({ competence: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/) })
+      )
+      .query(async ({ input }) => ({
+        competence: input.competence,
+        goal: await getV2Goal(input.competence),
+      })),
     updateGoal: v2Procedure
       .input(
         z.object({
           competence: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
-          goal: z.number().int().min(1).max(10000000),
+          goal: z.number().int().min(1).max(MAX_GOAL),
         })
       )
       .mutation(async ({ ctx, input }) => {

@@ -1,3 +1,4 @@
+import { getCommercialPerformance } from "./v2Commercial";
 import type { RowDataPacket } from "mysql2/promise";
 import { getV2Pool, getV2Goal } from "./v2Db";
 import { addIsoDays, resolveDashboardPeriod } from "../shared/dashboardDates";
@@ -73,10 +74,7 @@ const known = (values: V2Count[]) =>
 /** The one canonical dimension/search predicate used by dashboard and dispatch. */
 export function matchesV2LeadFilters(
   row: V2Lead,
-  input: Pick<
-    V2Filters,
-    "model" | "channel" | "campaign" | "dealer" | "search"
-  >
+  input: Pick<V2Filters, "model" | "channel" | "campaign" | "dealer" | "search">
 ): boolean {
   const lowerSearch = input.search?.toLocaleLowerCase("pt-BR");
   return (
@@ -93,9 +91,7 @@ export function matchesV2LeadFilters(
         row.dealer,
         row.city,
         row.state,
-      ].some(value =>
-        value.toLocaleLowerCase("pt-BR").includes(lowerSearch)
-      ))
+      ].some(value => value.toLocaleLowerCase("pt-BR").includes(lowerSearch)))
   );
 }
 
@@ -118,9 +114,10 @@ export function mapV2LeadRow(row: RowDataPacket): V2Lead {
   return {
     id: Number(row.id),
     date: String(row.date ?? row.leadDate),
-    hour: row.hour == null && row.leadHour == null
-      ? null
-      : Number(row.hour ?? row.leadHour),
+    hour:
+      row.hour == null && row.leadHour == null
+        ? null
+        : Number(row.hour ?? row.leadHour),
     name: String(row.name),
     model: String(row.model),
     version: String(row.version),
@@ -144,7 +141,8 @@ export async function readV2LeadsForPeriod(
     typeof periodOrDateFrom === "string"
       ? periodOrDateFrom
       : periodOrDateFrom.dateFrom;
-  const end = typeof periodOrDateFrom === "string" ? dateTo : periodOrDateFrom.dateTo;
+  const end =
+    typeof periodOrDateFrom === "string" ? dateTo : periodOrDateFrom.dateTo;
   if (!end) throw new Error("Período de leads incompleto");
   const [raw] = await getV2Pool().execute<RowDataPacket[]>(
     "SELECT id,leadDate AS date,leadHour AS hour,name,model,version,channel,campaign,dealer,city,state,crm FROM v2_leads WHERE leadDate>=? AND leadDate<=?",
@@ -214,10 +212,9 @@ export function aggregateV2Leads(
       ...value,
       cumulative,
       pace:
-        pacing.goal == null ||
-        period.dateFrom.slice(0, 7) !== period.dateTo.slice(0, 7)
+        pacing.goal == null || period.dateFrom !== monthFrom
           ? null
-          : (pacing.goal / pacing.daysInMonth) * (daily.length + 1),
+          : (pacing.goal / pacing.daysInMonth) * Number(date.slice(8, 10)),
     });
   }
   const page = input.page ?? 1,
@@ -333,10 +330,14 @@ export async function getV2Dashboard(input: V2Filters) {
     source.invalidDateRows = Number(sourceRows[0].invalidDateRows);
   }
   const rows = await readV2LeadsForPeriod(from, period.dateTo);
-  return aggregateV2Leads(
+  const dashboard = aggregateV2Leads(
     rows,
     input,
     await getV2Goal(period.dateTo.slice(0, 7)),
     source
   );
+  return {
+    ...dashboard,
+    dealerPerformance: await getCommercialPerformance(dashboard, input),
+  };
 }

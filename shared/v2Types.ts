@@ -85,6 +85,14 @@ export type V2Dashboard = {
   crm: V2Count[];
   recent: { rows: V2Lead[]; total: number; page: number; pageSize: number };
   dealerPerformance: {
+    warnings?: string[];
+    unmapped?: Array<{
+      kind: "lead-goals" | "sales-goals" | "sales";
+      key: string;
+      sourceLabel: string;
+      state: string | null;
+      value: number | null;
+    }>;
     available: boolean;
     sourceName: string | null;
     updatedAt: string | null;

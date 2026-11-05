@@ -113,6 +113,24 @@ describe("V2 aggregation", () => {
     );
     expect(r.daily.every(x => x.pace === null)).toBe(true);
   });
+  it("anchors daily goal to the calendar day without one-day offset", () => {
+    const r = aggregateV2Leads(
+      [lead(1, "2026-11-01", "Site")],
+      { dateFrom: "2026-11-01", dateTo: "2026-11-04" },
+      300,
+      source,
+      now
+    );
+    expect(r.daily.map(day => day.pace)).toEqual([10, 20, 30, 40]);
+    const subset = aggregateV2Leads(
+      [],
+      { dateFrom: "2026-11-02", dateTo: "2026-11-04" },
+      300,
+      source,
+      now
+    );
+    expect(subset.daily.every(day => day.pace === null)).toBe(true);
+  });
   it("distinguishes an absent source from a valid zero result", () => {
     expect(
       aggregateV2Leads(
