@@ -113,6 +113,10 @@ function fullDate(value: string) {
   }).format(parsed);
 }
 
+function leadNameForMode(name: string, clientMode: boolean) {
+  return clientMode ? "Nome oculto no modo cliente" : name || "Não informado";
+}
+
 function formatHour(value: string | number) {
   if (String(value) === "Não informado") return "Não informado";
   const raw = String(value).replace("h", "");
@@ -347,12 +351,12 @@ function NotConfiguredPanel({ data }: { data: V2LeadsResponse }) {
           </div>
           <div>
             <h2 className="text-base font-bold text-slate-900">
-              Fonte de leads não configurada
+              Dados de leads ainda não disponíveis
             </h2>
             <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
-              O dashboard está conectado ao contrato de dados, mas ainda não
-              recebeu uma fonte autenticada. Não exibimos zeros, amostras ou
-              números de screenshots como substitutos.
+              Ainda não há uma importação autenticada disponível para este
+              painel. Para manter a leitura confiável, não exibimos zeros,
+              amostras ou números de apresentação como substitutos.
             </p>
           </div>
         </div>
@@ -360,7 +364,7 @@ function NotConfiguredPanel({ data }: { data: V2LeadsResponse }) {
       <div className="grid gap-4 px-5 py-5 sm:grid-cols-3">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
-            Fonte
+            Origem
           </p>
           <p className="mt-1 text-sm font-semibold text-slate-800">
             {data.source.name || "Aguardando configuração"}
@@ -368,10 +372,10 @@ function NotConfiguredPanel({ data }: { data: V2LeadsResponse }) {
         </div>
         <div>
           <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
-            Modo
+            Situação
           </p>
           <p className="mt-1 text-sm font-semibold text-slate-800">
-            Importação autenticada
+            Aguardando importação
           </p>
         </div>
         <div>
@@ -385,14 +389,16 @@ function NotConfiguredPanel({ data }: { data: V2LeadsResponse }) {
       </div>
       {data.notes.length ? (
         <div className="border-t border-slate-100 px-5 py-4">
-          <p className="text-xs font-semibold text-slate-600">
-            Observações da API
-          </p>
-          <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-500">
-            {data.notes.map(note => (
-              <li key={note}>• {note}</li>
-            ))}
-          </ul>
+          <details>
+            <summary className="cursor-pointer list-none text-xs font-semibold text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
+              Observações da importação
+            </summary>
+            <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-500">
+              {data.notes.map(note => (
+                <li key={note}>• {note}</li>
+              ))}
+            </ul>
+          </details>
         </div>
       ) : null}
     </Card>
@@ -409,6 +415,7 @@ function FilterBar({
   selectedPreset,
   onPreset,
   isFetching,
+  clientMode,
 }: {
   draft: V2DashboardFilters;
   setDraft: (next: V2DashboardFilters) => void;
@@ -419,6 +426,7 @@ function FilterBar({
   selectedPreset: string;
   onPreset: (preset: string) => void;
   isFetching: boolean;
+  clientMode: boolean;
 }) {
   const update = (key: keyof V2DashboardFilters, value: string) =>
     setDraft({ ...draft, [key]: value || undefined, page: 1 });
@@ -511,17 +519,25 @@ function FilterBar({
           onChange={value => update("dealer", value)}
         />
         <label className="sm:col-span-2 xl:col-span-2">
-          <span className="v2-label">Busca</span>
+          <span className="v2-label">
+            {clientMode ? "Cidade/UF/concessionária" : "Busca"}
+          </span>
           <div className="relative">
             <Search
               className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
               aria-hidden="true"
             />
             <input
-              aria-label="Buscar lead"
+              aria-label={
+                clientMode ? "Cidade/UF/concessionária" : "Buscar lead"
+              }
               value={draft.search ?? ""}
               onChange={event => update("search", event.target.value)}
-              placeholder="Nome, cidade ou estado"
+              placeholder={
+                clientMode
+                  ? "Cidade, UF ou concessionária"
+                  : "Nome, cidade ou estado"
+              }
               className="v2-input pl-9"
             />
           </div>
@@ -580,9 +596,11 @@ function SelectFilter({
 function PacingCard({
   data,
   onUpdated,
+  clientMode,
 }: {
   data: V2LeadsResponse;
   onUpdated: () => void;
+  clientMode: boolean;
 }) {
   const pacing = data.pacing;
   const [editing, setEditing] = useState(false);
@@ -673,11 +691,16 @@ function PacingCard({
           </div>
           {pacing.goal == null ? (
             <p className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2.5 text-xs leading-5 text-slate-500">
-              Defina uma meta para habilitar projeção comparável, diferença
-              projetada e restante para a meta.
+              {clientMode
+                ? "Meta mensal indisponível na fonte para esta apresentação."
+                : "Defina uma meta para habilitar projeção comparável, diferença projetada e restante para a meta."}
             </p>
           ) : null}
-          {editing ? (
+          {clientMode ? (
+            <p className="mt-4 text-[11px] leading-5 text-slate-400">
+              Meta e acompanhamento são ajustados no modo operação.
+            </p>
+          ) : editing ? (
             <div className="mt-4 rounded-xl border border-red-100 bg-red-50/50 p-3">
               <div className="flex flex-wrap items-end gap-2">
                 <label className="flex-1">
@@ -791,6 +814,35 @@ function DealerPerformanceCard({ data }: { data: V2LeadsResponse }) {
   const performance = data.dealerPerformance;
   const available = performance.available;
   const totals = performance.totals;
+  const [dealerSearch, setDealerSearch] = useState("");
+  const [dealerSort, setDealerSort] = useState("leads");
+  const [page, setPage] = useState(1);
+  const filteredRows = useMemo(
+    () =>
+      performance.rows
+        .filter(
+          row =>
+            !dealerSearch.trim() ||
+            [row.dealer, row.state].some(value =>
+              value
+                .toLocaleLowerCase("pt-BR")
+                .includes(dealerSearch.trim().toLocaleLowerCase("pt-BR"))
+            )
+        )
+        .sort((a, b) =>
+          dealerSort === "name"
+            ? a.dealer.localeCompare(b.dealer, "pt-BR")
+            : b.leads - a.leads
+        ),
+    [performance.rows, dealerSearch, dealerSort]
+  );
+  const pageSize = 12;
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageRows = filteredRows.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
   return (
     <Card className="overflow-hidden">
       <CardHeading
@@ -841,6 +893,34 @@ function DealerPerformanceCard({ data }: { data: V2LeadsResponse }) {
           }
         />
       </div>
+      <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-end">
+        <label className="min-w-0 flex-1">
+          <span className="v2-label">Consultar concessionária ou UF</span>
+          <input
+            className="v2-input"
+            value={dealerSearch}
+            onChange={event => {
+              setDealerSearch(event.target.value);
+              setPage(1);
+            }}
+            placeholder="Buscar na tabela"
+          />
+        </label>
+        <label className="sm:w-48">
+          <span className="v2-label">Ordenação</span>
+          <select
+            className="v2-input"
+            value={dealerSort}
+            onChange={event => {
+              setDealerSort(event.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="leads">Mais Leads primeiro</option>
+            <option value="name">Nome da concessionária</option>
+          </select>
+        </label>
+      </div>
       <div className="overflow-x-auto">
         <table className="min-w-[760px] w-full text-left">
           <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.13em] text-slate-500">
@@ -855,8 +935,8 @@ function DealerPerformanceCard({ data }: { data: V2LeadsResponse }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-xs">
-            {performance.rows.length ? (
-              performance.rows.map(row => (
+            {pageRows.length ? (
+              pageRows.map(row => (
                 <tr
                   key={`${row.dealer}-${row.state}`}
                   className="transition hover:bg-slate-50"
@@ -890,12 +970,38 @@ function DealerPerformanceCard({ data }: { data: V2LeadsResponse }) {
             ) : (
               <tr>
                 <td colSpan={7}>
-                  <EmptyDistribution label="Nenhum dealer retornado pela fonte de acompanhamento." />
+                  <EmptyDistribution label="Nenhuma concessionária corresponde à consulta." />
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
+        <span>
+          {filteredRows.length} linhas · página {currentPage} de {totalPages}.
+          Os totais acima permanecem os do período.
+        </span>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            aria-label="Página anterior de concessionárias"
+            disabled={currentPage <= 1}
+            onClick={() => setPage(currentPage - 1)}
+            className="rounded-lg border border-slate-200 p-2 disabled:opacity-35"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            aria-label="Próxima página de concessionárias"
+            disabled={currentPage >= totalPages}
+            onClick={() => setPage(currentPage + 1)}
+            className="rounded-lg border border-slate-200 p-2 disabled:opacity-35"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
       </div>
       <div className="border-t border-slate-100 px-5 py-4 text-xs leading-5 text-slate-500">
         {available ? (
@@ -1042,9 +1148,11 @@ function DailyChart({ daily }: { daily: V2DailyPoint[] }) {
 function OverviewTab({
   data,
   onGoalUpdated,
+  clientMode,
 }: {
   data: V2LeadsResponse;
   onGoalUpdated: () => void;
+  clientMode: boolean;
 }) {
   const { summary } = data;
   return (
@@ -1092,7 +1200,11 @@ function OverviewTab({
           icon={Check}
         />
       </div>
-      <PacingCard data={data} onUpdated={onGoalUpdated} />
+      <PacingCard
+        data={data}
+        onUpdated={onGoalUpdated}
+        clientMode={clientMode}
+      />
       <Card className="overflow-hidden">
         <CardHeading
           eyebrow="Evolução diária"
@@ -1387,9 +1499,11 @@ function StoresCrmTab({ data }: { data: V2LeadsResponse }) {
 function LeadsTableTab({
   data,
   onPage,
+  clientMode,
 }: {
   data: V2LeadsResponse;
   onPage: (page: number) => void;
+  clientMode: boolean;
 }) {
   const totalPages = Math.max(
     1,
@@ -1440,9 +1554,9 @@ function LeadsTableTab({
                   </td>
                   <td
                     className="max-w-[190px] truncate px-4 py-3 font-semibold text-slate-800"
-                    title={row.name}
+                    title={clientMode ? undefined : row.name}
                   >
-                    {row.name || "Não informado"}
+                    {leadNameForMode(row.name, clientMode)}
                   </td>
                   <td className="px-4 py-3 text-slate-600">
                     {row.model || "N/D"}
@@ -1544,8 +1658,10 @@ type V2Tab = (typeof TABS)[number];
 
 export default function V2LeadsDashboard({
   authenticated,
+  clientMode = true,
 }: {
   authenticated: boolean;
+  clientMode?: boolean;
 }) {
   const cutoff = getDashboardCutoffDate();
   const firstMonthDay = `${cutoff.slice(0, 7)}-01`;
@@ -1608,6 +1724,7 @@ export default function V2LeadsDashboard({
         selectedPreset={selectedPreset}
         onPreset={choosePreset}
         isFetching={dashboardQuery.isLoading}
+        clientMode={clientMode}
       />
       {data.status === "NOT_CONFIGURED" ? (
         <NotConfiguredPanel data={data} />
@@ -1620,13 +1737,14 @@ export default function V2LeadsDashboard({
                 {fullDate(data.period.dateTo)}
               </p>
               <p className="mt-1 text-[11px] text-slate-400">
-                {data.source.name || "Fonte autenticada"} ·{" "}
-                {formatImportedAt(data.source.importedAt)}
+                {data.source.name || "Importação autenticada"} ·{" "}
+                {formatImportedAt(data.source.importedAt)} · importação inicial,
+                sem sincronização automática
               </p>
             </div>
             <div className="flex items-center gap-2 text-xs text-slate-500">
               <span className="h-2 w-2 rounded-full bg-emerald-500" /> Fonte
-              pronta {dashboardQuery.isLoading ? "· atualizando" : ""}
+              importada {dashboardQuery.isLoading ? "· atualizando" : ""}
             </div>
           </div>
           <div className="overflow-x-auto pb-1">
@@ -1650,14 +1768,22 @@ export default function V2LeadsDashboard({
             </div>
           </div>
           {activeTab === "Visão Geral" ? (
-            <OverviewTab data={data} onGoalUpdated={refresh} />
+            <OverviewTab
+              data={data}
+              onGoalUpdated={refresh}
+              clientMode={clientMode}
+            />
           ) : null}
           {activeTab === "Regiões" ? <RegionsTab data={data} /> : null}
           {activeTab === "Horários" ? <HoursTab data={data} /> : null}
           {activeTab === "Modelos" ? <ModelsTab data={data} /> : null}
           {activeTab === "Lojas & CRM" ? <StoresCrmTab data={data} /> : null}
           {activeTab === "Leads" ? (
-            <LeadsTableTab data={data} onPage={changePage} />
+            <LeadsTableTab
+              data={data}
+              onPage={changePage}
+              clientMode={clientMode}
+            />
           ) : null}
         </>
       )}

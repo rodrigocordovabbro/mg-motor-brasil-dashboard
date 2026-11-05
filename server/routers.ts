@@ -6,6 +6,12 @@ import { getV2Dashboard } from "./v2Leads";
 import { saveV2Goal } from "./v2Db";
 import { MEDIA_PLANS } from "./mediaPlans";
 import {
+  listDispatchReports,
+  getDispatchReport,
+  setDispatchManual,
+  getDispatchHistory,
+} from "./v2Dispatch";
+import {
   getDashboardCutoffDate,
   isIsoCalendarDate,
 } from "../shared/dashboardDates";
@@ -77,6 +83,31 @@ export const appRouter = router({
     logout: publicProcedure.mutation(({ ctx }) => logoutV2(ctx.req, ctx.res)),
   }),
   mediaPlan: router({ plans: v2Procedure.query(() => MEDIA_PLANS) }),
+  dispatch: router({
+    reports: v2Procedure.query(() => listDispatchReports()),
+    report: v2Procedure
+      .input(z.object({ reportId: z.number().int().positive() }))
+      .query(({ input }) => getDispatchReport(input.reportId)),
+    setManual: v2Procedure
+      .input(
+        z.object({
+          cellId: z.number().int().positive(),
+          isOk: z.boolean(),
+          expectedVersion: z.number().int().min(0),
+        })
+      )
+      .mutation(({ ctx, input }) =>
+        setDispatchManual(
+          input.cellId,
+          input.isOk,
+          input.expectedVersion,
+          ctx.v2User
+        )
+      ),
+    history: v2Procedure
+      .input(z.object({ cellId: z.number().int().positive() }))
+      .query(({ input }) => getDispatchHistory(input.cellId)),
+  }),
   leads: router({
     dashboard: v2Procedure
       .input(filters)

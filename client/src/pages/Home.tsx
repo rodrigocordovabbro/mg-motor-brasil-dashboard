@@ -1,19 +1,46 @@
-import { MediaPlanDashboard } from "@/components/MediaPlanDashboard";
-import V2LeadsDashboard, {
-  v2Trpc,
-  type V2AuthUser,
-} from "@/components/V2LeadsDashboard";
+import { trpc as v2Trpc } from "@/lib/trpc";
+import type { V2AuthUser } from "@/components/V2LeadsDashboard";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   ArrowRight,
   BarChart3,
+  Eye,
+  EyeOff,
   FileSpreadsheet,
   LockKeyhole,
   LogOut,
+  Send,
   ShieldCheck,
 } from "lucide-react";
-import { FormEvent, useState } from "react";
+import { FormEvent, lazy, Suspense, useEffect, useState } from "react";
+
+const V2LeadsDashboard = lazy(() => import("@/components/V2LeadsDashboard"));
+const V2DispatchControl = lazy(() => import("@/components/V2DispatchControl"));
+const MediaPlanDashboard = lazy(() =>
+  import("@/components/MediaPlanDashboard").then(module => ({
+    default: module.MediaPlanDashboard,
+  }))
+);
+
+type DashboardModule = "leads" | "media" | "dispatch";
+const CLIENT_MODE_STORAGE_KEY = "mg-v2-client-mode";
+
+function moduleFromLocation(): DashboardModule {
+  if (typeof window === "undefined") return "leads";
+  const module = new URLSearchParams(window.location.search).get("module");
+  return module === "media" || module === "dispatch" ? module : "leads";
+}
+
+function readClientModePreference() {
+  if (typeof window === "undefined") return true;
+  try {
+    const stored = window.localStorage.getItem(CLIENT_MODE_STORAGE_KEY);
+    return stored === null ? true : stored !== "false";
+  } catch {
+    return true;
+  }
+}
 
 function errorMessage(error: unknown) {
   if (error instanceof Error && error.message) return error.message;
@@ -161,12 +188,16 @@ function Topbar({
   user,
   module,
   onModuleChange,
+  clientMode,
+  onClientModeChange,
   onLogout,
   loggingOut,
 }: {
   user: V2AuthUser;
-  module: "leads" | "media";
-  onModuleChange: (module: "leads" | "media") => void;
+  module: DashboardModule;
+  onModuleChange: (module: DashboardModule) => void;
+  clientMode: boolean;
+  onClientModeChange: (value: boolean) => void;
   onLogout: () => void;
   loggingOut: boolean;
 }) {
@@ -182,23 +213,49 @@ function Topbar({
             type="button"
             aria-current={module === "leads" ? "page" : undefined}
             onClick={() => onModuleChange("leads")}
-            className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-bold transition sm:flex-none ${module === "leads" ? "bg-red-50 text-[#e2212d]" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"}`}
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-[11px] font-bold transition sm:flex-none sm:gap-2 sm:px-3 sm:text-xs ${module === "leads" ? "bg-red-50 text-[#e2212d]" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"}`}
           >
-            <BarChart3 className="h-4 w-4" /> Leads
+            <BarChart3 className="h-4 w-4 shrink-0" /> Leads V2
           </button>
           <button
             type="button"
             aria-current={module === "media" ? "page" : undefined}
             onClick={() => onModuleChange("media")}
-            className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-bold transition sm:flex-none ${module === "media" ? "bg-red-50 text-[#e2212d]" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"}`}
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-[11px] font-bold transition sm:flex-none sm:gap-2 sm:px-3 sm:text-xs ${module === "media" ? "bg-red-50 text-[#e2212d]" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"}`}
           >
-            <FileSpreadsheet className="h-4 w-4" /> Plano de Mídia
+            <FileSpreadsheet className="h-4 w-4 shrink-0" /> Plano de mídia
+          </button>
+          <button
+            type="button"
+            aria-current={module === "dispatch" ? "page" : undefined}
+            onClick={() => onModuleChange("dispatch")}
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-[11px] font-bold transition sm:flex-none sm:gap-2 sm:px-3 sm:text-xs ${module === "dispatch" ? "bg-red-50 text-[#e2212d]" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"}`}
+          >
+            <Send className="h-4 w-4 shrink-0" /> Controle de envios
           </button>
         </nav>
         <div className="order-2 flex items-center gap-2 sm:order-3">
-          <span className="hidden rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.12em] text-amber-700 md:inline-flex">
+          <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] text-amber-700 sm:px-2.5 sm:tracking-[0.12em]">
             Homologação
           </span>
+          <button
+            type="button"
+            aria-pressed={clientMode}
+            onClick={() => onClientModeChange(!clientMode)}
+            title={
+              clientMode
+                ? "Modo cliente ativo: nomes individuais ficam ocultos"
+                : "Modo operação ativo: visualização operacional"
+            }
+            className={`inline-flex min-h-9 items-center gap-1.5 rounded-xl border px-2.5 py-2 text-[11px] font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 sm:px-3 sm:text-xs ${clientMode ? "border-red-100 bg-red-50 text-[#b41b26]" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
+          >
+            {clientMode ? (
+              <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+            ) : (
+              <EyeOff className="h-3.5 w-3.5" aria-hidden="true" />
+            )}
+            {clientMode ? "Modo cliente" : "Modo operação"}
+          </button>
           <div className="hidden text-right md:block">
             <p className="text-xs font-bold text-slate-800">{user.username}</p>
             <p className="text-[10px] text-slate-400">Sessão ativa</p>
@@ -236,18 +293,45 @@ function AuthenticatedDashboard({
   user: V2AuthUser;
   onLoggedOut: () => void;
 }) {
-  const [module, setModule] = useState<"leads" | "media">("leads");
+  const [module, setModule] = useState<DashboardModule>(() =>
+    moduleFromLocation()
+  );
+  const [clientMode, setClientMode] = useState(readClientModePreference);
   const [loggingOut, setLoggingOut] = useState(false);
   const queryClient = useQueryClient();
   const logoutMutation = v2Trpc.auth.logout.useMutation();
+
+  useEffect(() => {
+    const onPopState = () => setModule(moduleFromLocation());
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        CLIENT_MODE_STORAGE_KEY,
+        clientMode ? "true" : "false"
+      );
+    } catch {
+      // A blocked preference should not prevent dashboard access.
+    }
+  }, [clientMode]);
+
+  const changeModule = (nextModule: DashboardModule) => {
+    setModule(nextModule);
+    const url = new URL(window.location.href);
+    url.searchParams.set("module", nextModule);
+    window.history.replaceState({}, "", url);
+  };
 
   const logout = async () => {
     setLoggingOut(true);
     try {
       await logoutMutation.mutateAsync();
     } finally {
-      queryClient.clear();
       onLoggedOut();
+      queryClient.clear();
       setLoggingOut(false);
     }
   };
@@ -257,16 +341,31 @@ function AuthenticatedDashboard({
       <Topbar
         user={user}
         module={module}
-        onModuleChange={setModule}
+        onModuleChange={changeModule}
+        clientMode={clientMode}
+        onClientModeChange={setClientMode}
         onLogout={() => void logout()}
         loggingOut={loggingOut}
       />
       <main className="mx-auto max-w-[1680px] px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
-        {module === "leads" ? (
-          <V2LeadsDashboard authenticated />
-        ) : (
-          <MediaPlanDashboard locale="pt-BR" />
-        )}
+        <Suspense
+          fallback={
+            <div
+              role="status"
+              className="rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-500"
+            >
+              Carregando painel…
+            </div>
+          }
+        >
+          {module === "leads" ? (
+            <V2LeadsDashboard authenticated clientMode={clientMode} />
+          ) : module === "media" ? (
+            <MediaPlanDashboard locale="pt-BR" />
+          ) : (
+            <V2DispatchControl authenticated clientMode={clientMode} />
+          )}
+        </Suspense>
       </main>
     </div>
   );

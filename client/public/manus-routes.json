@@ -1,1 +1,1 @@
-{"routes":[{"path":"/","title":"MG Motors — Leads e Plano de Mídia V2"}]}
+{"routes":[{"path":"/","title":"MG Motors — Dashboard V2"},{"path":"/?module=leads","title":"MG Motors — Leads"},{"path":"/?module=media","title":"MG Motors — Plano de Mídia"},{"path":"/?module=dispatch","title":"MG Motors — Controle de Envios"}]}

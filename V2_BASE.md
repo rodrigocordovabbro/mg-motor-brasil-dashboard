@@ -25,3 +25,11 @@ Login usuário/senha próprio da V2 com conta temporária autorizada. Senha some
 ## Git e publicação
 
 Desenvolvimento no GitHub autorizado ocorre somente em `dashboard-v2`, sem force push ou modificação da `main`. O recurso Manus novo usa seu próprio repositório gerenciado e a `main` desse repositório separado apenas para checkpoints. Checkpoint, carga de dados e publicação são operações diferentes. A publicação inicial do novo recurso mantém visibilidade privada/homologação; nenhuma configuração ou endereço V1 foi alterado.
+
+## Controle de Envios e experiência para cliente
+
+A nova aba reproduz exclusivamente a estrutura da aba `Envios` do arquivo enviado pelo usuário: cadastro das lojas/CRM/integrações, grupos diários SYONET, Manual e Vol. Lead e totais da fonte. `Como ler` é ignorada por determinação posterior. Dados do arquivo estão somente no banco protegido da V2, não no bundle frontend nem no Git. A tabela diferencia uma fotografia importada de qualquer integração live; o calendário de despacho do arquivo não é recalculado a partir da criação de Leads.
+
+O usuário pode marcar, desmarcar ou reconfirmar OK em Manual. O dado original permanece imutável; a nova validação e seu histórico ficam em tabelas separadas, com versionamento, identidade autenticada real, data/hora e responsável pelo fluxo Wini. OK preexistente no arquivo não significa validação atribuída ao Wini. Conflitos concorrentes são rejeitados com mensagem e necessidade de atualizar, sem sobrescrever silenciosamente outra pessoa. Volumes/SYONET/integrações são somente leitura; marcar o check não envia e-mail, não entrega ao CRM e não altera contagens de Leads. A importação é idempotente por SHA256 e não apaga validações posteriores.
+
+A revisão de UX mantém o padrão branco clean MG, organização e leitura dos gráficos/tabelas, navegação entre três módulos e modo cliente que mascara nomes pessoais na apresentação. Esse modo de privacidade é uma opção de apresentação; o controle real de acesso continua na sessão/API autenticada. Fontes ausentes continuam indisponíveis e nenhum dado fictício foi acrescentado. Edição/checkpoint não é publicação automática; o deploy anterior continua intacto até autorização ou ação de publicar.

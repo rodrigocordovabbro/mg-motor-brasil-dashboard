@@ -259,7 +259,7 @@ export function MediaPlanDashboard({
 
   return (
     <main className="mx-auto min-h-[calc(100vh-88px)] max-w-[1680px] px-4 pb-12 pt-6 lg:px-6">
-      <section className="overflow-hidden rounded-3xl border border-white/[0.07] bg-[radial-gradient(circle_at_top_right,rgba(226,33,45,0.12),transparent_38%),linear-gradient(140deg,#0c1422,#080e18)] p-5 shadow-2xl shadow-black/20 sm:p-7">
+      <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.06)] sm:p-7">
         <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
           <div className="max-w-3xl">
             <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#f0525c]">
@@ -269,7 +269,7 @@ export function MediaPlanDashboard({
             <h1 className="mt-3 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
               {isEnglish ? plan.titleEn : plan.titlePt}
             </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
               {copy.financialDescription}
             </p>
           </div>
@@ -298,7 +298,7 @@ export function MediaPlanDashboard({
             <div
               key={id}
               data-testid={`media-plan-kpi-${id}`}
-              className="rounded-2xl border border-white/[0.06] bg-white/90 p-4"
+              className="rounded-2xl border border-slate-100 bg-slate-50 p-4"
             >
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-semibold uppercase tracking-[0.13em] text-slate-500">
@@ -316,7 +316,7 @@ export function MediaPlanDashboard({
           {plan.total.impressions != null && (
             <span>
               {copy.impressions}:{" "}
-              <strong className="text-slate-300">
+              <strong className="text-slate-800">
                 {formatNumber(plan.total.impressions, locale)}
               </strong>
             </span>
@@ -325,7 +325,7 @@ export function MediaPlanDashboard({
             plan.contextItems.map(item => (
               <span key={item.id}>
                 {isEnglish ? item.labelEn : item.labelPt}:{" "}
-                <strong className="text-slate-300">
+                <strong className="text-slate-800">
                   {formatCurrency(item.value, locale)}
                 </strong>
                 {item.notePt ? (
@@ -338,17 +338,17 @@ export function MediaPlanDashboard({
           ) : (
             <>
               <span>
-                {isEnglish ? "Line-up gross budget" : "Verba bruta Line-up"}:{" "}
-                <strong className="text-slate-300">
+                {isEnglish ? "Line-up gross budget" : "Verba bruta Line-up"}: {" "}
+                <strong className="text-slate-800">
                   {formatCurrency(plan.totals[0]?.investment ?? 0, locale)}
                 </strong>
               </span>
               <span>
                 {isEnglish
                   ? "Dedicated MG4 Urban gross budget"
-                  : "Verba bruta dedicada MG4 Urban"}
+                : "Verba bruta dedicada MG4 Urban"}
                 :{" "}
-                <strong className="text-slate-300">
+                <strong className="text-slate-800">
                   {formatCurrency(plan.totals[1]?.investment ?? 0, locale)}
                 </strong>
               </span>
@@ -358,7 +358,7 @@ export function MediaPlanDashboard({
       </section>
 
       <section className="mt-5 grid gap-5 xl:grid-cols-[1.45fr_0.8fr]">
-        <div className="rounded-2xl border border-white/[0.07] bg-white p-5">
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="text-base font-semibold text-slate-900">
@@ -422,7 +422,7 @@ export function MediaPlanDashboard({
         </div>
 
         <div className="space-y-5">
-          <div className="rounded-2xl border border-white/[0.07] bg-white p-5">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
             <div className="flex items-center justify-between">
               <h2 className="text-base font-semibold text-slate-900">
                 {copy.product}
@@ -433,7 +433,7 @@ export function MediaPlanDashboard({
               {plan.totals.map(total => (
                 <article
                   key={total.label}
-                  className="rounded-xl border border-white/[0.06] bg-white p-4"
+                  className="rounded-xl border border-slate-100 bg-slate-50 p-4"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <strong className="text-sm text-slate-900">
@@ -451,7 +451,7 @@ export function MediaPlanDashboard({
                       <span className="block text-[9px] uppercase tracking-wider text-slate-600">
                         {copy.gross}
                       </span>
-                      <strong className="mt-1 block text-slate-300">
+                      <strong className="mt-1 block text-slate-800">
                         {formatCurrency(total.investment, locale)}
                       </strong>
                     </div>
@@ -459,7 +459,7 @@ export function MediaPlanDashboard({
                       <span className="block text-[9px] uppercase tracking-wider text-slate-600">
                         {copy.commission}
                       </span>
-                      <strong className="mt-1 block text-slate-300">
+                      <strong className="mt-1 block text-slate-800">
                         {total.commission == null
                           ? unavailableValue
                           : formatCurrency(total.commission, locale)}
@@ -469,7 +469,7 @@ export function MediaPlanDashboard({
                       <span className="block text-[9px] uppercase tracking-wider text-slate-600">
                         {copy.net}
                       </span>
-                      <strong className="mt-1 block text-slate-300">
+                      <strong className="mt-1 block text-slate-800">
                         {total.netInvestment == null
                           ? unavailableValue
                           : formatCurrency(total.netInvestment, locale)}
@@ -479,7 +479,7 @@ export function MediaPlanDashboard({
                       <span className="block text-[9px] uppercase tracking-wider text-slate-600">
                         {copy.actual}
                       </span>
-                      <strong className="mt-1 block text-slate-300">
+                      <strong className="mt-1 block text-slate-800">
                         {total.actualInvestment == null
                           ? unavailableValue
                           : formatCurrency(total.actualInvestment, locale)}
@@ -487,19 +487,19 @@ export function MediaPlanDashboard({
                     </div>
                   </div>
                   {(total.leads != null || total.cpl != null) && (
-                    <div className="mt-3 flex gap-5 border-t border-white/[0.05] pt-3 text-[10px] text-slate-500">
+                    <div className="mt-3 flex gap-5 border-t border-slate-200 pt-3 text-[10px] text-slate-500">
                       {total.leads != null && (
                         <span>
-                          {copy.leads}:{" "}
-                          <strong className="text-slate-300">
+                          {copy.leads}: {" "}
+                          <strong className="text-slate-800">
                             {formatNumber(total.leads, locale)}
                           </strong>
                         </span>
                       )}
                       {total.cpl != null && (
                         <span>
-                          CPL:{" "}
-                          <strong className="text-slate-300">
+                          CPL: {" "}
+                          <strong className="text-slate-800">
                             {formatCurrency(total.cpl, locale, 2)}
                           </strong>
                         </span>
@@ -511,7 +511,7 @@ export function MediaPlanDashboard({
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white/[0.07] bg-white p-5">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
             <h2 className="text-base font-semibold text-slate-900">
               {copy.reconciliation}
             </h2>
@@ -519,7 +519,7 @@ export function MediaPlanDashboard({
               {financialReconciliation.map(item => (
                 <div key={item.label}>
                   <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium text-slate-300">
+                    <span className="font-medium text-slate-700">
                       {item.label}
                     </span>
                     <span className="text-slate-500">
@@ -528,7 +528,7 @@ export function MediaPlanDashboard({
                         : formatCurrency(item.value, locale)}
                     </span>
                   </div>
-                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
                     <div
                       className="h-full rounded-full bg-gradient-to-r from-[#9f1520] to-[#ef3340]"
                       style={{
@@ -543,8 +543,8 @@ export function MediaPlanDashboard({
         </div>
       </section>
 
-      <section className="mt-5 overflow-hidden rounded-2xl border border-white/[0.07] bg-white">
-        <div className="flex items-center justify-between border-b border-white/[0.06] px-5 py-4">
+      <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
           <div>
             <h2 className="text-base font-semibold text-slate-900">
               {copy.details}
@@ -573,47 +573,47 @@ export function MediaPlanDashboard({
                 <th className="px-4 py-3 text-right">CPL</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/[0.05] text-xs">
+            <tbody className="divide-y divide-slate-100 text-xs">
               {plan.rows.map(row => (
                 <tr
                   key={row.id}
-                  className="transition-colors hover:bg-white/[0.02]"
+                  className="transition-colors hover:bg-slate-50"
                 >
-                  <td className="px-4 py-3 font-medium text-slate-200">
+                  <td className="px-4 py-3 font-medium text-slate-800">
                     {row.channel}
                   </td>
-                  <td className="px-4 py-3 text-slate-400">
+                  <td className="px-4 py-3 text-slate-600">
                     {row.publisher ?? "—"}
                   </td>
-                  <td className="px-4 py-3 text-slate-400">{row.product}</td>
-                  <td className="px-4 py-3 text-slate-400">
+                  <td className="px-4 py-3 text-slate-600">{row.product}</td>
+                  <td className="px-4 py-3 text-slate-600">
                     {(isEnglish ? row.objectiveEn : row.objectivePt) ?? "—"}
                   </td>
-                  <td className="px-4 py-3 text-right font-medium text-slate-200">
+                  <td className="px-4 py-3 text-right font-medium text-slate-800">
                     {formatCurrency(row.investment, locale, 2)}
                   </td>
-                  <td className="px-4 py-3 text-right text-slate-400">
+                  <td className="px-4 py-3 text-right text-slate-600">
                     {row.commission == null
                       ? unavailableValue
                       : formatCurrency(row.commission, locale, 2)}
                   </td>
-                  <td className="px-4 py-3 text-right text-slate-400">
+                  <td className="px-4 py-3 text-right text-slate-600">
                     {row.netInvestment == null
                       ? unavailableValue
                       : formatCurrency(row.netInvestment, locale, 2)}
                   </td>
-                  <td className="px-4 py-3 text-right text-slate-400">
+                  <td className="px-4 py-3 text-right text-slate-600">
                     {row.actualInvestment == null
                       ? unavailableValue
                       : formatCurrency(row.actualInvestment, locale, 2)}
                   </td>
-                  <td className="px-4 py-3 text-slate-300">
+                  <td className="px-4 py-3 text-slate-700">
                     {statusLabel(row.status, locale)}
                   </td>
-                  <td className="px-4 py-3 text-right text-slate-300">
+                  <td className="px-4 py-3 text-right text-slate-700">
                     {row.leads == null ? "—" : formatNumber(row.leads, locale)}
                   </td>
-                  <td className="px-4 py-3 text-right text-slate-300">
+                  <td className="px-4 py-3 text-right text-slate-700">
                     {row.cpl == null ? "—" : formatCurrency(row.cpl, locale, 2)}
                   </td>
                 </tr>
@@ -621,11 +621,11 @@ export function MediaPlanDashboard({
             </tbody>
           </table>
         </div>
-        <div className="border-t border-white/[0.06] px-5 py-3 text-[11px] text-slate-600">
+        <div className="border-t border-slate-100 px-5 py-3 text-[11px] text-slate-600">
           {copy.unavailable}: os campos permanecem como N/D ou —, sem
           preenchimento artificial.
         </div>
-        <div className="flex items-start gap-2 border-t border-white/[0.06] px-5 py-4 text-[11px] leading-5 text-slate-600">
+        <div className="flex items-start gap-2 border-t border-slate-100 px-5 py-4 text-[11px] leading-5 text-slate-600">
           <MousePointerClick className="mt-0.5 h-4 w-4 shrink-0" />
           <span>{isEnglish ? plan.sourceNoteEn : plan.sourceNotePt}</span>
         </div>
