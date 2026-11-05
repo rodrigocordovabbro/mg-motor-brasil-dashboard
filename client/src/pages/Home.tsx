@@ -203,7 +203,7 @@ function Topbar({
 }) {
   return (
     <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/95 backdrop-blur">
-      <div className="mx-auto flex min-h-[68px] max-w-[1680px] flex-wrap items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto flex min-h-[68px] w-full flex-wrap items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
         <BrandMark />
         <nav
           className="order-3 flex w-full gap-1 sm:order-2 sm:w-auto"
@@ -347,7 +347,7 @@ function AuthenticatedDashboard({
         onLogout={() => void logout()}
         loggingOut={loggingOut}
       />
-      <main className="mx-auto max-w-[1680px] px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
+      <main className="mx-auto w-full px-3 py-5 sm:px-4 lg:px-5 lg:py-6">
         <Suspense
           fallback={
             <div

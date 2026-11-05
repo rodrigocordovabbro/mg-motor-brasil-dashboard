@@ -11,6 +11,10 @@ import {
   setDispatchManual,
   getDispatchHistory,
 } from "./v2Dispatch";
+import {
+  getLeadControl,
+  prepareLeadControl,
+} from "./v2DispatchLeads";
 import { prepareDispatchDay } from "./v2DispatchDaily";
 import { importDispatchWorkbook } from "./v2DispatchXlsx";
 import {
@@ -90,6 +94,9 @@ export const appRouter = router({
     report: v2Procedure
       .input(z.object({ reportId: z.number().int().positive() }))
       .query(({ input }) => getDispatchReport(input.reportId)),
+    leadControl: v2Procedure
+      .input(z.object({ reportId: z.number().int().positive(), filters }))
+      .query(({ input }) => getLeadControl(input.reportId, input.filters)),
     setManual: v2Procedure
       .input(
         z.object({
@@ -112,6 +119,9 @@ export const appRouter = router({
     prepareDay: v2Procedure
       .input(z.object({ reportId: z.number().int().positive() }))
       .mutation(({ input }) => prepareDispatchDay(input.reportId)),
+    prepareLeadControl: v2Procedure
+      .input(z.object({ reportId: z.number().int().positive(), filters }))
+      .mutation(({ input }) => prepareLeadControl(input.reportId, input.filters)),
     importWorkbook: v2Procedure
       .input(
         z.object({

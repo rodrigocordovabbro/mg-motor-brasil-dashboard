@@ -15,6 +15,13 @@ export type DispatchDay = {
   pending?: boolean;
 };
 
+export type DispatchLeadSource = {
+  status: "READY" | "NOT_CONFIGURED";
+  name: string;
+  importedAt: string | null;
+  total: number | null;
+};
+
 export type DispatchValidation = {
   isOk: boolean;
   version: number;
@@ -30,6 +37,8 @@ export type DispatchCell = {
   syonet: string;
   sourceManual: string;
   volume: number | null;
+  /** Computed from v2_leads when volumeMode is dashboard-leads. */
+  leadVolume?: number | null;
   sourcePending?: boolean;
   validation: DispatchValidation | null;
 };
@@ -42,6 +51,10 @@ export type DispatchRow = {
   syonetIntegration: string;
   bbroIntegration: string;
   cells: DispatchCell[];
+  /** Original dealer values that were assigned to this registered row. */
+  rawDealers?: string[];
+  /** True only when the raw dealer was deterministically matched to metadata. */
+  metadataMatched?: boolean;
 };
 
 export type DispatchReport = DispatchReportSummary & {
@@ -50,8 +63,8 @@ export type DispatchReport = DispatchReportSummary & {
   days: DispatchDay[];
   rows: DispatchRow[];
   totals: {
-    computed: number;
-    sourceDailySum: number;
+    computed: number | null;
+    sourceDailySum: number | null;
     declaredInInstructions: number | null;
     sourceManualOk: number;
     auditedOk: number;
@@ -59,6 +72,9 @@ export type DispatchReport = DispatchReportSummary & {
     pendingDays?: number;
   };
   notes: string[];
+  /** Optional contract used by the lead-control view; legacy reports omit it. */
+  volumeMode?: "dashboard-leads";
+  leadSource?: DispatchLeadSource;
 };
 
 export type DispatchAuditEntry = {

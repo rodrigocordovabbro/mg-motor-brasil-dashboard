@@ -26,6 +26,7 @@ export function countBy(rows: V2Lead[], key: keyof V2Lead): V2Count[] {
       (a, b) => b.count - a.count || a.label.localeCompare(b.label, "pt-BR")
     );
 }
+
 export function makePacing(
   current: number,
   goal: number | null,
@@ -65,27 +66,92 @@ export function makePacing(
             : "BEHIND",
   };
 }
+
 const known = (values: V2Count[]) =>
   values.filter(v => v.label !== "Não informado");
-const matches = (row: V2Lead, input: V2Filters) =>
-  (!input.model || row.model === input.model) &&
-  (!input.channel || row.channel === input.channel) &&
-  (!input.campaign || row.campaign === input.campaign) &&
-  (!input.dealer || row.dealer === input.dealer) &&
-  (!input.search ||
-    [
-      row.name,
-      row.model,
-      row.channel,
-      row.campaign,
-      row.dealer,
-      row.city,
-      row.state,
-    ].some(value =>
-      value
-        .toLocaleLowerCase("pt-BR")
-        .includes(input.search!.toLocaleLowerCase("pt-BR"))
-    ));
+
+/** The one canonical dimension/search predicate used by dashboard and dispatch. */
+export function matchesV2LeadFilters(
+  row: V2Lead,
+  input: Pick<
+    V2Filters,
+    "model" | "channel" | "campaign" | "dealer" | "search"
+  >
+): boolean {
+  const lowerSearch = input.search?.toLocaleLowerCase("pt-BR");
+  return (
+    (!input.model || row.model === input.model) &&
+    (!input.channel || row.channel === input.channel) &&
+    (!input.campaign || row.campaign === input.campaign) &&
+    (!input.dealer || row.dealer === input.dealer) &&
+    (!lowerSearch ||
+      [
+        row.name,
+        row.model,
+        row.channel,
+        row.campaign,
+        row.dealer,
+        row.city,
+        row.state,
+      ].some(value =>
+        value.toLocaleLowerCase("pt-BR").includes(lowerSearch)
+      ))
+  );
+}
+
+/** Pure row selection shared by the dashboard and dashboard-lead dispatch. */
+export function filterV2LeadRows(
+  rows: V2Lead[],
+  input: V2Filters,
+  now = new Date()
+): V2Lead[] {
+  const period = resolveDashboardPeriod(input.dateFrom, input.dateTo, now);
+  return rows.filter(
+    row =>
+      row.date >= period.dateFrom &&
+      row.date <= period.dateTo &&
+      matchesV2LeadFilters(row, input)
+  );
+}
+
+export function mapV2LeadRow(row: RowDataPacket): V2Lead {
+  return {
+    id: Number(row.id),
+    date: String(row.date ?? row.leadDate),
+    hour: row.hour == null && row.leadHour == null
+      ? null
+      : Number(row.hour ?? row.leadHour),
+    name: String(row.name),
+    model: String(row.model),
+    version: String(row.version),
+    channel: String(row.channel),
+    campaign: String(row.campaign),
+    dealer: String(row.dealer),
+    city: String(row.city),
+    state: String(row.state),
+    crm: String(row.crm),
+  };
+}
+
+type LeadPeriod = Pick<V2Filters, "dateFrom" | "dateTo">;
+
+/** Reads the shared v2_leads source without using the Envios workbook. */
+export async function readV2LeadsForPeriod(
+  periodOrDateFrom: LeadPeriod | string,
+  dateTo?: string
+): Promise<V2Lead[]> {
+  const dateFrom =
+    typeof periodOrDateFrom === "string"
+      ? periodOrDateFrom
+      : periodOrDateFrom.dateFrom;
+  const end = typeof periodOrDateFrom === "string" ? dateTo : periodOrDateFrom.dateTo;
+  if (!end) throw new Error("Período de leads incompleto");
+  const [raw] = await getV2Pool().execute<RowDataPacket[]>(
+    "SELECT id,leadDate AS date,leadHour AS hour,name,model,version,channel,campaign,dealer,city,state,crm FROM v2_leads WHERE leadDate>=? AND leadDate<=?",
+    [dateFrom, end]
+  );
+  return raw.map(mapV2LeadRow);
+}
 
 export function aggregateV2Leads(
   all: V2Lead[],
@@ -98,11 +164,12 @@ export function aggregateV2Leads(
   const baseRows = all.filter(
     row => row.date >= period.dateFrom && row.date <= period.dateTo
   );
-  const rows = baseRows.filter(row => matches(row, input));
+  const rows = filterV2LeadRows(all, input, now);
   const monthFrom = `${period.dateTo.slice(0, 7)}-01`;
-  const mtdRows = all.filter(
-    row =>
-      row.date >= monthFrom && row.date <= period.dateTo && matches(row, input)
+  const mtdRows = filterV2LeadRows(
+    all,
+    { ...input, dateFrom: monthFrom, dateTo: period.dateTo },
+    now
   );
   // A global monthly goal is not compared with a single-channel/model/dealer subset.
   const narrowed = Boolean(
@@ -259,28 +326,13 @@ export async function getV2Dashboard(input: V2Filters) {
   };
   if (sourceRows[0]) {
     source.name = String(sourceRows[0].name);
-    source.importedAt = new Date(sourceRows[0].importedAt).toISOString();
+    source.importedAt = sourceRows[0].importedAt
+      ? new Date(sourceRows[0].importedAt).toISOString()
+      : null;
     source.totalRows = Number(sourceRows[0].totalRows);
     source.invalidDateRows = Number(sourceRows[0].invalidDateRows);
   }
-  const [raw] = await getV2Pool().execute<RowDataPacket[]>(
-    "SELECT id,leadDate AS date,leadHour AS hour,name,model,version,channel,campaign,dealer,city,state,crm FROM v2_leads WHERE leadDate>=? AND leadDate<=?",
-    [from, period.dateTo]
-  );
-  const rows = raw.map(row => ({
-    id: Number(row.id),
-    date: String(row.date),
-    hour: row.hour == null ? null : Number(row.hour),
-    name: String(row.name),
-    model: String(row.model),
-    version: String(row.version),
-    channel: String(row.channel),
-    campaign: String(row.campaign),
-    dealer: String(row.dealer),
-    city: String(row.city),
-    state: String(row.state),
-    crm: String(row.crm),
-  }));
+  const rows = await readV2LeadsForPeriod(from, period.dateTo);
   return aggregateV2Leads(
     rows,
     input,

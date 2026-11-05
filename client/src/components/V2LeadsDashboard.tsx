@@ -1470,8 +1470,22 @@ function CrmDonut({ items }: { items: V2DistributionItem[] }) {
   );
 }
 
-function StoresCrmTab() {
-  return <V2DispatchControl authenticated clientMode={false} embedded />;
+function StoresCrmTab({
+  filters,
+  onPeriodChange,
+}: {
+  filters: V2DashboardFilters;
+  onPeriodChange: (from: string, to: string) => void;
+}) {
+  return (
+    <V2DispatchControl
+      authenticated
+      clientMode={false}
+      embedded
+      filters={filters}
+      onPeriodChange={onPeriodChange}
+    />
+  );
 }
 
 function LeadsTableTab({
@@ -1747,7 +1761,37 @@ export default function V2LeadsDashboard({
             ))}
           </div>
         </div>
-        <StoresCrmTab />
+        {data ? (
+          <FilterBar
+            draft={draft}
+            setDraft={setDraft}
+            options={data.options}
+            cutoff={cutoff}
+            onSearch={applyFilters}
+            dateError={dateError}
+            selectedPreset={selectedPreset}
+            onPreset={choosePreset}
+            isFetching={dashboardQuery.isFetching}
+            clientMode={clientMode}
+          />
+        ) : null}
+        <StoresCrmTab
+          filters={applied}
+          onPeriodChange={(from, to) => {
+            setDraft(current => ({
+              ...current,
+              dateFrom: from,
+              dateTo: to,
+              page: 1,
+            }));
+            setApplied(current => ({
+              ...current,
+              dateFrom: from,
+              dateTo: to,
+              page: 1,
+            }));
+          }}
+        />
       </div>
     );
   if (dashboardQuery.isLoading && !data) return <LoadingPanel />;

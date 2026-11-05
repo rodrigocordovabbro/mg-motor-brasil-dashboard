@@ -21,6 +21,7 @@ vi.mock("@/lib/trpc", () => ({
   trpc: {
     useUtils: () => ({
       dispatch: {
+        leadControl: { invalidate: vi.fn(), setData: vi.fn() },
         report: { invalidate: vi.fn(), setData: vi.fn() },
         reports: { invalidate: vi.fn() },
         history: { invalidate: vi.fn() },
@@ -28,9 +29,16 @@ vi.mock("@/lib/trpc", () => ({
     }),
     dispatch: {
       reports: { useQuery: () => query(state.list, state.error) },
-      report: { useQuery: () => query(state.report) },
+      leadControl: { useQuery: () => query(state.report) },
+      report: {
+        useQuery: () => {
+          throw new Error(
+            "Controle ativo não pode consultar volumes do arquivo Envios"
+          );
+        },
+      },
       history: { useQuery: () => query([]) },
-      prepareDay: {
+      prepareLeadControl: {
         useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
       },
       importWorkbook: {
@@ -169,7 +177,7 @@ describe("Lojas & CRM operational clone", () => {
       React.createElement(TestControl, { authenticated: true, embedded: true })
     );
     expect(html).toContain("Aguardando fonte");
-    expect(html).toContain("Volume aguardando arquivo atualizado");
+    expect(html).toContain("Volume indisponível na base de Leads");
     expect(
       html.match(/<input[^>]+aria-label="Manual Pendente[^>]+>/)?.[0]
     ).not.toContain('checked=""');

@@ -1,5 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { getDashboardCutoffDate } from "@shared/dashboardDates";
+import type { V2Filters } from "@shared/v2Types";
 import type {
   DispatchAuditEntry,
   DispatchCell,
@@ -15,7 +16,6 @@ import {
   LockKeyhole,
   RefreshCw,
   Search,
-  Upload,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -29,16 +29,16 @@ const GROUP_GRAY = "#D9D9D9";
 const DATE_GRAY = "#F2F2F2";
 
 const STICKY_COLUMNS = [
-  { width: 310, left: 0 },
-  { width: 190, left: 310 },
-  { width: 100, left: 500 },
-  { width: 100, left: 600 },
+  { width: 370, left: 0 },
+  { width: 230, left: 370 },
+  { width: 120, left: 600 },
+  { width: 120, left: 720 },
 ] as const;
 
 const DAILY_COLUMNS = [
-  { key: "syonet", label: "SYONET", width: 70 },
-  { key: "manual", label: "Manual", width: 160 },
-  { key: "volume", label: "Vol. Lead", width: 80 },
+  { key: "syonet", label: "SYONET", width: 100 },
+  { key: "manual", label: "Manual", width: 220 },
+  { key: "volume", label: "Vol. Lead", width: 105 },
 ] as const;
 
 type ManualFilter = "all" | "pending" | "ok";
@@ -47,6 +47,8 @@ type V2DispatchControlProps = {
   authenticated?: boolean;
   clientMode?: boolean;
   embedded?: boolean;
+  filters?: V2Filters;
+  onPeriodChange?: (dateFrom: string, dateTo: string) => void;
 };
 
 function numberFormat(value: number | null) {
@@ -315,11 +317,11 @@ function ManualCell({
           type="checkbox"
           checked={isOk}
           onChange={event => onToggle(cell, event.target.checked)}
-          disabled={saving}
+          disabled={saving || cell.id < 1}
           aria-label={`Manual ${statusLabel} · ${storeName} · ${cell.date}`}
           className="h-5 w-5 shrink-0 accent-[#1F3864] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
         />
-        <span className="min-w-0 truncate text-[11px] font-semibold text-slate-700">
+        <span className="min-w-0 whitespace-nowrap text-xs font-semibold text-slate-700">
           {statusLabel}
         </span>
       </label>
@@ -328,7 +330,7 @@ function ManualCell({
           <button
             type="button"
             onClick={() => onToggle(cell, true)}
-            disabled={saving}
+            disabled={saving || cell.id < 1}
             className="rounded px-1 py-0.5 text-[10px] font-bold text-[#1F3864] underline-offset-2 transition hover:bg-slate-100 hover:underline disabled:cursor-wait disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
             title="Confirmar o OK do arquivo no fluxo Wini, registrando a conta autenticada"
             aria-label={`Confirmar OK do arquivo · ${storeName} · ${cell.date}`}
@@ -341,7 +343,12 @@ function ManualCell({
             <button
               type="button"
               className="rounded p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
-              title="Abrir histórico desta célula"
+              disabled={cell.id < 1}
+              title={
+                cell.id < 1
+                  ? "Use Atualizar para preparar esta célula"
+                  : "Abrir histórico desta célula"
+              }
               aria-label={`Histórico Manual · ${storeName} · ${cell.date}`}
             >
               <Clock3 className="h-3.5 w-3.5" aria-hidden="true" />
@@ -411,9 +418,9 @@ function DispatchTable({
     if (scrollRef.current)
       scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
   }, [lastDate]);
-  const tableMinWidth = 700 + report.days.length * 310;
+  const tableMinWidth = 840 + report.days.length * 425;
   const crmResponsibleLabel = (row: DispatchRow) =>
-    clientMode ? "Restrito" : row.crmResponsible;
+    clientMode ? "Restrito" : row.crmResponsible || "Sem cadastro CRM";
 
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
@@ -472,7 +479,7 @@ function DispatchTable({
                 rowSpan={2}
                 aria-hidden="true"
                 className="sticky left-0 z-50 border-b border-r border-slate-300 bg-white"
-                style={{ left: 0, width: 700, minWidth: 700 }}
+                style={{ left: 0, width: 840, minWidth: 840 }}
               />
               {report.days.map(day => (
                 <th
@@ -541,17 +548,29 @@ function DispatchTable({
                 <tr key={row.id} className="group">
                   <td
                     data-freeze="store"
-                    className="sticky left-0 z-20 border-b border-r border-slate-200 px-3 py-2.5 align-top text-[12px] font-semibold text-slate-800 group-hover:bg-slate-50"
+                    className="sticky left-0 z-20 border-b border-r border-slate-200 px-3 py-2.5 align-top text-[13px] font-semibold text-slate-800 group-hover:bg-slate-50"
                     style={{ ...stickyStyle(0), backgroundColor: "#ffffff" }}
                     title={row.storeName}
                   >
                     <span className="whitespace-pre-wrap break-words">
                       {row.storeName}
                     </span>
+                    {row.rawDealers?.length ? (
+                      <span
+                        className="mt-1 block text-[11px] font-normal text-slate-500"
+                        title={row.rawDealers.join(" · ")}
+                      >
+                        {row.rawDealers.length > 1
+                          ? `${row.rawDealers.length} nomes originais vinculados`
+                          : row.rawDealers[0] !== row.storeName
+                            ? `Base: ${row.rawDealers[0]}`
+                            : ""}
+                      </span>
+                    ) : null}
                   </td>
                   <td
                     data-freeze="meta"
-                    className="sticky z-20 border-b border-r border-slate-200 px-3 py-2.5 align-top text-[11px] text-slate-600 group-hover:bg-slate-50"
+                    className="sticky z-20 border-b border-r border-slate-200 px-3 py-2.5 align-top text-xs text-slate-600 group-hover:bg-slate-50"
                     style={{ ...stickyStyle(1), backgroundColor: "#ffffff" }}
                     title={
                       clientMode
@@ -567,20 +586,20 @@ function DispatchTable({
                     data-freeze="meta"
                     className="sticky z-20 border-b border-r border-slate-200 px-2 py-2.5 align-top text-center text-[10px] text-slate-600 group-hover:bg-slate-50"
                     style={{ ...stickyStyle(2), backgroundColor: "#ffffff" }}
-                    title={row.syonetIntegration}
+                    title={row.syonetIntegration || "N/D"}
                   >
                     <span className="whitespace-pre-wrap break-words">
-                      {row.syonetIntegration}
+                      {row.syonetIntegration || "N/D"}
                     </span>
                   </td>
                   <td
                     data-freeze="meta"
                     className="sticky z-20 border-b border-r border-slate-200 px-2 py-2.5 align-top text-center text-[10px] text-slate-600 group-hover:bg-slate-50"
                     style={{ ...stickyStyle(3), backgroundColor: "#ffffff" }}
-                    title={row.bbroIntegration}
+                    title={row.bbroIntegration || "N/D"}
                   >
                     <span className="whitespace-pre-wrap break-words">
-                      {row.bbroIntegration}
+                      {row.bbroIntegration || "N/D"}
                     </span>
                   </td>
                   {report.days.flatMap(day => {
@@ -610,7 +629,7 @@ function DispatchTable({
                     return [
                       <td
                         key={`${cell.id}-syonet`}
-                        className="border-b border-r border-slate-200 px-2 py-2.5 text-center text-[11px] text-slate-600"
+                        className="border-b border-r border-slate-200 px-2 py-2.5 text-center text-xs text-slate-600"
                         title={`SYONET · ${cell.syonet || (cell.volume === null ? "Aguardando" : "—")}`}
                       >
                         {cell.syonet ||
@@ -638,7 +657,7 @@ function DispatchTable({
                         className="border-b border-r border-slate-200 px-2 py-2.5 text-center text-[11px] font-semibold text-slate-700"
                         title={
                           cell.volume === null
-                            ? "Volume aguardando arquivo atualizado"
+                            ? "Volume indisponível na base de Leads"
                             : `Vol. Lead · ${cell.volume}`
                         }
                       >
@@ -668,12 +687,12 @@ function DispatchTable({
                 className="sticky left-0 z-20 border-r border-t border-slate-300 px-3 py-3 text-left text-[10px] font-bold uppercase leading-4 text-slate-800"
                 style={{
                   left: 0,
-                  width: 700,
-                  minWidth: 700,
+                  width: 840,
+                  minWidth: 840,
                   backgroundColor: GROUP_GRAY,
                 }}
               >
-                Total da fonte por dia
+                Total do dashboard por dia
               </th>
               {report.days.flatMap(day => [
                 <td
@@ -697,7 +716,7 @@ function DispatchTable({
                   title={
                     day.sourceTotal === null
                       ? "Total aguardando fonte"
-                      : `Total informado na fonte em ${day.date}`
+                      : `Total da base do dashboard em ${day.date}`
                   }
                 >
                   {numberFormat(day.sourceTotal)}
@@ -708,10 +727,10 @@ function DispatchTable({
         </table>
       </div>
       <div className="border-t border-slate-100 px-4 py-3 text-[11px] leading-5 text-slate-500">
-        Totais no rodapé são os totais informados pela fonte para os dias
-        exibidos e não mudam com a busca por loja. Dias sem fonte ficam sem
-        volume. SYONET e Vol.Lead são somente leitura; apenas o check Manual
-        grava uma validação.
+        Totais no rodapé vêm da base de Leads com os filtros do dashboard. A
+        busca local de loja não altera esses totais. Vol. Lead é quantidade de
+        registros criados no dia, não volume de envio ao CRM. SYONET e Vol.Lead
+        são somente leitura; apenas o check Manual grava uma validação.
       </div>
     </div>
   );
@@ -774,6 +793,8 @@ export default function V2DispatchControl({
   authenticated = true,
   clientMode = true,
   embedded = false,
+  filters,
+  onPeriodChange,
 }: V2DispatchControlProps = {}) {
   const [selectedReportId, setSelectedReportId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
@@ -797,12 +818,25 @@ export default function V2DispatchControl({
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [updateNotice, setUpdateNotice] = useState<string | null>(null);
   const [preparing, setPreparing] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const preparedKey = useRef<string | null>(null);
   const [prepareRetry, setPrepareRetry] = useState(0);
-  const uploadRef = useRef<HTMLInputElement>(null);
-  const prepareDayMutation = trpc.dispatch.prepareDay.useMutation();
-  const importWorkbookMutation = trpc.dispatch.importWorkbook.useMutation();
+  const prepareDayMutation = trpc.dispatch.prepareLeadControl.useMutation();
+  const [preparedInputKey, setPreparedInputKey] = useState<string | null>(null);
+  const appliedFilters = useMemo<V2Filters>(
+    () => ({
+      ...filters,
+      dateFrom: filters?.dateFrom ?? dateFrom,
+      dateTo: filters?.dateTo ?? dateTo,
+      page: 1,
+    }),
+    [filters, dateFrom, dateTo]
+  );
+  const inputKey = JSON.stringify({
+    reportId: selectedReportId,
+    filters: appliedFilters,
+  });
+  const currentInputKey = useRef(inputKey);
+  currentInputKey.current = inputKey;
   useEffect(() => {
     const id = window.setInterval(
       () => setCutoff(getDashboardCutoffDate()),
@@ -843,10 +877,13 @@ export default function V2DispatchControl({
     });
   }, [summaries]);
 
-  const reportQuery = trpc.dispatch.report.useQuery(
-    { reportId: selectedReportId ?? 0 },
+  const reportQuery = trpc.dispatch.leadControl.useQuery(
+    { reportId: selectedReportId ?? 0, filters: appliedFilters },
     {
-      enabled: authenticated && selectedReportId !== null,
+      enabled:
+        authenticated &&
+        selectedReportId !== null &&
+        preparedInputKey === inputKey,
       retry: false,
       refetchOnWindowFocus: false,
     }
@@ -864,19 +901,26 @@ export default function V2DispatchControl({
   const report = reportQuery.data;
   const preparePreviousDay = async () => {
     if (selectedReportId === null) return null;
+    const requestKey = inputKey;
     setPreparing(true);
     setUpdateError(null);
     setUpdateNotice(null);
     try {
       const result = await prepareDayMutation.mutateAsync({
         reportId: selectedReportId,
+        filters: appliedFilters,
       });
-      await utils.dispatch.report.invalidate({ reportId: selectedReportId });
+      if (currentInputKey.current !== requestKey) return null;
+      setPreparedInputKey(requestKey);
+      await utils.dispatch.leadControl.invalidate({
+        reportId: selectedReportId,
+        filters: appliedFilters,
+      });
       if (result.added)
         setUpdateNotice(
-          `Dia ${result.date.split("-").reverse().join("/")} preparado. Check Manual pendente; SYONET e volume aguardam o arquivo atualizado.`
+          `Células do controle preparadas até ${result.date.split("-").reverse().join("/")}. Vol. Lead calculado da mesma base e filtros do dashboard; checks anteriores preservados.`
         );
-      preparedKey.current = `${selectedReportId}:${result.date}`;
+      preparedKey.current = requestKey;
       return result;
     } catch (error) {
       preparedKey.current = null;
@@ -889,7 +933,7 @@ export default function V2DispatchControl({
   };
   useEffect(() => {
     if (!authenticated || selectedReportId === null) return;
-    const key = `${selectedReportId}:${cutoff}`;
+    const key = inputKey;
     if (preparedKey.current === key) return;
     preparedKey.current = key;
     let active = true;
@@ -902,11 +946,14 @@ export default function V2DispatchControl({
       active = false;
       window.clearTimeout(retryTimer);
     };
-  }, [authenticated, selectedReportId, cutoff, prepareRetry]);
+  }, [authenticated, selectedReportId, cutoff, prepareRetry, inputKey]);
   const visibleReport = useMemo<DispatchReport | undefined>(() => {
     if (!report) return undefined;
     const days = report.days.filter(
-      day => day.date >= dateFrom && day.date <= dateTo && day.date <= cutoff
+      day =>
+        day.date >= appliedFilters.dateFrom &&
+        day.date <= appliedFilters.dateTo &&
+        day.date <= cutoff
     );
     const dates = new Set(days.map(day => day.date));
     const rows = report.rows.map(row => ({
@@ -920,11 +967,12 @@ export default function V2DispatchControl({
       rows,
       totals: {
         ...report.totals,
-        computed: cells.reduce((sum, cell) => sum + (cell.volume ?? 0), 0),
-        sourceDailySum: days.reduce(
-          (sum, day) => sum + (day.sourceTotal ?? 0),
-          0
-        ),
+        computed: cells.some(cell => cell.volume !== null)
+          ? cells.reduce((sum, cell) => sum + (cell.volume ?? 0), 0)
+          : null,
+        sourceDailySum: days.some(day => day.sourceTotal !== null)
+          ? days.reduce((sum, day) => sum + (day.sourceTotal ?? 0), 0)
+          : null,
         sourceManualOk: cells.filter(
           cell => cell.sourceManual.trim().toUpperCase() === "OK"
         ).length,
@@ -932,7 +980,7 @@ export default function V2DispatchControl({
         manualOverridden: cells.filter(cell => cell.validation !== null).length,
       },
     };
-  }, [report, dateFrom, dateTo, cutoff]);
+  }, [report, appliedFilters, cutoff]);
   const refreshDaily = async () => {
     const prepared = await preparePreviousDay();
     if (!prepared) return;
@@ -947,70 +995,6 @@ export default function V2DispatchControl({
       );
     }
   };
-  const uploadWorkbook = async (file: File | undefined) => {
-    if (!file || selectedReportId === null) return;
-    if (uploading || preparing || savingCellIds.size > 0) return;
-    setUpdateError(null);
-    setUpdateNotice(null);
-    if (!file.name.toLowerCase().endsWith(".xlsx") || file.size > 1024 * 1024) {
-      setUpdateError("Envie um arquivo Envios .xlsx de até 1 MB.");
-      return;
-    }
-    try {
-      setUploading(true);
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result).split(",")[1]);
-        reader.onerror = () =>
-          reject(new Error("Não foi possível ler o arquivo"));
-        reader.readAsDataURL(file);
-      });
-      const imported = await importWorkbookMutation.mutateAsync({
-        reportId: selectedReportId,
-        fileName: file.name,
-        base64,
-      });
-      const prepared = await preparePreviousDay();
-      if (!prepared) {
-        setUpdateNotice(null);
-        setUpdateError(
-          "Arquivo recebido, mas não foi possível concluir a preparação D-1. Use Atualizar para tentar novamente; checks anteriores preservados."
-        );
-        return;
-      }
-      await Promise.all([
-        utils.dispatch.report.invalidate({ reportId: selectedReportId }),
-        utils.dispatch.reports.invalidate(),
-      ]);
-      const refreshed = await reportQuery.refetch();
-      if (refreshed.error) {
-        setUpdateNotice(null);
-        setUpdateError(
-          "Arquivo recebido, mas a tela não foi atualizada. Use Atualizar para recarregar; checks preservados."
-        );
-        return;
-      }
-      const future = imported.skippedFutureDays
-        ? ` ${imported.skippedFutureDays} dia(s) posterior(es) a D-1 ignorado(s).`
-        : "";
-      const pending = prepared.missingSource
-        ? " D-1 continua aguardando a fonte de envio."
-        : "";
-      setUpdateNotice(
-        imported.alreadyImported
-          ? `Arquivo já importado; dados e checks mantidos.${future}${pending}`
-          : imported.daysImported === 0
-            ? `Arquivo sem dias aplicáveis até D-1; nenhum volume diário atualizado.${future}${pending}`
-            : `${imported.daysImported} dia(s) de fonte processado(s) e ${imported.rowsUpdated} loja(s) conciliada(s). Checks e histórico preservados.${future}${pending}`
-      );
-    } catch (error) {
-      setUpdateError(errorMessage(error));
-    } finally {
-      setUploading(false);
-      if (uploadRef.current) uploadRef.current.value = "";
-    }
-  };
-
   const filteredRows = useMemo(() => {
     if (!visibleReport) return [];
     const normalizedSearch = search.trim().toLocaleLowerCase("pt-BR");
@@ -1045,8 +1029,7 @@ export default function V2DispatchControl({
     if (
       activeRequests.current.has(cell.id) ||
       preparing ||
-      importWorkbookMutation.isPending ||
-      uploading
+      prepareDayMutation.isPending
     )
       return;
     activeRequests.current.add(cell.id);
@@ -1065,8 +1048,8 @@ export default function V2DispatchControl({
         expectedVersion: cell.validation?.version ?? 0,
       });
       if (selectedReportId !== null)
-        utils.dispatch.report.setData(
-          { reportId: selectedReportId },
+        utils.dispatch.leadControl.setData(
+          { reportId: selectedReportId, filters: appliedFilters },
           current =>
             current
               ? {
@@ -1126,7 +1109,16 @@ export default function V2DispatchControl({
       </div>
     );
   }
-  if (reportQuery.isLoading && !report) {
+  if (updateError && preparedInputKey !== inputKey)
+    return (
+      <div className="space-y-4">
+        <ErrorPanel
+          error={new Error(updateError)}
+          onRetry={() => void preparePreviousDay()}
+        />
+      </div>
+    );
+  if ((reportQuery.isLoading || preparedInputKey !== inputKey) && !report) {
     return (
       <div className="space-y-4">
         <ReportSelector
@@ -1175,16 +1167,20 @@ export default function V2DispatchControl({
                 : "Controle de Envios"}
             </h1>
             <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-500">
-              {report.title}. Cadastro e integrações conforme o arquivo;
-              conferência Manual por Wini. O período operacional termina em D-1
-              (São Paulo).
+              Vol. Lead vem da mesma base do dashboard, por dealer e dia de
+              criação. Cadastro e integrações são referências de CRM; Manual é a
+              conferência do Wini. Corte D-1 em São Paulo.
             </p>
           </div>
           <div className="shrink-0 text-left text-xs text-slate-500 lg:text-right">
-            <p className="font-semibold text-slate-700">{report.fileName}</p>
+            <p className="font-semibold text-slate-700">
+              LEADS MG — Base · mesma fonte do dashboard
+            </p>
             <p className="mt-1">
               {report.importedAt
-                ? `Importado em ${timestampFormat(report.importedAt)}`
+                ? report.leadSource?.importedAt
+                  ? `Base carregada em ${timestampFormat(report.leadSource.importedAt)}`
+                  : "Base de Leads sem carga configurada"
                 : "Importação não informada"}
             </p>
           </div>
@@ -1194,10 +1190,7 @@ export default function V2DispatchControl({
           selectedReportId={selectedReportId}
           onChange={setSelectedReportId}
           isFetching={
-            reportsQuery.isFetching ||
-            reportQuery.isFetching ||
-            preparing ||
-            importWorkbookMutation.isPending
+            reportsQuery.isFetching || reportQuery.isFetching || preparing
           }
           onRefresh={() => void refreshDaily()}
         />
@@ -1250,9 +1243,14 @@ export default function V2DispatchControl({
             <input
               type="date"
               className="v2-input"
-              value={dateFrom}
-              max={dateTo}
-              onChange={event => setDateFrom(event.target.value)}
+              value={appliedFilters.dateFrom}
+              max={appliedFilters.dateTo}
+              disabled={Boolean(filters && !onPeriodChange)}
+              onChange={event =>
+                onPeriodChange
+                  ? onPeriodChange(event.target.value, appliedFilters.dateTo)
+                  : setDateFrom(event.target.value)
+              }
             />
           </label>
           <label>
@@ -1260,14 +1258,16 @@ export default function V2DispatchControl({
             <input
               type="date"
               className="v2-input"
-              value={dateTo}
-              min={dateFrom}
+              value={appliedFilters.dateTo}
+              min={appliedFilters.dateFrom}
               max={cutoff}
-              onChange={event =>
-                setDateTo(
-                  event.target.value > cutoff ? cutoff : event.target.value
-                )
-              }
+              onChange={event => {
+                const end =
+                  event.target.value > cutoff ? cutoff : event.target.value;
+                if (onPeriodChange)
+                  onPeriodChange(appliedFilters.dateFrom, end);
+                else setDateTo(end);
+              }}
             />
           </label>
           <label>
@@ -1292,35 +1292,12 @@ export default function V2DispatchControl({
             />{" "}
             Mostrar responsáveis CRM
           </label>
-          <input
-            ref={uploadRef}
-            type="file"
-            accept=".xlsx"
-            className="sr-only"
-            aria-label="Arquivo atualizado de Envios"
-            onChange={event => void uploadWorkbook(event.target.files?.[0])}
-          />
-          <button
-            type="button"
-            disabled={
-              preparing ||
-              importWorkbookMutation.isPending ||
-              savingCellIds.size > 0
-            }
-            onClick={() => uploadRef.current?.click()}
-            className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#e2212d] px-4 text-xs font-bold text-white disabled:opacity-50"
-          >
-            <Upload className="h-4 w-4" />
-            {importWorkbookMutation.isPending
-              ? "Importando…"
-              : "Atualizar arquivo Envios"}
-          </button>
         </div>
         <p className="mt-3 text-xs leading-5 text-slate-500">
-          Atualizar prepara os dias ausentes até ontem, sem alterar conferências
-          anteriores. Envie o Envios atualizado para preencher volumes e status
-          reais. Integração cadastrada não comprova entrega diária. Não há
-          conexão live com o CRM.
+          Atualizar recalcula os volumes diretamente da base do dashboard, com
+          os mesmos filtros. A planilha não alimenta Vol. Lead. Integração
+          cadastrada não comprova entrega diária; Manual é uma conferência
+          separada.
         </p>
       </section>
       {manualError ? (
@@ -1353,7 +1330,7 @@ export default function V2DispatchControl({
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <SummaryFact
-          label="Volume informado no período"
+          label="Leads · mesma base do dashboard"
           value={
             visibleReport?.rows.some(row =>
               row.cells.some(cell => cell.volume !== null)
@@ -1404,11 +1381,7 @@ export default function V2DispatchControl({
           de {report.rows.length} linhas
         </span>
         <span className="rounded-full border border-slate-200 bg-white px-3 py-2">
-          Dias aguardando fonte:{" "}
-          <strong>
-            {visibleReport?.days.filter(day => day.sourceTotal === null)
-              .length ?? 0}
-          </strong>
+          Dias no período: <strong>{visibleReport?.days.length ?? 0}</strong>
         </span>
       </div>
       {!visibleReport?.days.length ? (
@@ -1433,10 +1406,9 @@ export default function V2DispatchControl({
       )}
 
       <p className="px-1 text-[11px] leading-5 text-slate-500">
-        Dados de despacho são atualizados somente pelo arquivo Envios, sem
-        conexão live ao CRM. Dias novos recebem check Manual pendente e aguardam
-        a fonte. Marcar OK registra a conferência, mas não dispara e-mail, envio
-        ou operação de CRM.
+        Vol. Lead vem da mesma base do dashboard, por dealer e data de criação.
+        SYONET e integrações são referências de CRM, não inferidas dos volumes.
+        Manual registra a conferência, sem disparar envio ou operação de CRM.
       </p>
     </div>
   );
