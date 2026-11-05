@@ -14,7 +14,7 @@ export type V2Identity = { id: number; username: string };
 
 function secret() {
   if (!process.env.MANUS_JWT_SECRET || !process.env.MANUS_PROJECT_ID)
-    throw new Error("Sessão V2 não configurada");
+    throw new Error("Sessão do MG Sales não configurada");
   return new TextEncoder().encode(process.env.MANUS_JWT_SECRET);
 }
 export function hashV2Password(password: string) {

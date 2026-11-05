@@ -1,7 +1,8 @@
 import mysql from "mysql2/promise";
 let pool: mysql.Pool | undefined;
 export function getV2Pool() {
-  if (!process.env.DATABASE_URL) throw new Error("Banco V2 indisponível");
+  if (!process.env.DATABASE_URL)
+    throw new Error("Base de dados do MG Sales indisponível");
   if (!pool) pool = mysql.createPool(process.env.DATABASE_URL);
   return pool;
 }

@@ -1,1 +1,24 @@
-{"routes": [{"path": "/", "title": "MG Motors — Dashboard V2"}, {"path": "/?module=leads", "title": "MG Motors — Leads"}, {"path": "/?module=media", "title": "MG Motors — Plano de Mídia"}, {"path": "/?module=dispatch", "title": "MG Motors — Controle de Envios"}, {"path": "/?module=leads&tab=stores", "title": "MG Motors — Lojas & CRM"}]}
+{
+  "routes": [
+    {
+      "path": "/",
+      "title": "MG Sales — Visão geral"
+    },
+    {
+      "path": "/?module=leads",
+      "title": "MG Sales — Leads"
+    },
+    {
+      "path": "/?module=media",
+      "title": "MG Sales — Plano de Mídia"
+    },
+    {
+      "path": "/?module=dispatch",
+      "title": "MG Sales — Controle de Envios"
+    },
+    {
+      "path": "/?module=leads&tab=stores",
+      "title": "MG Sales — Lojas & CRM"
+    }
+  ]
+}

@@ -73,7 +73,7 @@ const v2Procedure = publicProcedure.use(async ({ ctx, next }) => {
   if (!identity)
     throw new TRPCError({
       code: "UNAUTHORIZED",
-      message: "Faça login para acessar a V2",
+      message: "Faça login para acessar o MG Sales",
     });
   ctx.res.setHeader("Cache-Control", "private, no-store");
   return next({ ctx: { ...ctx, v2User: identity } });

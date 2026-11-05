@@ -49,7 +49,7 @@ function errorMessage(error: unknown) {
 
 function BrandMark() {
   return (
-    <div className="flex items-center gap-2.5" aria-label="MG Motors V2">
+    <div className="flex items-center gap-2.5" aria-label="MG Sales">
       <img
         src="/mg-logo.png"
         alt="MG"
@@ -57,10 +57,10 @@ function BrandMark() {
       />
       <div className="hidden leading-none sm:block">
         <p className="text-sm font-black tracking-[-0.03em] text-slate-950">
-          MG MOTORS
+          MG SALES
         </p>
         <p className="mt-1 text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400">
-          Dashboard V2
+          Gestão de Leads e vendas
         </p>
       </div>
     </div>
@@ -103,8 +103,8 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: () => Promise<void> }) {
                 Dados de leads com contexto para decidir.
               </h1>
               <p className="mt-4 text-sm leading-6 text-slate-300">
-                Acesso restrito ao painel operacional MG V2. Os números exibidos
-                vêm da fonte autenticada configurada pela equipe.
+                Acesso restrito ao painel comercial MG Sales. Os números
+                exibidos vêm da fonte autenticada configurada pela equipe.
               </p>
             </div>
           </div>
@@ -123,7 +123,7 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: () => Promise<void> }) {
                 <LockKeyhole className="h-5 w-5" />
               </div>
               <h2 className="text-2xl font-bold tracking-tight text-slate-950">
-                Entrar no MG V2
+                Entrar no MG Sales
               </h2>
               <p className="mt-2 text-sm leading-6 text-slate-500">
                 Use o acesso de homologação fornecido para consultar os dados.
@@ -215,7 +215,7 @@ function Topbar({
             onClick={() => onModuleChange("leads")}
             className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-[11px] font-bold transition sm:flex-none sm:gap-2 sm:px-3 sm:text-xs ${module === "leads" ? "bg-red-50 text-[#e2212d]" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"}`}
           >
-            <BarChart3 className="h-4 w-4 shrink-0" /> Leads V2
+            <BarChart3 className="h-4 w-4 shrink-0" /> Leads
           </button>
           <button
             type="button"

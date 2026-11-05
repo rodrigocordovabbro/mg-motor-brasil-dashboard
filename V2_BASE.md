@@ -1,4 +1,4 @@
-# MG Motors — Dashboard V2
+# MG Sales
 
 Novo recurso WebDev de homologação, separado do dashboard V1. Origem do código: GitHub autorizado `digocordova83-cyber/mg-motors-dashboard-clone`, branch `dashboard-v2`, commit-base `dfad96cb1d015384d0425ce0f91ac308da0c8eb5`.
 
@@ -57,3 +57,7 @@ Editor **Atualizar metas** diretamente no pacing, disponível também em modo ap
 Três uploads XLSX independentes, reutilizáveis todo mês, com preview e de-para coletivo explícito: Meta de Leads (arquivo Total Dealer), Meta de Vendas (Target to be adjusted) e Atualização de Vendas (WEEKLY_REG). Novembro importado conforme autorização, com meta de vendas 722 e vendas 0 na coluna W1_Reg/data de referência 04/11/2026. Os valores do DAILY_FUP são apenas referências, não substituem a aba escolhida. Ler uma coluna Wn_Reg por snapshot, sem somar acumulados semanais. A semana fica no status e na identidade da importação.
 
 Os arquivos de origem não estão no código nem no bundle público. Os snapshots normalizados ficam no banco V2, imutáveis/versionados, com hash e auditoria. Reenvio idêntico é no-op; mudança do de-para gera revisão, mantendo meta manual vigente quando o conteúdo da fonte é o mesmo. Nomes por grupo/UF não recebem rateio inventado. 68 linhas de fonte sem correspondência segura permanecem acessíveis em Metas de origem e no preview para de-para, com totais globais preservados. Leads continuam vindo exclusivamente da base do dashboard e seguem os mesmos filtros D-1.
+
+## Nome público — MG Sales
+
+Títulos, cabeçalho, login, navegação, descrição HTML, manifesto de rotas e mensagens públicas agora usam MG Sales, sem V2. Identificadores internos permanecem estáveis para preservar dados, sessão e branch autorizada. Logo MG, identificação de homologação e isolamento do dashboard original foram mantidos. A revisão heurística de UX resulta em propostas separadas; a alteração aplicada nesta etapa é somente de nomenclatura.

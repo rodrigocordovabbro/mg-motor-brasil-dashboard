@@ -1,4 +1,4 @@
-# MG Motors — Dashboard V2 / homologação
+# MG Sales — painel comercial / homologação
 
 ## Escopo autorizado e atualização
 
@@ -69,3 +69,7 @@ O Daily Sales FUP informa 20 Retail MTD no resumo e 43 emplacamentos MTD (métri
 ### Correção autorizada de origem das vendas por dealer
 
 A orientação posterior do usuário define **WEEKLY_REG** como origem das vendas por dealer, no formato do FUP enviado, inclusive quando os valores forem zero. Essa orientação substitui o uso do resumo DAILY_FUP/Retail no quadro ativo. Ler as colunas `Wn_Reg` de WEEKLY_REG, preservando dealer/customer code/targets como metadados separados e sem somar snapshots semanais acumulados indevidamente. A semana/coluna de referência deve ficar explícita no upload/preview; default deriva da data de referência e pode ser ajustado para refletir a coluna preenchida do arquivo. Os zeros efetivamente presentes em WEEKLY_REG são dados válidos, não ausência da fonte. Valores do DAILY_FUP não são usados para substituir esses zeros. Manter a diferença entre data do arquivo, semana escolhida, competência e corte D-1.
+
+## Nomenclatura pública — MG Sales
+
+O usuário determinou retirar V2 dos títulos e trabalhar com a marca **MG Sales**. Aplicar ao cabeçalho, login, navegação, título/descrição HTML, nomes das rotas e mensagens de erro visíveis. Manter o logo MG e a identificação verdadeira de homologação, sem afirmar que o ambiente foi publicado ou está pronto para produção. Identificadores técnicos, tabelas, cookies, nomes de módulos, diretório, recurso, endereço e branch autorizada `dashboard-v2` permanecem estáveis para não afetar dados, sessão ou isolamento do dashboard original. O estudo de UX será apresentado como MG Sales; as demais melhorias serão propostas, não implementadas sem pedido.
