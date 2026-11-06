@@ -102,7 +102,10 @@ const known = (values: V2Count[]) =>
 /** The one canonical dimension/search predicate used by dashboard and dispatch. */
 export function matchesV2LeadFilters(
   row: V2Lead,
-  input: Pick<V2Filters, "model" | "channel" | "campaign" | "dealer" | "search">,
+  input: Pick<
+    V2Filters,
+    "model" | "channel" | "campaign" | "dealer" | "search"
+  >,
   extraDealers: readonly ExtraDealerRegistryEntry[] = []
 ): boolean {
   const lowerSearch = input.search?.toLocaleLowerCase("pt-BR");
@@ -374,15 +377,21 @@ export async function getV2Dashboard(input: V2Filters) {
   const period = resolveDashboardPeriod(input.dateFrom, input.dateTo);
   const monthFrom = `${period.dateTo.slice(0, 7)}-01`;
   const from = period.dateFrom < monthFrom ? period.dateFrom : monthFrom;
-  const [sourceRows] = await getV2Pool().query<RowDataPacket[]>(
-    "SELECT name,importedAt,totalRows,invalidDateRows FROM v2_sources WHERE id=1"
-  );
+  const [[sourceRows], rows, extraDealers, goal] = await Promise.all([
+    getV2Pool().query<RowDataPacket[]>(
+      "SELECT name,importedAt,totalRows,invalidDateRows,(SELECT MAX(leadDate) FROM v2_leads) AS latestLeadDate FROM v2_sources WHERE id=1"
+    ),
+    readV2LeadsForPeriod(from, period.dateTo),
+    readExtraDealerRegistry(),
+    getV2Goal(period.dateTo.slice(0, 7)),
+  ]);
   const source: V2Dashboard["source"] = {
     name: "LEADS MG — Base",
     importedAt: null,
     mode: "authenticated-import",
     totalRows: 0,
     invalidDateRows: 0,
+    latestLeadDate: null,
   };
   if (sourceRows[0]) {
     source.name = String(sourceRows[0].name);
@@ -391,13 +400,14 @@ export async function getV2Dashboard(input: V2Filters) {
       : null;
     source.totalRows = Number(sourceRows[0].totalRows);
     source.invalidDateRows = Number(sourceRows[0].invalidDateRows);
+    source.latestLeadDate = sourceRows[0].latestLeadDate
+      ? String(sourceRows[0].latestLeadDate)
+      : null;
   }
-  const rows = await readV2LeadsForPeriod(from, period.dateTo);
-  const extraDealers = await readExtraDealerRegistry();
   const dashboard = aggregateV2Leads(
     rows,
     input,
-    await getV2Goal(period.dateTo.slice(0, 7)),
+    goal,
     source,
     new Date(),
     extraDealers
@@ -405,5 +415,6 @@ export async function getV2Dashboard(input: V2Filters) {
   return {
     ...dashboard,
     dealerPerformance: await getCommercialPerformance(dashboard, input),
+    checkedAt: new Date().toISOString(),
   };
 }

@@ -9,6 +9,8 @@ const mock = vi.hoisted(() => ({
   values: [] as any[],
   setters: [] as any[],
   query: vi.fn(),
+  invalidateLeads: vi.fn(),
+  invalidateCRM: vi.fn(),
 }));
 vi.mock("react", async importOriginal => {
   const actual = await importOriginal<typeof import("react")>();
@@ -31,7 +33,13 @@ vi.mock("react", async importOriginal => {
   };
 });
 vi.mock("@/lib/trpc", () => ({
-  trpc: { leads: { dashboard: { useQuery: mock.query } } },
+  trpc: {
+    useUtils: () => ({
+      leads: { dashboard: { invalidate: mock.invalidateLeads } },
+      dispatch: { leadControl: { invalidate: mock.invalidateCRM } },
+    }),
+    leads: { dashboard: { useQuery: mock.query } },
+  },
 }));
 import Dashboard from "../client/src/components/V2LeadsDashboard";
 
@@ -159,4 +167,87 @@ describe("aplicação dos filtros do painel", () => {
       dateTo: "2026-10-31",
     });
   });
+});
+
+function findOverview() {
+  mock.index = 0;
+  const tree = Dashboard({
+    authenticated: true,
+    clientMode: false,
+    canManage: false,
+  });
+  return findElement(tree, element => element.type?.name === "OverviewTab");
+}
+it("reconsulta uma vez, invalida os caches sem fetch duplicado e mantém confirmação no shell", async () => {
+  const original = {
+    status: "READY",
+    period: {
+      dateFrom: "2026-11-01",
+      dateTo: "2026-11-04",
+      cutoffDate: "2026-11-04",
+    },
+    options: { models: [], channels: [], campaigns: [], dealers: [] },
+    source: { importedAt: "2026-11-04T12:00:00Z" },
+    pacing: { competence: "2026-11", current: 3 },
+    summary: { total: 3 },
+    notes: [],
+  };
+  const fresh = {
+    ...original,
+    checkedAt: "2026-11-05T15:00:00Z",
+    source: {
+      importedAt: "2026-11-05T14:00:00Z",
+      latestLeadDate: "2026-11-04",
+    },
+    pacing: { competence: "2026-11", current: 9 },
+    summary: { total: 9 },
+  };
+  const refetch = vi.fn().mockResolvedValue({ data: fresh, error: null });
+  mock.query.mockReturnValue({
+    data: original,
+    isLoading: false,
+    isFetching: false,
+    refetch,
+  });
+  const result = await findOverview().props.onReloadMonth();
+  expect(refetch).toHaveBeenCalledTimes(1);
+  expect(refetch).toHaveBeenCalledWith({ throwOnError: true });
+  expect(mock.invalidateLeads).toHaveBeenCalledWith(undefined, {
+    refetchType: "none",
+  });
+  expect(mock.invalidateCRM).toHaveBeenCalledWith(undefined, {
+    refetchType: "none",
+  });
+  expect(result.monthlyTotal).toBe(9);
+  expect(result.newImport).toBe(true);
+  expect(mock.values[6]).toContain("9 Leads");
+});
+it("rejeita fonte ausente mesmo quando a query HTTP resolveu sem erro", async () => {
+  const data = {
+    status: "READY",
+    period: {
+      dateFrom: "2026-11-01",
+      dateTo: "2026-11-04",
+      cutoffDate: "2026-11-04",
+    },
+    options: { models: [], channels: [], campaigns: [], dealers: [] },
+    source: { importedAt: "2026-11-04T12:00:00Z" },
+    notes: [],
+  };
+  const refetch = vi
+    .fn()
+    .mockResolvedValue({
+      data: { ...data, status: "NOT_CONFIGURED" },
+      error: null,
+    });
+  mock.query.mockReturnValue({
+    data,
+    isLoading: false,
+    isFetching: false,
+    refetch,
+  });
+  await expect(findOverview().props.onReloadMonth()).rejects.toThrow(
+    "não configurada"
+  );
+  expect(mock.values[6]).toBeNull();
 });

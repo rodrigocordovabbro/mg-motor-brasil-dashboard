@@ -51,12 +51,15 @@ export type V2Pacing = {
 };
 export type V2Dashboard = {
   status: "READY" | "NOT_CONFIGURED";
+  /** Server time when the protected database read completed, not import time. */
+  checkedAt?: string;
   source: {
     name: string;
     importedAt: string | null;
     mode: "authenticated-import";
     totalRows: number;
     invalidDateRows: number;
+    latestLeadDate?: string | null;
   };
   period: { dateFrom: string; dateTo: string; cutoffDate: string };
   options: {

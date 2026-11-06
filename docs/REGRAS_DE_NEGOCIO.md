@@ -271,3 +271,11 @@ O modo apresentação mascara detalhes técnicos selecionados, limpa avisos inte
 Em execução local observada em **06/11/2026**, `pnpm test -- --reporter=dot` passou com **33 arquivos e 218 testes**. A suíte cobre calendário D-1, `Mês passado`, filtros, cinco modelos, 27 UFs, cadastro 41/40, parser combinado 31/10.579/591, WEEKLY_REG W1–W6 sem soma, DAILY_FUP/MTD, conversão com guardas, registro dinâmico, transações, remoção/reupload, dispatch, permissões e projeções de mídia.
 
 Esse resultado é uma fotografia de validação do commit/ambiente observado; não declara que dados de produção, integrações ou futuras alterações estejam disponíveis.
+
+## Consulta da base e cobertura da fonte — correção de 06/11/2026
+
+**Atualizar base de Leads** executa uma nova leitura autenticada do banco importado. A consulta passa a informar `checkedAt` (hora da consulta) separadamente de `source.importedAt` (hora da importação) e `source.latestLeadDate` (último dia de Lead disponível). Quando essa cobertura é anterior ao fim do período, a interface avisa que a fonte ainda não cobre o dia selecionado. O botão não altera importedAt, não inventa registros e não importa Google Sheets.
+
+A atualização invalida as famílias de cache do dashboard e do controle CRM sem disparar consultas duplicadas; consulta ativa é refeita uma vez, preservando filtros, metas e checks. Erros e fonte ausente não são apresentados como sucesso; sessão expirada recebe orientação de login. O feedback da consulta permanece ao trocar de aba e é limpo ao alterar os filtros. Leituras independentes de fonte, Leads, cadastro extra e meta mensal são executadas em paralelo.
+
+Uma nova importação ou sincronização externa depende de uma conexão runtime própria. A integração disponível para leitura durante tarefas Manus não é automaticamente uma credencial de aplicação publicada. Nenhum token de conector foi transferido ao servidor para contornar essa limitação.

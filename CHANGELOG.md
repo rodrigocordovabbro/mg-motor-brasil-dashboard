@@ -37,3 +37,7 @@ Este documento resume a cópia de código preparada para o GitHub. Não represen
 - Banco, contas, contatos de Leads, senhas, checks salvos e segredos não fazem parte da cópia GitHub.
 - O repositório GitHub é uma cópia de código; o repositório canônico do projeto WebDev continua gerenciado pelo Manus.
 - Envio ao GitHub não executa migrations, não configura um servidor externo e não publica o site.
+
+## 06/11/2026 — Diagnóstico da atualização da base
+
+O botão relia corretamente o banco, mas o snapshot não cobria o último dia do período. Foram adicionados hora de consulta, cobertura global da fonte, última importação e aviso explícito de ausência de sincronização externa. A atualização também invalida caches relacionados sem fetch duplicado, bloqueia cliques simultâneos e distingue sessão expirada/fonte ausente. Leituras independentes foram paralelizadas. Nenhum Lead ou meta foi alterado nessa correção.

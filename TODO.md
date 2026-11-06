@@ -180,3 +180,10 @@ Validação técnica desta entrega: 218 testes em 33 arquivos, TypeScript e buil
 
 - [ ] Enviar a versão atual pela integração ao repositório indicado pelo usuário, digocordova83-cyber/v2-mgmotor, exclusivamente em dashboard-v2; manter o repositório canônico Manus e não reabrir a transferência canônica cancelada. Não alterar main do dashboard antigo nem fazer force push. Cópia de código sem histórico interno, banco, senhas, contatos, planilhas ou exports.
 - [x] Documentação completa em português: README, instalação, variáveis de ambiente de exemplo sem segredos, arquitetura, regras e cálculos, perfis, SQL/migrations, operação/deploy, contribuição e registro de entrega. Distinguir código enviado, infraestrutura própria e fontes sem sincronização automática; não criar senha padrão ou seed fictício. Validar links internos e conteúdo antes do envio.
+
+## Verificação de Atualizar base — 06/11/2026
+
+- [x] Corrigir atualização da base já importada para fazer leitura protegida atual, invalidar caches de Leads e CRM sem requisições duplicadas, preservar filtros/metas/checks e não informar sucesso se a fonte estiver ausente ou a API falhar. Evitar cliques concorrentes e feedback de competência anterior; identificar sessão expirada.
+- [x] Mostrar hora da consulta, última importação, último dia disponível e aviso quando a base não cobre o período solicitado. Não apresentar releitura do banco como importação de Google Sheets, mudança de importedAt ou novos registros externos; conexão runtime de importação ainda não configurada. Otimizar leituras independentes em paralelo. Testar somente com fixtures/mocks e diagnosticar dados reais somente leitura.
+
+Validação da correção: 226 testes em 34 arquivos passaram; TypeScript e build aprovados. Base real somente lida: 49.128 registros, último dia 04/11/2026, novembro 1.353, última importação 05/11/2026. Nenhuma nova importação externa ou alteração de metas/checks executada.

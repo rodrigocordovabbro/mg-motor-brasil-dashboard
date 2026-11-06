@@ -1,0 +1,35 @@
+export type LeadsReloadResult = {
+  competence: string;
+  total: number;
+  monthlyTotal: number;
+  checkedAt: string;
+  importedAt: string | null;
+  latestLeadDate: string | null;
+  requestedDateTo: string;
+  newImport: boolean;
+};
+
+const date = (iso: string) => iso.split("-").reverse().join("/");
+export function describeLeadsReload(result: LeadsReloadResult): string {
+  const time = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date(result.checkedAt));
+  const count = new Intl.NumberFormat("pt-BR").format(result.monthlyTotal);
+  const coverage = result.latestLeadDate
+    ? `Último dia disponível: ${date(result.latestLeadDate)}.`
+    : "Nenhuma data de Lead disponível na base.";
+  const importStatus = result.newImport
+    ? "Nova importação encontrada no banco."
+    : "Nenhuma nova importação registrada; a fonte externa não foi sincronizada por este botão.";
+  const lastImport = result.importedAt
+    ? `Última importação: ${new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" }).format(new Date(result.importedAt))}.`
+    : "Sem importação registrada.";
+  const gap =
+    result.latestLeadDate && result.latestLeadDate < result.requestedDateTo
+      ? ` O período vai até ${date(result.requestedDateTo)}; a base ainda não cobre esse dia.`
+      : "";
+  return `Consulta concluída às ${time}. ${count} Leads no acumulado de ${result.competence.split("-").reverse().join("/")}. ${coverage} ${lastImport} ${importStatus}${gap}`;
+}

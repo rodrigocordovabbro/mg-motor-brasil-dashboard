@@ -1,3 +1,7 @@
+import {
+  describeLeadsReload,
+  type LeadsReloadResult,
+} from "@shared/leadsReload";
 import { showDealerInCommercialTable } from "@shared/dealerPresentation";
 import type { UserRole } from "@shared/accountRoles";
 import {
@@ -599,7 +603,7 @@ function PacingCard({
 }: {
   data: V2LeadsResponse;
   onUpdated: () => void;
-  onReloadMonth: () => Promise<void>;
+  onReloadMonth: () => Promise<LeadsReloadResult>;
   canManage: boolean;
 }) {
   const pacing = data.pacing;
@@ -1475,7 +1479,7 @@ function OverviewTab({
 }: {
   data: V2LeadsResponse;
   onGoalUpdated: () => void;
-  onReloadMonth: () => Promise<void>;
+  onReloadMonth: () => Promise<LeadsReloadResult>;
   canManage: boolean;
 }) {
   return (
@@ -1906,6 +1910,9 @@ export default function V2LeadsDashboard({
       });
     });
   };
+  const [reloadNotice, setReloadNotice] = useState<string | null>(null);
+  useEffect(() => setReloadNotice(null), [applied]);
+  const queryUtils = v2Trpc.useUtils();
   const dashboardQuery = v2Trpc.leads.dashboard.useQuery(
     omitLeadCampaign(applied),
     {
@@ -1942,9 +1949,32 @@ export default function V2LeadsDashboard({
   const changePage = (page: number) =>
     setApplied(current => ({ ...current, page }));
   const refresh = () => void dashboardQuery.refetch();
-  const reloadMonthlyBase = async () => {
-    const result = await dashboardQuery.refetch();
+  const reloadMonthlyBase = async (): Promise<LeadsReloadResult> => {
+    const previousImport = data?.source.importedAt;
+    // Mark related views stale without immediately issuing duplicate requests.
+    await Promise.all([
+      queryUtils.leads.dashboard.invalidate(undefined, { refetchType: "none" }),
+      queryUtils.dispatch.leadControl.invalidate(undefined, {
+        refetchType: "none",
+      }),
+    ]);
+    const result = await dashboardQuery.refetch({ throwOnError: true });
     if (result.error) throw result.error;
+    const fresh = result.data;
+    if (!fresh || fresh.status !== "READY")
+      throw new Error("Fonte de Leads não configurada.");
+    const summary: LeadsReloadResult = {
+      competence: fresh.pacing.competence,
+      total: fresh.summary.total,
+      monthlyTotal: fresh.pacing.current,
+      checkedAt: fresh.checkedAt ?? new Date().toISOString(),
+      importedAt: fresh.source.importedAt,
+      latestLeadDate: fresh.source.latestLeadDate ?? null,
+      requestedDateTo: fresh.period.dateTo,
+      newImport: fresh.source.importedAt !== previousImport,
+    };
+    setReloadNotice(describeLeadsReload(summary));
+    return summary;
   };
 
   if (!authenticated) return null;
@@ -1954,6 +1984,14 @@ export default function V2LeadsDashboard({
       className="min-h-[calc(100dvh-var(--mg-app-header-height,68px))] space-y-4"
     >
       <LeadsSectionNavigation activeTab={activeTab} onChange={selectTab} />
+      {reloadNotice ? (
+        <div
+          role="status"
+          className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs leading-5 text-slate-600"
+        >
+          {reloadNotice}
+        </div>
+      ) : null}
       <section
         id="mg-leads-panel"
         role="tabpanel"
@@ -2005,8 +2043,19 @@ export default function V2LeadsDashboard({
                     <p className="mt-1 text-[11px] text-slate-400">
                       {canManage
                         ? `${data.source.name || "Importação autenticada"} · ${formatImportedAt(data.source.importedAt)} · importação inicial, sem sincronização automática`
-                        : "Dados atualizados pela fonte autenticada"}
+                        : "Base autenticada · consulta dos dados já importados"}
                     </p>
+                    {data.source.latestLeadDate ? (
+                      <p
+                        className={`mt-1 text-[11px] ${data.source.latestLeadDate < data.period.dateTo ? "text-amber-700" : "text-slate-500"}`}
+                      >
+                        Último dia disponível na base:{" "}
+                        {fullDate(data.source.latestLeadDate)}.
+                        {data.source.latestLeadDate < data.period.dateTo
+                          ? " A fonte ainda não cobre a data final selecionada; é necessária uma nova importação externa."
+                          : ""}
+                      </p>
+                    ) : null}
                   </div>
                   <div className="flex items-center gap-2 text-xs text-slate-500">
                     <span className="h-2 w-2 rounded-full bg-emerald-500" />{" "}
