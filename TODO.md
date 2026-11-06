@@ -161,7 +161,7 @@ Validação final desta entrega: 186 testes, TypeScript e build aprovados; Prév
 
 ## Unidades EM BREVE na tabela comercial
 
-- [ ] Não exibir unidades cuja denominação oficial contenha EM BREVE na tabela Vendas e metas por concessionária da Visão Geral, inclusive ao buscar/ordenar. Preservar cadastro completo, origens, metas coletivas, Leads, validações e totais gerais; não alterar a planilha CRM ou outras abas por esta solicitação. Salvar no Manus, mantendo transferência GitHub cancelada e publicação automática desativada.
+- [x] Não exibir unidades cuja denominação oficial contenha EM BREVE na tabela Vendas e metas por concessionária da Visão Geral, inclusive ao buscar/ordenar. Preservar cadastro completo, origens, metas coletivas, Leads, validações e totais gerais; não alterar a planilha CRM ou outras abas por esta solicitação. Salvar no Manus, mantendo transferência GitHub cancelada e publicação automática desativada.
 
 ## Correção dos filtros de datas
 
@@ -174,4 +174,4 @@ Validação final desta entrega: 186 testes, TypeScript e build aprovados; Prév
 
 - [x] Na confirmação de metas ou FUP, cadastrar novos dealers identificáveis no arquivo em registro persistente, usando a mesma transação da importação, sem duplicar aliases/unidades existentes. Exibir novos candidatos no preview, sem gravar antecipadamente. Manter grupos/coletivos sem virar loja ou rateio fictício; preservar rótulos, UF válida, origem e auditoria. Contabilizar novas unidades no dashboard/comercial/filtros sem inventar Leads ou status CRM; manter o escopo CRM/BBRO de 40 lojas.
 
-Validação técnica desta entrega: 218 testes em 33 arquivos, TypeScript e build aprovados. Preview do modelo validado sem importação; cadastro extra vazio e metas manuais 16.600/660 preservadas. Confirmação do checkpoint pendente de registro pelo Manus.
+Validação técnica desta entrega: 218 testes em 33 arquivos, TypeScript e build aprovados. Preview do modelo validado sem importação; cadastro extra vazio e metas manuais 16.600/660 preservadas. Código aceito no repositório Manus. Não foi disponibilizada confirmação separada do registro no histórico de versões; não houve publicação ou transferência GitHub.
