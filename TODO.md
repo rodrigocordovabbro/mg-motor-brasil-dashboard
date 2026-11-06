@@ -121,3 +121,13 @@ Evidências finais: 128 testes, TypeScript e build aprovados. Recorte 01–04/11
 - [x] rodrigo Administrador pode editar Leads projetados do Plano de Mídia por competência, no total e nos níveis de produto/canal existentes. Salvar overrides auditáveis separados do plano original e recalcular CPLs/totais dependentes, sem alterar orçamento/comissão/investimento realizado nem Leads reais ou meta real de Leads. Um total manual não deve inventar rateio pelos níveis inferiores; mostrar que os detalhes permanecem preservados. Cliente e outras contas ficam somente leitura. Projeção zero produz CPL indisponível, não infinito; meses e versões anteriores preservados.
 
 Evidências desta entrega: 159 testes, TypeScript e build aprovados; MTD geral 43 do FUP em nova versão imutável e reenvio no-op. Leads, checks, auditorias, metas 16.600/722, contas e planos aprovados preservados; tabelas de overrides permanecem vazias até edição do usuário. Chaves transacionais corrigidas para primeiro salvamento concorrente.
+
+## Conversão geral solicitada
+
+- [x] Calcular o indicador geral como Vendas gerais MTD ÷ Leads reais × 100, com duas casas decimais: 43 ÷ 1.353 = 3,18%. Informar no cartão que é razão comparativa do FUP pelos Leads do período, sem afirmar conversão de coorte/vínculo individual. Referências de arquivo/período permanecem visíveis; não esconder o cálculo geral apenas porque a referência do FUP é 05/11 e o corte de Leads 04/11. Com zero Leads ou vendas ausentes, continuar indisponível; zero vendas conhecido é 0,00%. Filtros dimensionais sem vendas atribuídas continuam sem taxa específica. Não alterar a meta total manual de vendas 660 salva pelo usuário, nem quaisquer números/arquivos/checks.
+
+- [x] Na aba Lojas & CRM, retirar o painel Filtros de Leads (início/fim/modelo/canal/campanha/concessionária/busca e atalhos). Manter o painel nas demais abas; CRM mantém seus controles próprios de período/loja/status e D-1, sem herdar silenciosamente filtros de modelo/canal/campanha de outras abas.
+
+- [x] Plano de Mídia ocupa a mesma largura total disponível das outras abas, sem max-width centralizador; manter margens de segurança e adaptação móvel. Preservar projeções manuais de 16.600 e os cálculos salvos pelo usuário.
+
+Verificação desta correção: 164 testes, TypeScript e build aprovados; consulta real somente leitura confirmou conversão 3,18%, meta manual 660 e projeção do Plano de Mídia 16.600 preservadas.

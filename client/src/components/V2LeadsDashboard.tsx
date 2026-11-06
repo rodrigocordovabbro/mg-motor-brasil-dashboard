@@ -1183,8 +1183,17 @@ function DealerPerformanceCard({
           label="Conversão"
           value={
             available && totals.conversionRate != null
-              ? percentFormat(totals.conversionRate)
+              ? new Intl.NumberFormat("pt-BR", {
+                  style: "percent",
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                }).format(totals.conversionRate)
               : "Indisponível"
+          }
+          detail={
+            totals.conversionRate != null && totals.sales != null
+              ? `${numberFormat(totals.sales)} vendas MTD ÷ ${numberFormat(totals.leads)} leads do período · comparativo geral`
+              : "Sem base comparável para este filtro"
           }
         />
       </div>
@@ -1692,13 +1701,9 @@ function CrmDonut({ items }: { items: V2DistributionItem[] }) {
 }
 
 function StoresCrmTab({
-  filters,
-  onPeriodChange,
   clientMode,
   canManage,
 }: {
-  filters: V2DashboardFilters;
-  onPeriodChange: (from: string, to: string) => void;
   clientMode: boolean;
   canManage: boolean;
 }) {
@@ -1708,8 +1713,6 @@ function StoresCrmTab({
       clientMode={clientMode}
       canManage={canManage}
       embedded
-      filters={filters}
-      onPeriodChange={onPeriodChange}
     />
   );
 }
@@ -1957,7 +1960,7 @@ export default function V2LeadsDashboard({
     });
   };
   const dashboardQuery = v2Trpc.leads.dashboard.useQuery(applied, {
-    enabled: authenticated,
+    enabled: authenticated && activeTab !== "Lojas & CRM",
     retry: false,
     refetchOnWindowFocus: false,
   });
@@ -2003,41 +2006,7 @@ export default function V2LeadsDashboard({
         className="space-y-4"
       >
         {activeTab === "Lojas & CRM" ? (
-          <>
-            {data ? (
-              <FilterBar
-                draft={draft}
-                setDraft={setDraft}
-                options={data.options}
-                cutoff={cutoff}
-                onSearch={applyFilters}
-                dateError={dateError}
-                selectedPreset={selectedPreset}
-                onPreset={choosePreset}
-                isFetching={dashboardQuery.isFetching}
-                clientMode={clientMode}
-              />
-            ) : null}
-            <StoresCrmTab
-              filters={applied}
-              clientMode={clientMode}
-              canManage={canManage}
-              onPeriodChange={(from, to) => {
-                setDraft(current => ({
-                  ...current,
-                  dateFrom: from,
-                  dateTo: to,
-                  page: 1,
-                }));
-                setApplied(current => ({
-                  ...current,
-                  dateFrom: from,
-                  dateTo: to,
-                  page: 1,
-                }));
-              }}
-            />
-          </>
+          <StoresCrmTab clientMode={clientMode} canManage={canManage} />
         ) : dashboardQuery.isLoading && !data ? (
           <LoadingPanel />
         ) : !data ? (

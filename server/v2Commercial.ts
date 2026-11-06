@@ -1224,11 +1224,21 @@ export function buildOfficialCommercialPerformance(
       : (built.salesGoalImport?.total ?? null)
     : null;
   const salesTotal =
-    built.globalScope && built.salesCompatible
-      ? built.salesImport?.registrationMtd !== undefined
-        ? (built.salesImport.registrationMtd ?? null)
-        : (built.salesImport?.total ?? null)
-      : null;
+    globallyComparable && generalRegistrationMTD != null
+      ? generalRegistrationMTD.value
+      : built.globalScope && built.salesCompatible
+        ? built.salesImport?.registrationMtd !== undefined
+          ? (built.salesImport.registrationMtd ?? null)
+          : (built.salesImport?.total ?? null)
+        : null;
+  // Requested executive comparison, not a matched-lead/cohort conversion.
+  // The FUP file reference remains visible even when it differs from D-1.
+  const generalRatioSales = globallyComparable
+    ? (generalRegistrationMTD?.value ??
+      (built.salesImport?.registrationMtd === undefined && conversionCompatible
+        ? salesTotal
+        : null))
+    : null;
   return {
     available: true,
     sourceName,
@@ -1242,9 +1252,9 @@ export function buildOfficialCommercialPerformance(
       sales: salesTotal,
       salesGoal: salesGoalTotal,
       conversionRate:
-        !conversionCompatible || salesTotal == null || leadsTotal <= 0
+        generalRatioSales == null || leadsTotal <= 0
           ? null
-          : salesTotal / leadsTotal,
+          : generalRatioSales / leadsTotal,
     },
     warnings: distinctWarnings(allWarnings),
     sources,

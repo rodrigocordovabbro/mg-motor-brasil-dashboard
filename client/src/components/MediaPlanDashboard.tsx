@@ -295,7 +295,7 @@ export function MediaPlanDashboard({
     );
   if (!plan) {
     return (
-      <main className="mx-auto min-h-[calc(100vh-88px)] max-w-[1680px] px-4 py-8 lg:px-6">
+      <main className="w-full min-h-[calc(100vh-88px)]">
         <MediaPlanEmptyState locale={locale} />
       </main>
     );
