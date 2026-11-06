@@ -533,3 +533,38 @@ it("usa o mesmo alias extra de dealer no dashboard, volume CRM e preparação", 
     mock.state.sql.some(sql => sql.includes("FROM v2_dealer_registry"))
   ).toBe(true);
 });
+
+it("prioriza qualificação para placeholders mesmo com mapas antigos para linhas próprias", async () => {
+  const original = mock.state.leads;
+  mock.state.leads = original.map((row, i) => ({
+    ...row,
+    dealer:
+      i === 0 ? "CONCESSIONÁRIA NÃO PREENCHIDA" : i === 1 ? "None" : "outros",
+  }));
+  mock.state.metadata = {
+    days: [],
+    leadDealerMap: { "CONCESSIONÁRIA NÃO PREENCHIDA": 10, None: 10 },
+  };
+  try {
+    const result = await getLeadControl(1, {
+      dateFrom: "2026-11-01",
+      dateTo: "2026-11-02",
+    });
+    const q = result.rows.find(
+      row => row.storeName === "Leads em qualificação"
+    );
+    expect(q?.cells.reduce((n, c) => n + (c.volume ?? 0), 0)).toBe(3);
+    expect(
+      result.rows
+        .find(row => row.storeName === "Loja A")
+        ?.cells.every(c => c.volume === 0)
+    ).toBe(true);
+    expect(mock.state.leads.map(row => row.dealer)).toEqual([
+      "CONCESSIONÁRIA NÃO PREENCHIDA",
+      "None",
+      "outros",
+    ]);
+  } finally {
+    mock.state.leads = original;
+  }
+});

@@ -116,3 +116,29 @@ describe("Cadastro oficial MG Sales e fonte original preservada", () => {
     ).toBe(false);
   });
 });
+
+it("concilia aliases exatos da fonte sem decidir grupos genéricos nem regravar o dealer", () => {
+  const mappings = [
+    ["DS AUTOMOTOR", "Dão Silveira Natal Midway Mall"],
+    ["MEGAMIT - ALPHAVILLE", "Baltic Alphaville"],
+    ["Baltic Mall - 3964896", "Baltic Alphaville"],
+    ["IGUALTO - MG", "Iguauto Fortaleza"],
+    ["Sinal — São Paulo/SP", "Sinal Av. Europa"],
+    ["javep_-_bauru/sp", "Javep Bauru BOULEVARD SHOPPING BAURU"],
+    ["hg_aracaju_-_aracaju/se", "London Aracaju"],
+    [
+      "la_fontaine_joinville_-_joinville/sc",
+      "La Fontaine Joinville ( GARTEN Shopping )",
+    ],
+  ];
+  for (const [raw, canonical] of mappings) {
+    const original = lead(raw);
+    expect(resolveOfficialDealer(raw)).toBe(canonical);
+    expect(matchesV2LeadFilters(original, { dealer: canonical })).toBe(true);
+    expect(original.dealer).toBe(raw);
+  }
+  expect(resolveOfficialDealer("JAVEP BAURU")).toBeNull();
+  expect(resolveOfficialDealer("La Fontaine Joinville")).toBeNull();
+  expect(resolveCommercialDealers("HG/SE")).toHaveLength(2);
+  expect(resolveCommercialDealers("JAVEP/SP")).toHaveLength(2);
+});

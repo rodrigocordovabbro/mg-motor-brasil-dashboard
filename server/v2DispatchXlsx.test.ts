@@ -74,7 +74,11 @@ import {
   parseDispatchWorkbook,
 } from "./v2DispatchXlsx";
 
-async function fixtureBase64(): Promise<string> {
+async function fixtureBase64(
+  storeNames: [string, string] = ["Loja A", "Loja B"],
+  distantFormatting = false,
+  trailingContent = false
+): Promise<string> {
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet("Envios");
   worksheet.getCell("A1").value =
@@ -108,8 +112,8 @@ async function fixtureBase64(): Promise<string> {
     worksheet.getCell(6, start + 1).value = "";
     worksheet.getCell(6, start + 2).value = 0;
   });
-  worksheet.getRow(5).values = ["Loja A", "Responsável A", "OK", "OK"];
-  worksheet.getRow(6).values = ["Loja B", "Responsável B", "NÃO", ""];
+  worksheet.getRow(5).values = [storeNames[0], "Responsável A", "OK", "OK"];
+  worksheet.getRow(6).values = [storeNames[1], "Responsável B", "NÃO", ""];
   days.forEach(([, total], dayIndex) => {
     const start = 6 + dayIndex * 4;
     worksheet.getCell(5, start).value = "OK";
@@ -123,6 +127,10 @@ async function fixtureBase64(): Promise<string> {
   days.forEach(([, total], dayIndex) => {
     worksheet.getCell(7, 8 + dayIndex * 4).value = total;
   });
+  if (distantFormatting) {
+    worksheet.getRow(1000).getCell(26).style = { font: { italic: true } };
+  }
+  if (trailingContent) worksheet.getCell(8, 1).value = "Conteúdo fora do total";
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer).toString("base64");
 }
@@ -209,6 +217,26 @@ describe("parseDispatchWorkbook", () => {
     ]);
     expect(parsed.warnings).toEqual([]);
   });
+
+  it("ignora linhas e colunas apenas formatadas depois do TOTAL", async () => {
+    const parsed = await parseDispatchWorkbook(
+      "envios-formatados.xlsx",
+      await fixtureBase64(["Loja A", "Loja B"], true)
+    );
+    expect(parsed.rows).toHaveLength(2);
+    expect(
+      parsed.rows.reduce((count, row) => count + row.cells.length, 0)
+    ).toBe(10);
+  });
+
+  it("rejeita conteúdo real depois do TOTAL mesmo quando a estrutura tem folga", async () => {
+    await expect(
+      parseDispatchWorkbook(
+        "envios-fora-do-total.xlsx",
+        await fixtureBase64(["Loja A", "Loja B"], true, true)
+      )
+    ).rejects.toThrow(/após a linha TOTAL/);
+  });
 });
 
 describe("importDispatchWorkbook", () => {
@@ -241,11 +269,95 @@ describe("importDispatchWorkbook", () => {
     expect(
       sourceUpsertParams.some(params => params.includes("2026-11-05"))
     ).toBe(false);
+    const reportMetadataParam = mock.state.params.find((params, index) =>
+      mock.state.sql[index].startsWith(
+        "UPDATE v2_dispatch_reports SET metadata"
+      )
+    );
+    const reportMetadata = JSON.parse(String(reportMetadataParam?.[0]));
+    expect(reportMetadata.sourceRows).toEqual([
+      { rowId: 101, storeName: "Loja A", rowNumber: 5 },
+      { rowId: 102, storeName: "Loja B", rowNumber: 6 },
+    ]);
+    expect(reportMetadata.manualSourceImports).toEqual({
+      "101": {
+        "2026-11-01": now.toISOString(),
+        "2026-11-02": now.toISOString(),
+        "2026-11-03": now.toISOString(),
+        "2026-11-04": now.toISOString(),
+      },
+      "102": {
+        "2026-11-01": now.toISOString(),
+        "2026-11-02": now.toISOString(),
+        "2026-11-03": now.toISOString(),
+        "2026-11-04": now.toISOString(),
+      },
+    });
     expect(mock.state.sql.some(sql => sql.includes("v2_dispatch_checks"))).toBe(
       false
     );
     expect(mock.connection.commit).toHaveBeenCalledOnce();
     expect(mock.connection.rollback).not.toHaveBeenCalled();
+  });
+
+  it("resolve primeiro o nome Envios exato, depois o canônico, sem duplicar IDs por alias", async () => {
+    const exactSourceName = "Javep Bauru - Boulevard Shopping";
+    mock.state.rows = [
+      {
+        id: 201,
+        rowNumber: 9,
+        storeName: "Javep Bauru BOULEVARD SHOPPING BAURU",
+      },
+      { id: 202, rowNumber: 12, storeName: exactSourceName },
+      { id: 203, rowNumber: 6, storeName: "Loja B" },
+    ];
+    await importDispatchWorkbook(
+      1,
+      "envios-alias.xlsx",
+      await fixtureBase64([exactSourceName, "Loja B"]),
+      actor,
+      now
+    );
+
+    const rowInsertions = mock.state.sql.filter(sql =>
+      sql.startsWith("INSERT INTO v2_dispatch_rows")
+    );
+    expect(rowInsertions).toHaveLength(0);
+    const reportMetadataParam = mock.state.params.find((params, index) =>
+      mock.state.sql[index].startsWith(
+        "UPDATE v2_dispatch_reports SET metadata"
+      )
+    );
+    const reportMetadata = JSON.parse(String(reportMetadataParam?.[0]));
+    expect(reportMetadata.sourceRows).toEqual([
+      { rowId: 202, storeName: exactSourceName, rowNumber: 5 },
+      { rowId: 203, storeName: "Loja B", rowNumber: 6 },
+    ]);
+    expect(
+      new Set(
+        reportMetadata.sourceRows.map((row: { rowId: number }) => row.rowId)
+      ).size
+    ).toBe(reportMetadata.sourceRows.length);
+    expect(reportMetadata.manualSourceImports["202"]).toMatchObject({
+      "2026-11-01": now.toISOString(),
+      "2026-11-04": now.toISOString(),
+    });
+    expect(reportMetadata.manualSourceImports["202"]["2026-11-05"]).toBe(
+      undefined
+    );
+    expect(
+      mock.state.params.filter((params, index) =>
+        mock.state.sql[index].startsWith("UPDATE v2_dispatch_rows")
+      )
+    ).toEqual(
+      expect.arrayContaining([
+        expect.arrayContaining(["OK", "OK", 202, 1]),
+        expect.arrayContaining(["NÃO", "", 203, 1]),
+      ])
+    );
+    expect(mock.state.sql.some(sql => sql.includes("v2_dispatch_checks"))).toBe(
+      false
+    );
   });
 
   it("retorna noop quando o hash já tem auditoria, sem reler/escrever células", async () => {

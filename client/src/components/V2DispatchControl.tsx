@@ -2,6 +2,7 @@ import { canValidateCRM } from "@shared/accountRoles";
 import { trpc } from "@/lib/trpc";
 import { getDashboardCutoffDate } from "@shared/dashboardDates";
 import type { V2Filters } from "@shared/v2Types";
+import { currentManualValidation, effectiveManualOk } from "@shared/v2Dispatch";
 import type {
   DispatchAuditEntry,
   DispatchCell,
@@ -88,7 +89,11 @@ function errorMessage(error: unknown, exposeDetails = true) {
 }
 
 function manualIsOk(cell: DispatchCell) {
-  return cell.validation?.isOk ?? false;
+  return effectiveManualOk(cell);
+}
+
+export function manualExpectedVersion(cell: Pick<DispatchCell, "validation">) {
+  return cell.validation?.version ?? 0;
 }
 
 function stickyStyle(index: number) {
@@ -293,13 +298,18 @@ function ManualCell({
     error: unknown;
   };
 }) {
-  const validation = cell.validation;
+  const validation = currentManualValidation(cell);
   const isOk = manualIsOk(cell);
-  const responsible = validation?.reviewerLabel || "Wini";
-  const statusLabel = validation?.isOk ? "OK" : "Pendente";
+  const sourceIsCurrent =
+    validation === null && Boolean(cell.sourceManualImportedAt);
+  const responsible =
+    validation?.reviewerLabel || (sourceIsCurrent ? "Arquivo" : "Wini");
+  const statusLabel = isOk ? "OK" : "Pendente";
   const statusTitle = validation
     ? `${statusLabel}. Atualizado por ${validation.updatedBy || "usuário autenticado"} em ${timestampFormat(validation.updatedAt)}. Responsável: ${responsible}.`
-    : "Pendente. Ainda não há validação manual persistida; responsável pela conferência: Wini.";
+    : sourceIsCurrent
+      ? `${statusLabel}. Origem: Arquivo${cell.sourceManualImportedAt ? `, importado em ${timestampFormat(cell.sourceManualImportedAt)}` : ""}. Histórico auditado anterior preservado.`
+      : "Pendente. Ainda não há validação manual persistida; responsável pela conferência: Wini.";
 
   return (
     <div className="flex min-w-0 items-center justify-between gap-1">
@@ -346,7 +356,8 @@ function ManualCell({
                 Histórico do Manual
               </p>
               <p className="mt-1 text-[11px] leading-4 text-slate-500">
-                {storeName} · {cell.date} · responsável: Wini
+                {storeName} · {cell.date} · responsável: {responsible}
+                {sourceIsCurrent ? " · origem: Arquivo" : ""}
               </p>
             </div>
             <ManualHistory
@@ -1058,8 +1069,11 @@ export default function V2DispatchControl({
         sourceManualOk: cells.filter(
           cell => cell.sourceManual.trim().toUpperCase() === "OK"
         ).length,
-        auditedOk: cells.filter(cell => cell.validation?.isOk).length,
-        manualOverridden: cells.filter(cell => cell.validation !== null).length,
+        auditedOk: cells.filter(cell => currentManualValidation(cell)?.isOk)
+          .length,
+        manualOverridden: cells.filter(
+          cell => currentManualValidation(cell) !== null
+        ).length,
       },
     };
   }, [report, appliedFilters, cutoff]);
@@ -1137,7 +1151,7 @@ export default function V2DispatchControl({
       const validation = await setManualMutation.mutateAsync({
         cellId: cell.id,
         isOk,
-        expectedVersion: cell.validation?.version ?? 0,
+        expectedVersion: manualExpectedVersion(cell),
       });
       if (selectedReportId !== null)
         utils.dispatch.leadControl.setData(
@@ -1272,7 +1286,7 @@ export default function V2DispatchControl({
             <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-500">
               Vol. Lead vem da mesma base do dashboard, por dealer e dia de
               criação. Cadastro e integrações são referências de CRM; Manual é a
-              conferência do Wini. Corte D-1 em São Paulo.
+              conferência operacional. Corte D-1 em São Paulo.
             </p>
           </div>
           <div className="shrink-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs text-slate-600 lg:text-right">

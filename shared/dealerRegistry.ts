@@ -53,7 +53,7 @@ export const CRM_DEALERS = OFFICIAL_DEALERS.filter(
   dealer => dealer.name !== "Sinal Av. Indianópolis"
 );
 
-export const DEALER_MAPPING_VERSION = "mg-official-2026-11-05-indianopolis";
+export const DEALER_MAPPING_VERSION = "mg-official-2026-11-06-envios-aliases";
 
 export function normalizeDealerKey(value: string): string {
   return value
@@ -62,6 +62,21 @@ export function normalizeDealerKey(value: string): string {
     .toLocaleLowerCase("pt-BR")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+}
+
+/** Valores explicitamente sem unidade; categoria, nunca uma loja inferida. */
+export function isUnassignedLeadDealer(value: string): boolean {
+  return new Set([
+    "",
+    "outros",
+    "outro",
+    "nao informado",
+    "concessionaria nao preenchida",
+    "none",
+    "indisponivel",
+    "leads em qualificacao",
+    "equipe repassa loja nao identificada",
+  ]).has(normalizeDealerKey(value));
 }
 
 const byName = new Map(OFFICIAL_DEALERS.map(dealer => [dealer.name, dealer]));
@@ -254,8 +269,41 @@ export function officialDealer(name: string): OfficialDealer | undefined {
   return byName.get(name);
 }
 
+/**
+ * Aliases exatos da fonte: conciliados pelo de-para histórico autorizado
+ * (refresh de 15/08) e pelas unidades discriminadas no Envios de 01–05/11.
+ * Pontuação estrutural/underscores não são removidos aqui: nomes genéricos
+ * de grupos continuam ambíguos e suas metas coletivas não são rateadas.
+ */
+const sourceAliasKey = (raw: string) =>
+  raw
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pt-BR")
+    .trim()
+    .replace(/\s+/g, " ");
+const exactSourceAliases = new Map(
+  [
+    ["DS AUTOMOTOR", "Dão Silveira Natal Midway Mall"],
+    ["ds_automotor", "Dão Silveira Natal Midway Mall"],
+    ["MEGAMIT - ALPHAVILLE", "Baltic Alphaville"],
+    ["megamit_-_alphaville", "Baltic Alphaville"],
+    ["Baltic Mall - 3964896", "Baltic Alphaville"],
+    ["IGUALTO - MG", "Iguauto Fortaleza"],
+    ["Sinal — São Paulo/SP", "Sinal Av. Europa"],
+    ["javep_-_bauru/sp", "Javep Bauru BOULEVARD SHOPPING BAURU"],
+    ["hg_aracaju_-_aracaju/se", "London Aracaju"],
+    [
+      "la_fontaine_joinville_-_joinville/sc",
+      "La Fontaine Joinville ( GARTEN Shopping )",
+    ],
+  ].map(([raw, canonical]) => [sourceAliasKey(raw), canonical])
+);
+
 /** Aceita somente aliases registrados; cidades soltas e grupos não viram uma loja. */
 export function resolveOfficialDealer(raw: string): string | null {
+  const exactSource = exactSourceAliases.get(sourceAliasKey(raw));
+  if (exactSource) return exactSource;
   // IDs cadastrais presentes na fonte não fazem parte do nome da unidade.
   const value = raw.replace(/\s+-\s+\d{6,}\s*$/, "");
   return aliases.get(normalizeDealerKey(value)) ?? null;

@@ -40,6 +40,8 @@ export type DispatchCell = {
   /** Computed from v2_leads when volumeMode is dashboard-leads. */
   leadVolume?: number | null;
   sourcePending?: boolean;
+  /** Import timestamp for the source manual value, when supplied by XLSX. */
+  sourceManualImportedAt?: string;
   validation: DispatchValidation | null;
 };
 
@@ -62,6 +64,12 @@ export type DispatchReport = DispatchReportSummary & {
   information: { label: string; value: string }[];
   days: DispatchDay[];
   rows: DispatchRow[];
+  /** Original imported row identity/order, when available to report consumers. */
+  sourceRows?: Array<{
+    rowId: number;
+    storeName: string;
+    rowNumber: number;
+  }>;
   totals: {
     computed: number | null;
     sourceDailySum: number | null;
@@ -87,10 +95,29 @@ export type DispatchAuditEntry = {
   version: number;
 };
 
+export function currentManualValidation(
+  cell: Pick<DispatchCell, "sourceManualImportedAt" | "validation">
+): DispatchValidation | null {
+  const validation = cell.validation;
+  const sourceManualImportedAt = cell.sourceManualImportedAt;
+  if (
+    !validation ||
+    !sourceManualImportedAt ||
+    validation.updatedAt >= sourceManualImportedAt
+  ) {
+    return validation;
+  }
+  return null;
+}
+
 export function effectiveManualOk(
-  cell: Pick<DispatchCell, "sourceManual" | "validation">
+  cell: Pick<
+    DispatchCell,
+    "sourceManual" | "sourceManualImportedAt" | "validation"
+  >
 ) {
-  return cell.validation
-    ? cell.validation.isOk
-    : cell.sourceManual.trim().toUpperCase() === "OK";
+  return (
+    currentManualValidation(cell)?.isOk ??
+    cell.sourceManual.trim().toUpperCase() === "OK"
+  );
 }

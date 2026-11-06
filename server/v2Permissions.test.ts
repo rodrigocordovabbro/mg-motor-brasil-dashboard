@@ -537,3 +537,122 @@ it("informa configuração pendente ao administrador sem sucesso fictício", asy
     vi.unstubAllEnvs();
   }
 });
+
+it("usa IDs, nomes e ordem da fotografia atual e inclui qualificação sem somar aliases duplicados", () => {
+  const r = dispatchReport();
+  const base = r.rows[0];
+  const old = {
+    ...base,
+    id: 10,
+    rowNumber: 1,
+    storeName: "Autobrand Recife",
+    cells: base.cells.map(c => ({ ...c, volume: 0, leadVolume: 0 })),
+  };
+  const source = {
+    ...base,
+    id: 11,
+    rowNumber: 5,
+    storeName: "Autobrand Recife - Recife/PE",
+    cells: base.cells.map(c => ({ ...c, volume: 3, leadVolume: 3 })),
+  };
+  const qualification = {
+    ...base,
+    id: 12,
+    rowNumber: 6,
+    storeName: "— Equipe repassa (loja não identificada) —",
+    cells: base.cells.map(c => ({ ...c, volume: 2, leadVolume: 2 })),
+  };
+  r.rows = [old, source, qualification];
+  r.sourceRows = [
+    { rowId: 11, storeName: source.storeName, rowNumber: 5 },
+    { rowId: 12, storeName: qualification.storeName, rowNumber: 6 },
+  ];
+  r.totals.computed = 5;
+  const before = structuredClone(r);
+  const result = controlForCRM(r);
+  expect(result.rows.map(row => row.id)).toEqual([11, 12]);
+  expect(result.rows.map(row => row.storeName)).toEqual([
+    source.storeName,
+    qualification.storeName,
+  ]);
+  expect(result.totals.computed).toBe(5);
+  expect(result.days[0].computedTotal).toBe(5);
+  expect(r).toEqual(before);
+});
+
+it("mantém dealer novo e grupo ambíguo com volume positivo sem inferir unidade ou esconder oportunidades", () => {
+  const r = dispatchReport();
+  const base = r.rows[0];
+  r.volumeMode = "dashboard-leads";
+  r.rows = [
+    {
+      ...base,
+      cells: base.cells.map(c => ({ ...c, volume: 3, leadVolume: 3 })),
+    },
+    {
+      ...base,
+      id: 20,
+      storeName: "Dealer novo da fonte",
+      crmResponsible: "",
+      syonetIntegration: "",
+      bbroIntegration: "",
+      metadataMatched: false,
+      cells: base.cells.map(c => ({ ...c, volume: 2, leadVolume: 2 })),
+    },
+    {
+      ...base,
+      id: 21,
+      storeName: "JAVEP BAURU",
+      crmResponsible: "",
+      syonetIntegration: "",
+      bbroIntegration: "",
+      metadataMatched: false,
+      cells: base.cells.map(c => ({ ...c, volume: 1, leadVolume: 1 })),
+    },
+    {
+      ...base,
+      id: 22,
+      storeName: "Linha auxiliar antiga",
+      cells: base.cells.map(c => ({ ...c, volume: 0, leadVolume: 0 })),
+    },
+  ];
+  r.totals.computed = 6;
+  const before = structuredClone(r);
+  const result = controlForCRM(r);
+  expect(result.rows.map(row => row.storeName)).toEqual([
+    "Autobrand Recife",
+    "Dealer novo da fonte",
+    "JAVEP BAURU",
+  ]);
+  expect(result.totals.computed).toBe(6);
+  expect(result.days[0].computedTotal).toBe(6);
+  expect(result.rows[1].syonetIntegration).toBe("");
+  expect(r).toEqual(before);
+});
+
+it("soma volumes de aliases de uma unidade mas conserva controle e ID da fonte escolhida", () => {
+  const r = dispatchReport();
+  const base = r.rows[0];
+  r.volumeMode = "dashboard-leads";
+  r.rows = [
+    {
+      ...base,
+      cells: base.cells.map(c => ({ ...c, volume: 2, leadVolume: 2 })),
+    },
+    {
+      ...base,
+      id: 20,
+      storeName: "Autobrand Recife - Recife/PE",
+      cells: base.cells.map(c => ({ ...c, volume: 1, leadVolume: 1 })),
+    },
+  ];
+  r.totals.computed = 3;
+  const before = structuredClone(r);
+  const result = controlForCRM(r);
+  expect(result.rows).toHaveLength(1);
+  expect(result.rows[0].id).toBe(base.id);
+  expect(result.rows[0].cells[0].leadVolume).toBe(3);
+  expect(result.rows[0].cells[0].validation).toEqual(base.cells[0].validation);
+  expect(result.totals.computed).toBe(3);
+  expect(r).toEqual(before);
+});

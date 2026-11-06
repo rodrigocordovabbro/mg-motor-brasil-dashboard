@@ -28,3 +28,16 @@ describe("escopo do Manual BBRO", () => {
     ).toThrow();
   });
 });
+
+it("aceita o repasse sem dealer do CRM apenas em dia fechado", () => {
+  expect(() =>
+    assertBbroDispatchScope(
+      "— Equipe repassa (loja não identificada) —",
+      "2026-11-04",
+      "2026-11-04"
+    )
+  ).not.toThrow();
+  expect(() =>
+    assertBbroDispatchScope("Leads em qualificação", "2026-11-05", "2026-11-04")
+  ).toThrow();
+});

@@ -1,4 +1,8 @@
-import { CRM_DEALERS, resolveOfficialDealer } from "../shared/dealerRegistry";
+import {
+  CRM_DEALERS,
+  resolveOfficialDealer,
+  isUnassignedLeadDealer,
+} from "../shared/dealerRegistry";
 import { TRPCError } from "@trpc/server";
 import type { RowDataPacket } from "mysql2/promise";
 import {
@@ -31,6 +35,7 @@ type LeadMetadata = {
   days: DispatchDay[];
   leadDealerMap: Record<string, LeadMapValue>;
   leadDealerMapMeta: Record<string, Record<string, unknown>>;
+  sourceRows?: DispatchReport["sourceRows"];
   [key: string]: unknown;
 };
 
@@ -135,13 +140,7 @@ function normalizeDealer(value: string): string {
 }
 
 function isQualificationDealer(value: string): boolean {
-  const normalized = normalizeDealer(value);
-  return (
-    normalized === "" ||
-    normalized === "outros" ||
-    normalized === "outro" ||
-    normalized === "nao informado"
-  );
+  return isUnassignedLeadDealer(value);
 }
 
 function mappedRowId(value: unknown): number | null {
@@ -193,6 +192,21 @@ function findDeterministicRow(
 ): Assigned | null {
   const canonical = resolveOfficialDealer(rawDealer);
   if (canonical) {
+    const sourceRows = Array.isArray(metadata.sourceRows)
+      ? (metadata.sourceRows as { rowId: number; storeName: string }[])
+      : [];
+    const preferred = sourceRows.find(
+      row => resolveOfficialDealer(row.storeName) === canonical
+    );
+    const preferredRow = preferred
+      ? rows.find(row => row.id === preferred.rowId)
+      : null;
+    if (preferredRow)
+      return {
+        rowId: preferredRow.id,
+        metadataMatched: true,
+        matchMethod: "official-source-row",
+      };
     const official = rows.find(row => row.storeName === canonical);
     if (official)
       return {
@@ -209,6 +223,18 @@ function findDeterministicRow(
         metadataMatched: true,
         matchMethod: "official-de-para",
       };
+  }
+  if (isQualificationDealer(rawDealer)) {
+    const qualification = rows.find(row =>
+      isQualificationDealer(row.storeName)
+    );
+    return qualification
+      ? {
+          rowId: qualification.id,
+          metadataMatched: false,
+          matchMethod: "qualification",
+        }
+      : null;
   }
   const existingIds = new Set(rows.map(row => row.id));
   const persisted = mappedRowId(metadata.leadDealerMap[rawDealer]);
@@ -227,17 +253,6 @@ function findDeterministicRow(
         meta?.matchMethod !== "qualification",
       matchMethod: String(meta?.matchMethod ?? "persisted"),
     };
-  }
-  if (isQualificationDealer(rawDealer)) {
-    const qualification = rows.find(row => row.storeName === QUALIFICATION_ROW);
-    if (qualification) {
-      return {
-        rowId: qualification.id,
-        metadataMatched: false,
-        matchMethod: "qualification",
-      };
-    }
-    return null;
   }
   const exact = rows.find(row => row.storeName === rawDealer);
   if (exact)
@@ -340,6 +355,9 @@ function leadCells(
       volume: count,
       leadVolume: count,
       ...(source?.sourcePending ? { sourcePending: true } : {}),
+      ...(source?.sourceManualImportedAt
+        ? { sourceManualImportedAt: source.sourceManualImportedAt }
+        : {}),
       validation: source?.validation ?? null,
     };
   });
@@ -582,12 +600,26 @@ export async function prepareLeadControl(
           const candidates = reportRows.filter(
             row => resolveOfficialDealer(row.storeName) === dealer.name
           );
+          const source = metadata.sourceRows?.find(
+            row => resolveOfficialDealer(row.storeName) === dealer.name
+          );
           const row =
+            candidates.find(row => row.id === source?.rowId) ??
             candidates.find(row => row.storeName === dealer.name) ??
             candidates.sort((a, b) => a.rowNumber - b.rowNumber)[0];
           return row ? [row] : [];
         })
       : [...new Map(reportRows.map(row => [row.id, row])).values()];
+    if (crmOnly) {
+      const source = metadata.sourceRows?.find(row =>
+        isQualificationDealer(row.storeName)
+      );
+      const qualification =
+        reportRows.find(row => row.id === source?.rowId) ??
+        reportRows.find(row => isQualificationDealer(row.storeName));
+      if (qualification && !allRows.some(row => row.id === qualification.id))
+        allRows.push(qualification);
+    }
     const allowedRowIds = new Set(allRows.map(row => row.id));
     let addedCells = false;
     let batch: unknown[][] = [];

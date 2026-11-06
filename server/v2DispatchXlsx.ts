@@ -3,6 +3,7 @@ import ExcelJS from "exceljs";
 import type { RowDataPacket } from "mysql2/promise";
 import { TRPCError } from "@trpc/server";
 import { getDashboardCutoffDate } from "../shared/dashboardDates";
+import { resolveOfficialDealer } from "../shared/dealerRegistry";
 import type { V2Identity } from "./v2Auth";
 import { getV2Pool } from "./v2Db";
 
@@ -13,6 +14,12 @@ const MAX_ENTRY_UNCOMPRESSED_BYTES = 16 * 1024 * 1024;
 const MAX_ARCHIVE_UNCOMPRESSED_BYTES = 64 * 1024 * 1024;
 const MAX_SOURCE_ROWS = 500;
 const MAX_SOURCE_DAYS = 366;
+// ExcelJS counts style-only rows/columns in rowCount/columnCount. Keep a
+// separate structural ceiling so ignoring distant formatting never turns the
+// parser into an unbounded worksheet walk.
+const MAX_SAFE_WORKSHEET_ROWS = 4_096;
+const MAX_SAFE_WORKSHEET_COLUMNS = 2_048;
+const MAX_SOURCE_COLUMNS = 1_500;
 const EXPECTED_FIXED_HEADERS = [
   "NOME DA LOJA",
   "Responsável por CRM",
@@ -85,6 +92,24 @@ export type ParsedDispatchWorkbook = {
 
 type Period = { dateFrom: string; dateTo: string };
 
+type InspectedCell = {
+  rowNumber: number;
+  columnNumber: number;
+  cell: ExcelJS.Cell;
+};
+
+type InspectedWorksheet = {
+  cells: InspectedCell[];
+  contentRows: Set<number>;
+  maxContentColumn: number;
+};
+
+type SourceRowMetadata = {
+  rowId: number;
+  storeName: string;
+  rowNumber: number;
+};
+
 function fail(message: string): never {
   throw new Error(`Arquivo Envios inválido: ${message}`);
 }
@@ -118,6 +143,62 @@ function cellValue(cell: ExcelJS.Cell): unknown {
     return (value as { result?: unknown }).result;
   }
   return value;
+}
+
+function cellHasContent(cell: ExcelJS.Cell): boolean {
+  const value = cell.value as unknown;
+  if (value == null) return false;
+  if (typeof value === "object" && value !== null) {
+    const candidate = value as {
+      formula?: unknown;
+      result?: unknown;
+      text?: unknown;
+      richText?: unknown[];
+    };
+    // A formula is real worksheet content even when its cached result is
+    // empty; accepting it as formatting could hide data outside the layout.
+    if (candidate.formula != null) return true;
+    if (Array.isArray(candidate.richText))
+      return candidate.richText.some(part => textOf(part).trim() !== "");
+    if (candidate.text != null) return textOf(candidate.text).trim() !== "";
+    if (candidate.result != null) return cellHasContentValue(candidate.result);
+  }
+  return cellHasContentValue(value);
+}
+
+function cellHasContentValue(value: unknown): boolean {
+  return textOf(value).trim() !== "";
+}
+
+function inspectWorksheetContent(
+  worksheet: ExcelJS.Worksheet
+): InspectedWorksheet {
+  if (
+    worksheet.rowCount > MAX_SAFE_WORKSHEET_ROWS ||
+    worksheet.columnCount > MAX_SAFE_WORKSHEET_COLUMNS
+  ) {
+    fail("a estrutura da aba Envios excede o limite seguro de leitura.");
+  }
+
+  const cells: InspectedCell[] = [];
+  const contentRows = new Set<number>();
+  let maxContentColumn = 0;
+  worksheet.eachRow(row => {
+    // This is intentionally checked before reading cells in a distant row:
+    // style-only rows are omitted by eachRow, while any actual value beyond
+    // MAX_SOURCE_ROWS is an out-of-bounds payload and must be rejected.
+    if (row.number > MAX_SOURCE_ROWS)
+      fail("a aba Envios possui conteúdo além do limite de 500 linhas.");
+    row.eachCell((cell, columnNumber) => {
+      if (!cellHasContent(cell)) return;
+      cells.push({ rowNumber: row.number, columnNumber, cell });
+      contentRows.add(row.number);
+      maxContentColumn = Math.max(maxContentColumn, columnNumber);
+    });
+  });
+  if (maxContentColumn > MAX_SOURCE_COLUMNS)
+    fail("a aba Envios possui conteúdo além do limite de 366 dias.");
+  return { cells, contentRows, maxContentColumn };
 }
 
 function parseDmy(value: string): string | null {
@@ -314,9 +395,7 @@ export async function parseDispatchWorkbook(
   }
   const worksheet = workbook.getWorksheet("Envios");
   if (!worksheet) fail("a aba Envios não foi encontrada.");
-  if (worksheet.rowCount > MAX_SOURCE_ROWS || worksheet.columnCount > 1_500) {
-    fail("a aba Envios excede os limites de 500 linhas ou 366 dias.");
-  }
+  const inspected = inspectWorksheetContent(worksheet);
   const title = textOf(cellValue(worksheet.getCell(1, 1)));
   const period = parsePeriod(title);
   const generatedLabel = formatGeneratedLabel(title, period.dateTo);
@@ -333,7 +412,7 @@ export async function parseDispatchWorkbook(
 
   const groups: { date: string; label: string; startColumn: number }[] = [];
   const seenDates = new Set<string>();
-  for (let column = 5; column <= worksheet.columnCount; column++) {
+  for (let column = 5; column <= inspected.maxContentColumn; column++) {
     const rawLabel = cellValue(worksheet.getCell(3, column));
     if (textOf(rawLabel).trim() === "") continue;
     const date = resolvePeriodDate(rawLabel, period);
@@ -355,6 +434,34 @@ export async function parseDispatchWorkbook(
   }
   if (!groups.length) fail("nenhum grupo diário foi encontrado.");
 
+  const allowedColumns = new Set<number>([1, 2, 3, 4]);
+  for (const group of groups) {
+    allowedColumns.add(group.startColumn);
+    allowedColumns.add(group.startColumn + 1);
+    allowedColumns.add(group.startColumn + 2);
+  }
+  if (inspected.cells.some(cell => !allowedColumns.has(cell.columnNumber))) {
+    fail(
+      "a aba Envios possui conteúdo fora dos grupos diários ou cabeçalho fixo."
+    );
+  }
+
+  const totalRows = [...inspected.contentRows]
+    .filter(rowNumber => rowNumber >= 5)
+    .filter(
+      rowNumber =>
+        textOf(cellValue(worksheet.getCell(rowNumber, 1)))
+          .trim()
+          .toUpperCase() === "TOTAL"
+    );
+  if (totalRows.length !== 1) fail("a linha TOTAL não foi encontrada.");
+  const totalRowNumber = totalRows[0];
+  if (
+    [...inspected.contentRows].some(rowNumber => rowNumber > totalRowNumber)
+  ) {
+    fail("a aba Envios possui conteúdo após a linha TOTAL.");
+  }
+
   const parsedRows: ParsedDispatchRow[] = [];
   const storeNames = new Set<string>();
   const dayTotals = new Map<string, number | null>();
@@ -363,19 +470,10 @@ export async function parseDispatchWorkbook(
     dayTotals.set(group.date, null);
     sums.set(group.date, 0);
   }
-  let totalRowFound = false;
-  for (
-    let rowNumber = 5;
-    rowNumber <= Math.min(worksheet.rowCount, MAX_SOURCE_ROWS);
-    rowNumber++
-  ) {
+  for (let rowNumber = 5; rowNumber <= totalRowNumber; rowNumber++) {
+    if (!inspected.contentRows.has(rowNumber)) continue;
     const storeName = textOf(cellValue(worksheet.getCell(rowNumber, 1)));
-    const allEmpty = Array.from({ length: worksheet.columnCount }, (_, i) =>
-      textOf(cellValue(worksheet.getCell(rowNumber, i + 1))).trim()
-    ).every(value => value === "");
-    if (allEmpty) continue;
     if (storeName.trim().toUpperCase() === "TOTAL") {
-      totalRowFound = true;
       for (const group of groups) {
         dayTotals.set(
           group.date,
@@ -417,7 +515,6 @@ export async function parseDispatchWorkbook(
     }
     parsedRows.push(parsed);
   }
-  if (!totalRowFound) fail("a linha TOTAL não foi encontrada.");
   if (!parsedRows.length) fail("nenhuma loja foi encontrada.");
 
   const warnings: string[] = [];
@@ -460,8 +557,70 @@ export const dispatchXlsxLimits = {
 
 type DispatchMetadata = {
   days: (SourceDay & { pending?: boolean })[];
+  sourceRows?: SourceRowMetadata[];
+  manualSourceImports?: Record<string, Record<string, string>>;
   [key: string]: unknown;
 };
+
+function validIsoDateKey(value: unknown): value is string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value))
+    return false;
+  const [year, month, day] = value.split("-").map(Number);
+  return makeIsoDate(year, month, day) === value;
+}
+
+function parseSourceRows(value: unknown): SourceRowMetadata[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const rows = value.flatMap(item => {
+    if (!item || typeof item !== "object") return [];
+    const source = item as Record<string, unknown>;
+    const rowId = Number(source.rowId);
+    const rowNumber = Number(source.rowNumber);
+    if (
+      !Number.isSafeInteger(rowId) ||
+      rowId < 1 ||
+      !Number.isSafeInteger(rowNumber) ||
+      rowNumber < 1 ||
+      typeof source.storeName !== "string"
+    )
+      return [];
+    return [
+      {
+        rowId,
+        storeName: source.storeName,
+        rowNumber,
+      },
+    ];
+  });
+  return rows;
+}
+
+function parseManualSourceImports(
+  value: unknown
+): Record<string, Record<string, string>> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const result: Record<string, Record<string, string>> = {};
+  for (const [rowId, datesValue] of Object.entries(
+    value as Record<string, unknown>
+  )) {
+    if (!/^\d+$/.test(rowId) || Number(rowId) < 1) continue;
+    if (
+      !datesValue ||
+      typeof datesValue !== "object" ||
+      Array.isArray(datesValue)
+    )
+      continue;
+    const dates: Record<string, string> = {};
+    for (const [date, importedAt] of Object.entries(
+      datesValue as Record<string, unknown>
+    )) {
+      if (validIsoDateKey(date) && typeof importedAt === "string")
+        dates[date] = importedAt;
+    }
+    if (Object.keys(dates).length) result[rowId] = dates;
+  }
+  return result;
+}
 
 function parseReportMetadata(value: unknown): DispatchMetadata {
   let parsed: unknown = value;
@@ -501,7 +660,16 @@ function parseReportMetadata(value: unknown): DispatchMetadata {
           };
         })
     : [];
-  return { ...object, days };
+  const sourceRows = parseSourceRows(object.sourceRows);
+  const manualSourceImports = parseManualSourceImports(
+    object.manualSourceImports
+  );
+  return {
+    ...object,
+    days,
+    ...(sourceRows ? { sourceRows } : {}),
+    ...(Object.keys(manualSourceImports).length ? { manualSourceImports } : {}),
+  };
 }
 
 function conflict(message: string): never {
@@ -628,21 +796,59 @@ export async function importDispatchWorkbook(
       "SELECT id,rowNumber,storeName FROM v2_dispatch_rows WHERE reportId=? ORDER BY rowNumber FOR UPDATE",
       [reportId]
     );
-    const rowByStore = new Map<string, { id: number; rowNumber: number }>();
+    type ExistingDispatchRow = {
+      id: number;
+      rowNumber: number;
+      storeName: string;
+    };
+    const rowsByExactStore = new Map<string, ExistingDispatchRow[]>();
+    const allRowsById = new Map<number, ExistingDispatchRow>();
+    const candidateRows: ExistingDispatchRow[] = [];
     const usedRowNumbers = new Set<number>();
     let maxRowNumber = 0;
     for (const row of existingRows) {
-      const rowNumber = Number(row.rowNumber);
-      rowByStore.set(String(row.storeName), { id: Number(row.id), rowNumber });
+      const existing: ExistingDispatchRow = {
+        id: Number(row.id),
+        rowNumber: Number(row.rowNumber),
+        storeName: String(row.storeName),
+      };
+      const exact = rowsByExactStore.get(existing.storeName) ?? [];
+      exact.push(existing);
+      rowsByExactStore.set(existing.storeName, exact);
+      allRowsById.set(existing.id, existing);
+      candidateRows.push(existing);
+      const rowNumber = existing.rowNumber;
       usedRowNumbers.add(rowNumber);
       maxRowNumber = Math.max(maxRowNumber, rowNumber);
     }
 
-    const rowIds = new Map<string, number>();
-    for (const sourceRow of parsed.rows) {
-      const known = rowByStore.get(sourceRow.storeName);
+    const byPosition = (a: ExistingDispatchRow, b: ExistingDispatchRow) =>
+      a.rowNumber - b.rowNumber || a.id - b.id;
+    const preferredExistingRow = (
+      sourceStoreName: string
+    ): ExistingDispatchRow | undefined => {
+      // The source's exact spelling wins, including when an official row and
+      // another alias for that official unit are both already present.
+      const exact = rowsByExactStore.get(sourceStoreName);
+      if (exact?.length) return [...exact].sort(byPosition)[0];
+
+      const officialName = resolveOfficialDealer(sourceStoreName);
+      if (!officialName) return undefined;
+      const canonical = rowsByExactStore.get(officialName);
+      if (canonical?.length) return [...canonical].sort(byPosition)[0];
+
+      const aliases = candidateRows
+        .filter(row => resolveOfficialDealer(row.storeName) === officialName)
+        .sort(byPosition);
+      return aliases[0];
+    };
+
+    const rowIdsBySourceIndex = new Map<number, number>();
+    const sourceRows: SourceRowMetadata[] = [];
+    for (const [sourceIndex, sourceRow] of parsed.rows.entries()) {
+      const known = preferredExistingRow(sourceRow.storeName);
       if (known) {
-        rowIds.set(sourceRow.storeName, known.id);
+        rowIdsBySourceIndex.set(sourceIndex, known.id);
         await connection.execute(
           "UPDATE v2_dispatch_rows SET crmResponsible=?,syonetIntegration=?,bbroIntegration=? WHERE id=? AND reportId=?",
           [
@@ -673,11 +879,31 @@ export async function importDispatchWorkbook(
       const id = Number((result as { insertId?: number }).insertId);
       if (!Number.isSafeInteger(id) || id < 1)
         throw new Error("A inserção da loja não retornou um id válido.");
-      rowIds.set(sourceRow.storeName, id);
-      rowByStore.set(sourceRow.storeName, { id, rowNumber });
+      const inserted: ExistingDispatchRow = {
+        id,
+        rowNumber,
+        storeName: sourceRow.storeName,
+      };
+      rowIdsBySourceIndex.set(sourceIndex, id);
+      allRowsById.set(id, inserted);
+      candidateRows.push(inserted);
+      const exact = rowsByExactStore.get(sourceRow.storeName) ?? [];
+      exact.push(inserted);
+      rowsByExactStore.set(sourceRow.storeName, exact);
     }
 
-    const allRows = [...rowByStore.values()];
+    for (const [sourceIndex, sourceRow] of parsed.rows.entries()) {
+      const rowId = rowIdsBySourceIndex.get(sourceIndex);
+      if (rowId) {
+        sourceRows.push({
+          rowId,
+          storeName: sourceRow.storeName,
+          rowNumber: sourceRow.rowNumber,
+        });
+      }
+    }
+
+    const allRows = [...allRowsById.values()];
     for (const row of allRows) {
       for (const day of metadata.days) {
         await connection.execute(
@@ -688,8 +914,12 @@ export async function importDispatchWorkbook(
     }
 
     const eligibleDates = new Set(eligibleDays.map(day => day.date));
-    for (const sourceRow of parsed.rows) {
-      const rowId = rowIds.get(sourceRow.storeName);
+    const importedAt = now.toISOString();
+    const manualSourceImports = parseManualSourceImports(
+      metadata.manualSourceImports
+    );
+    for (const [sourceIndex, sourceRow] of parsed.rows.entries()) {
+      const rowId = rowIdsBySourceIndex.get(sourceIndex);
       if (!rowId) continue;
       for (const sourceCell of sourceRow.cells) {
         if (!eligibleDates.has(sourceCell.date)) continue;
@@ -704,8 +934,13 @@ export async function importDispatchWorkbook(
             false,
           ]
         );
+        const rowImports = manualSourceImports[String(rowId)] ?? {};
+        rowImports[sourceCell.date] = importedAt;
+        manualSourceImports[String(rowId)] = rowImports;
       }
     }
+    metadata.sourceRows = sourceRows;
+    metadata.manualSourceImports = manualSourceImports;
 
     await connection.execute(
       "UPDATE v2_dispatch_reports SET metadata=? WHERE id=?",
@@ -733,7 +968,7 @@ export async function importDispatchWorkbook(
         ...previousApplications,
         {
           actorId: actor.id,
-          at: now.toISOString(),
+          at: importedAt,
           days: eligibleDays.map(day => day.date),
         },
       ],

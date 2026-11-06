@@ -1,4 +1,8 @@
-import { CRM_DEALERS, resolveOfficialDealer } from "../shared/dealerRegistry";
+import {
+  CRM_DEALERS,
+  resolveOfficialDealer,
+  isUnassignedLeadDealer,
+} from "../shared/dealerRegistry";
 import {
   getDashboardCutoffDate,
   isIsoCalendarDate,
@@ -90,6 +94,10 @@ export async function getDispatchReport(
     });
   const report = reports[0];
   const days = metadataDays(report.metadata);
+  const metadata = metadataObject(report.metadata);
+  const manualImports = metadata.manualSourceImports as
+    | Record<string, Record<string, string>>
+    | undefined;
   const [rawRows] = await db.execute<RowDataPacket[]>(
     "SELECT id,rowNumber,storeName,crmResponsible,syonetIntegration,bbroIntegration FROM v2_dispatch_rows WHERE reportId=? ORDER BY rowNumber",
     [reportId]
@@ -119,6 +127,12 @@ export async function getDispatchReport(
       sourceManual: String(c.sourceManual ?? ""),
       volume: c.volume == null ? null : Number(c.volume),
       sourcePending: Boolean(c.sourcePending),
+      ...(manualImports?.[String(c.rowId)]?.[String(c.dispatchDate)]
+        ? {
+            sourceManualImportedAt:
+              manualImports[String(c.rowId)][String(c.dispatchDate)],
+          }
+        : {}),
       validation:
         c.version == null
           ? null
@@ -164,6 +178,9 @@ export async function getDispatchReport(
     importedAt: iso(report.importedAt),
     information: [],
     days: reportDays,
+    ...(Array.isArray(metadata.sourceRows)
+      ? { sourceRows: metadata.sourceRows as DispatchReport["sourceRows"] }
+      : {}),
     rows: [...byRow.values()],
     totals: {
       computed: knownVolumes,
@@ -205,8 +222,8 @@ export function assertBbroDispatchScope(
 ): void {
   const official = resolveOfficialDealer(storeName);
   if (
-    !official ||
-    !CRM_DEALERS.some(dealer => dealer.name === official) ||
+    (!isUnassignedLeadDealer(storeName) &&
+      (!official || !CRM_DEALERS.some(dealer => dealer.name === official))) ||
     !isIsoCalendarDate(date) ||
     date > cutoff
   ) {

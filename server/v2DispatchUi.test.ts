@@ -1,7 +1,11 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { DispatchReport } from "../shared/v2Dispatch";
+import {
+  currentManualValidation,
+  effectiveManualOk,
+  type DispatchReport,
+} from "../shared/v2Dispatch";
 const state = vi.hoisted(() => ({
   report: null as unknown,
   list: [] as unknown[],
@@ -62,7 +66,9 @@ vi.mock("@/lib/trpc", () => ({
     },
   },
 }));
-import V2DispatchControl from "../client/src/components/V2DispatchControl";
+import V2DispatchControl, {
+  manualExpectedVersion,
+} from "../client/src/components/V2DispatchControl";
 function TestControl(props: {
   authenticated?: boolean;
   embedded?: boolean;
@@ -152,14 +158,12 @@ describe("Lojas & CRM operational clone", () => {
     expect(html).toContain("04/nov");
     expect(html).not.toContain("05/nov");
     expect(html).not.toContain("Como ler");
-    expect(
-      html.match(/<input[^>]+aria-label="Manual Pendente[^>]+>/)?.[0]
-    ).not.toContain('checked=""');
+    expect(html.match(/<input[^>]+aria-label="Manual OK[^>]+>/)?.[0]).toContain(
+      'checked=""'
+    );
     expect(html).not.toContain("OKs do arquivo");
     expect(html).toContain("Expandir planilha");
-    const checkbox = html.match(
-      /<input[^>]+aria-label="Manual Pendente[^>]+>/
-    )?.[0];
+    const checkbox = html.match(/<input[^>]+aria-label="Manual OK[^>]+>/)?.[0];
     expect(checkbox).not.toContain('disabled=""');
   });
   it("cliente vê nomes de CRM, mas o checkbox Manual fica somente leitura", () => {
@@ -172,9 +176,7 @@ describe("Lojas & CRM operational clone", () => {
     );
     expect(html).toContain("Autobrand Recife");
     expect(html).toContain("Contato de teste restrito");
-    const checkbox = html.match(
-      /<input[^>]+aria-label="Manual Pendente[^>]+>/
-    )?.[0];
+    const checkbox = html.match(/<input[^>]+aria-label="Manual OK[^>]+>/)?.[0];
     expect(checkbox).toContain('disabled=""');
   });
   it("BBRO vê nomes de CRM e pode editar o checkbox Manual", () => {
@@ -187,9 +189,7 @@ describe("Lojas & CRM operational clone", () => {
     );
     expect(html).toContain("Autobrand Recife");
     expect(html).toContain("Contato de teste restrito");
-    const checkbox = html.match(
-      /<input[^>]+aria-label="Manual Pendente[^>]+>/
-    )?.[0];
+    const checkbox = html.match(/<input[^>]+aria-label="Manual OK[^>]+>/)?.[0];
     expect(checkbox).not.toContain('disabled=""');
   });
   it("does not invent zero volume or OK for a day awaiting source", () => {
@@ -241,5 +241,73 @@ describe("Lojas & CRM operational clone", () => {
     );
     expect(html).toContain("Login necessário");
     expect(html).not.toContain("Autobrand Recife");
+  });
+});
+
+describe("manual source provenance", () => {
+  it("uses a fresh imported OK without inventing an audit and preserves the old audit", () => {
+    const report = fixture();
+    const cell = report.rows[0].cells[0];
+    const previousValidation = {
+      isOk: false,
+      version: 7,
+      reviewerLabel: "Wini",
+      updatedBy: "auditor-old",
+      updatedAt: "2026-11-04T09:00:00Z",
+    };
+    cell.sourceManualImportedAt = "2026-11-05T12:00:00Z";
+    cell.validation = previousValidation;
+    state.report = report;
+
+    expect(currentManualValidation(cell)).toBeNull();
+    expect(effectiveManualOk(cell)).toBe(true);
+    expect(cell.validation).toBe(previousValidation);
+    expect(manualExpectedVersion(cell)).toBe(7);
+
+    const html = renderToStaticMarkup(
+      React.createElement(TestControl, {
+        authenticated: true,
+        embedded: true,
+        clientMode: false,
+        canManage: true,
+      })
+    );
+    const checkbox = html.match(/<input[^>]+aria-label="Manual OK[^>]+>/)?.[0];
+    expect(checkbox).toContain('checked=""');
+    expect(html).toContain("Origem: Arquivo");
+    expect(html).toContain("Histórico auditado anterior preservado");
+    expect(html).not.toContain("Responsável: Wini.");
+  });
+
+  it("lets a validation newer than the imported snapshot prevail", () => {
+    const report = fixture();
+    const cell = report.rows[0].cells[0];
+    cell.sourceManualImportedAt = "2026-11-05T12:00:00Z";
+    cell.validation = {
+      isOk: false,
+      version: 8,
+      reviewerLabel: "Wini",
+      updatedBy: "auditor-new",
+      updatedAt: "2026-11-05T12:01:00Z",
+    };
+    state.report = report;
+
+    expect(currentManualValidation(cell)).toBe(cell.validation);
+    expect(effectiveManualOk(cell)).toBe(false);
+
+    const html = renderToStaticMarkup(
+      React.createElement(TestControl, {
+        authenticated: true,
+        embedded: true,
+        clientMode: false,
+        canManage: true,
+      })
+    );
+    const checkbox = html.match(
+      /<input[^>]+aria-label="Manual Pendente[^>]+>/
+    )?.[0];
+    expect(checkbox).not.toContain('checked=""');
+    expect(html).toContain("Atualizado por auditor-new");
+    expect(html).not.toContain("Origem: Arquivo");
   });
 });
