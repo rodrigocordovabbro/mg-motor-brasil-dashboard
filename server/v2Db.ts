@@ -9,17 +9,17 @@ export function getV2Pool() {
 
 export async function getV2Account(username: string) {
   const [rows] = await getV2Pool().execute<mysql.RowDataPacket[]>(
-    "SELECT id, username, passwordHash, isActive FROM v2_accounts WHERE username = ? LIMIT 1",
+    "SELECT id, username, passwordHash, isActive, role, sessionVersion FROM v2_accounts WHERE username = ? LIMIT 1",
     [username]
   );
   return rows[0] as
-    | { id: number; username: string; passwordHash: string; isActive: number }
+    | { id: number; username: string; passwordHash: string; isActive: number; role: "admin" | "client"; sessionVersion: number }
     | undefined;
 }
 
 export async function getV2Goal(competence: string) {
   const [rows] = await getV2Pool().execute<mysql.RowDataPacket[]>(
-    "SELECT goal FROM v2_lead_goals WHERE competence = ? LIMIT 1",
+    "SELECT g.goal FROM v2_lead_goals g LEFT JOIN v2_commercial_import_state s ON s.importId=g.sourceImportId WHERE g.competence = ? AND (g.sourceKind='manual' OR g.sourceKind IS NULL OR (g.sourceKind='import' AND g.sourceImportId IS NOT NULL AND (s.importId IS NULL OR s.removedAt IS NULL))) LIMIT 1",
     [competence]
   );
   return rows.length ? Number(rows[0].goal) : null;
@@ -44,6 +44,10 @@ export async function saveV2Goal(
     await connection.execute(
       "INSERT INTO v2_goal_audit (competence,oldGoal,newGoal,accountId) VALUES (?,?,?,?)",
       [competence, rows[0]?.goal ?? null, goal, accountId]
+    );
+    await connection.execute(
+      "UPDATE v2_lead_goals SET sourceKind='manual',sourceImportId=NULL WHERE competence=?",
+      [competence]
     );
     await connection.commit();
   } catch (error) {

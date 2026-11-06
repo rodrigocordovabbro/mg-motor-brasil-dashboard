@@ -163,10 +163,15 @@ describe("V2 authentication", () => {
   it("rejects forged tokens and tokens from another project", async () => {
     vi.stubEnv("MANUS_JWT_SECRET", "unit-test-secret-only");
     vi.stubEnv("MANUS_PROJECT_ID", "project-v2-unit-test");
-    const token = await createV2Token({ id: 1, username: "test-only-user" });
+    const token = await createV2Token({
+      id: 1,
+      username: "test-only-user",
+      sessionVersion: 0,
+    });
     expect(await verifyV2Token(token)).toEqual({
       id: 1,
       username: "test-only-user",
+      sessionVersion: 0,
     });
     expect(await verifyV2Token(token + "bad")).toBeNull();
     vi.stubEnv("MANUS_PROJECT_ID", "different-project");

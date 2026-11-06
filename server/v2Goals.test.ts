@@ -67,7 +67,7 @@ describe("monthly lead goals", () => {
     await expect(getV2Goal("2026-11")).resolves.toBe(1353);
     expect(mock.execute).toHaveBeenCalledTimes(1);
     expect(mock.execute).toHaveBeenCalledWith(
-      "SELECT goal FROM v2_lead_goals WHERE competence = ? LIMIT 1",
+      "SELECT g.goal FROM v2_lead_goals g LEFT JOIN v2_commercial_import_state s ON s.importId=g.sourceImportId WHERE g.competence = ? AND (g.sourceKind='manual' OR g.sourceKind IS NULL OR (g.sourceKind='import' AND g.sourceImportId IS NOT NULL AND (s.importId IS NULL OR s.removedAt IS NULL))) LIMIT 1",
       ["2026-11"]
     );
   });

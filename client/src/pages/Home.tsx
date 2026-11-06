@@ -17,28 +17,31 @@ import { FormEvent, lazy, Suspense, useEffect, useState } from "react";
 
 const V2LeadsDashboard = lazy(() => import("@/components/V2LeadsDashboard"));
 const V2DispatchControl = lazy(() => import("@/components/V2DispatchControl"));
+const V2UserManagement = lazy(() => import("@/components/V2UserManagement"));
 const MediaPlanDashboard = lazy(() =>
   import("@/components/MediaPlanDashboard").then(module => ({
     default: module.MediaPlanDashboard,
   }))
 );
 
-type DashboardModule = "leads" | "media" | "dispatch";
+type DashboardModule = "leads" | "media" | "dispatch" | "users";
 const CLIENT_MODE_STORAGE_KEY = "mg-v2-client-mode";
 
 function moduleFromLocation(): DashboardModule {
   if (typeof window === "undefined") return "leads";
   const module = new URLSearchParams(window.location.search).get("module");
-  return module === "media" || module === "dispatch" ? module : "leads";
+  return module === "media" || module === "dispatch" || module === "users"
+    ? module
+    : "leads";
 }
 
 function readClientModePreference() {
-  if (typeof window === "undefined") return true;
+  if (typeof window === "undefined") return false;
   try {
     const stored = window.localStorage.getItem(CLIENT_MODE_STORAGE_KEY);
-    return stored === null ? true : stored !== "false";
+    return stored === null ? false : stored === "true";
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -189,6 +192,7 @@ function Topbar({
   module,
   onModuleChange,
   clientMode,
+  canManage,
   onClientModeChange,
   onLogout,
   loggingOut,
@@ -197,6 +201,7 @@ function Topbar({
   module: DashboardModule;
   onModuleChange: (module: DashboardModule) => void;
   clientMode: boolean;
+  canManage: boolean;
   onClientModeChange: (value: boolean) => void;
   onLogout: () => void;
   loggingOut: boolean;
@@ -233,29 +238,41 @@ function Topbar({
           >
             <Send className="h-4 w-4 shrink-0" /> Controle de envios
           </button>
+          {canManage ? (
+            <button
+              type="button"
+              aria-current={module === "users" ? "page" : undefined}
+              onClick={() => onModuleChange("users")}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-[11px] font-bold transition sm:flex-none sm:gap-2 sm:px-3 sm:text-xs ${module === "users" ? "bg-red-50 text-[#e2212d]" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"}`}
+            >
+              <ShieldCheck className="h-4 w-4 shrink-0" /> Usuários
+            </button>
+          ) : null}
         </nav>
         <div className="order-2 flex items-center gap-2 sm:order-3">
           <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] text-amber-700 sm:px-2.5 sm:tracking-[0.12em]">
-            Homologação
+            {canManage ? "Administrador" : "Cliente"}
           </span>
-          <button
-            type="button"
-            aria-pressed={clientMode}
-            onClick={() => onClientModeChange(!clientMode)}
-            title={
-              clientMode
-                ? "Modo cliente ativo: nomes individuais ficam ocultos"
-                : "Modo operação ativo: visualização operacional"
-            }
-            className={`inline-flex min-h-9 items-center gap-1.5 rounded-xl border px-2.5 py-2 text-[11px] font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 sm:px-3 sm:text-xs ${clientMode ? "border-red-100 bg-red-50 text-[#b41b26]" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
-          >
-            {clientMode ? (
-              <Eye className="h-3.5 w-3.5" aria-hidden="true" />
-            ) : (
-              <EyeOff className="h-3.5 w-3.5" aria-hidden="true" />
-            )}
-            {clientMode ? "Modo cliente" : "Modo operação"}
-          </button>
+          {canManage ? (
+            <button
+              type="button"
+              aria-pressed={clientMode}
+              onClick={() => onClientModeChange(!clientMode)}
+              title={
+                clientMode
+                  ? "Modo apresentação ativo: contatos individuais ficam ocultos"
+                  : "Modo operação ativo: contatos individuais visíveis"
+              }
+              className={`inline-flex min-h-9 items-center gap-1.5 rounded-xl border px-2.5 py-2 text-[11px] font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 sm:px-3 sm:text-xs ${clientMode ? "border-red-100 bg-red-50 text-[#b41b26]" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
+            >
+              {clientMode ? (
+                <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+              ) : (
+                <EyeOff className="h-3.5 w-3.5" aria-hidden="true" />
+              )}
+              {clientMode ? "Modo apresentação" : "Modo operação"}
+            </button>
+          ) : null}
           <div className="hidden text-right md:block">
             <p className="text-xs font-bold text-slate-800">{user.username}</p>
             <p className="text-[10px] text-slate-400">Sessão ativa</p>
@@ -296,7 +313,11 @@ function AuthenticatedDashboard({
   const [module, setModule] = useState<DashboardModule>(() =>
     moduleFromLocation()
   );
-  const [clientMode, setClientMode] = useState(readClientModePreference);
+  const canManage = user.role === "admin";
+  const activeModule = module === "users" && !canManage ? "leads" : module;
+  const [clientMode, setClientMode] = useState(() =>
+    canManage ? readClientModePreference() : true
+  );
   const [loggingOut, setLoggingOut] = useState(false);
   const queryClient = useQueryClient();
   const logoutMutation = v2Trpc.auth.logout.useMutation();
@@ -308,6 +329,20 @@ function AuthenticatedDashboard({
   }, []);
 
   useEffect(() => {
+    if (module === "users" && !canManage) {
+      setModule("leads");
+      const url = new URL(window.location.href);
+      url.searchParams.set("module", "leads");
+      window.history.replaceState({}, "", url);
+    }
+  }, [module, canManage]);
+
+  useEffect(() => {
+    if (!canManage) setClientMode(true);
+  }, [canManage]);
+
+  useEffect(() => {
+    if (!canManage) return;
     try {
       window.localStorage.setItem(
         CLIENT_MODE_STORAGE_KEY,
@@ -316,7 +351,7 @@ function AuthenticatedDashboard({
     } catch {
       // A blocked preference should not prevent dashboard access.
     }
-  }, [clientMode]);
+  }, [canManage, clientMode]);
 
   const changeModule = (nextModule: DashboardModule) => {
     setModule(nextModule);
@@ -340,9 +375,10 @@ function AuthenticatedDashboard({
     <div className="min-h-screen bg-[#f0f1f4]">
       <Topbar
         user={user}
-        module={module}
+        module={activeModule}
         onModuleChange={changeModule}
-        clientMode={clientMode}
+        clientMode={canManage ? clientMode : true}
+        canManage={canManage}
         onClientModeChange={setClientMode}
         onLogout={() => void logout()}
         loggingOut={loggingOut}
@@ -358,12 +394,22 @@ function AuthenticatedDashboard({
             </div>
           }
         >
-          {module === "leads" ? (
-            <V2LeadsDashboard authenticated clientMode={clientMode} />
-          ) : module === "media" ? (
+          {activeModule === "leads" ? (
+            <V2LeadsDashboard
+              authenticated
+              clientMode={canManage ? clientMode : true}
+              canManage={canManage}
+            />
+          ) : activeModule === "media" ? (
             <MediaPlanDashboard locale="pt-BR" />
+          ) : activeModule === "users" ? (
+            <V2UserManagement currentUserId={user.id} />
           ) : (
-            <V2DispatchControl authenticated clientMode={clientMode} />
+            <V2DispatchControl
+              authenticated
+              clientMode={canManage ? clientMode : true}
+              canManage={canManage}
+            />
           )}
         </Suspense>
       </main>
@@ -374,23 +420,23 @@ function AuthenticatedDashboard({
 export default function Home() {
   const meQuery = v2Trpc.auth.me.useQuery(undefined, {
     retry: false,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
+    refetchInterval: 30_000,
   });
-  const [sessionOverride, setSessionOverride] = useState<
-    V2AuthUser | null | undefined
-  >(undefined);
+  const [forceLoggedOut, setForceLoggedOut] = useState(false);
   const user =
-    sessionOverride === undefined ? (meQuery.data ?? null) : sessionOverride;
+    forceLoggedOut || meQuery.isError ? null : (meQuery.data ?? null);
   const refreshSession = async () => {
     const result = await meQuery.refetch();
-    setSessionOverride(result.data ?? null);
+    if (result.data) setForceLoggedOut(false);
+    else setForceLoggedOut(true);
   };
   if (meQuery.isLoading) return <LoadingScreen />;
   if (!user) return <LoginScreen onLoggedIn={refreshSession} />;
   return (
     <AuthenticatedDashboard
       user={user}
-      onLoggedOut={() => setSessionOverride(null)}
+      onLoggedOut={() => setForceLoggedOut(true)}
     />
   );
 }

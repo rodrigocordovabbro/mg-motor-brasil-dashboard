@@ -11,9 +11,11 @@ import {
 export default function V2MonthlyGoalEditor({
   competence,
   onUpdated,
+  canManage = false,
 }: {
   competence: string;
   onUpdated: () => void | Promise<void>;
+  canManage?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [month, setMonth] = useState(competence);
@@ -93,8 +95,9 @@ export default function V2MonthlyGoalEditor({
         );
     } finally {
       setSaving(false);
-    }
+      }
   };
+  if (!canManage) return null;
   return (
     <div className="flex flex-col items-end gap-1.5">
       <Popover open={open} onOpenChange={setOpened}>

@@ -81,3 +81,15 @@ O usuário forneceu o cadastro oficial de 40 unidades e pediu conciliar metas. A
 ## Atualização autorizada — Sinal Av. Indianópolis
 
 O usuário autorizou expressamente incluir Sinal Av. Indianópolis como dealer novo e independente. O cadastro passa de 40 para 41 unidades; vincular a ela a linha SINAL AV INDIANOPOLIS da MetaVendas de novembro (7), mantendo Av. Europa separada e preservando a meta global 722. Não inventar MetaLeads, vendas realizadas, responsáveis ou status de integração para a nova unidade. Incluir sua linha no controle operacional com Manual pendente até D-1 e metadados CRM ainda indisponíveis. Preservar todos os snapshots, registros e checks existentes.
+
+## Conciliação de modelos — MG Sales
+
+Agrupar a dimensão de modelo nas nomenclaturas solicitadas: MG 4, MG Urban, MG S5, MG Cyberster e IM 6. Usar de-para explícito para modelos abreviados e rótulos de formulário que identificam Urban; MG 4 Urban pertence a MG Urban, não ao grupo MG 4. Preservar model/dealer e demais campos nos Leads originais e na tabela de registros. Aplicar a mesma equivalência no gráfico, KPI de modelos, opções de filtro e seleção compartilhada com Lojas & CRM. Identificações ausentes ou ambíguas não são atribuídas arbitrariamente; não excluir registros nem alterar metas/checks. Não mudar o design ou publicar automaticamente; salvar no recurso MG Sales e somente em dashboard-v2 no GitHub escolhido.
+
+## Regiões e administração do MG Sales
+
+Conciliação de estados no backend em 27 unidades federativas: siglas e nomes equivalentes se tornam nomes por extenso nas distribuições, sem reescrever o estado original. Valores não identificáveis são agregados em uma categoria não territorial; não inferir estado por dealer ou cidade quando a fonte não contém indicação territorial inequívoca. Matriz de Leads por modelo e macrorregião (Norte, Nordeste, Centro-Oeste, Sudeste, Sul), com alternância para estados, mesmos filtros e totais, abaixo da leitura regional. Retirar abas Horários/Modelos, preservando gráficos resumidos na Visão Geral.
+
+Controle de usuários da aplicação existente, com Administrador e Cliente; promover apenas rodrigo uma vez por autorização expressa, sem trocar sua senha ou criar contas de teste. Papéis lidos do banco em cada requisição; versão de sessão revoga tokens ao redefinir senha. Serviços e APIs administrativas exigem perfil Administrador. Cliente recebe somente leitura e apresentação sem controles/importações/conciliação/definição de metas/avisos técnicos; erros de carregamento continuam indicados de forma genérica. Cadastro de contas e manutenção de acesso administrativo usam transações/auditoria e protegem o último administrador ativo.
+
+Exclusão de fontes comerciais é desativação reversível e auditada da fonte ativa da competência, não remoção de arquivos históricos. Evitar que versão anterior reapareça; preservar metas manuais. O administrador confirma o arquivo/mês e o efeito na própria aplicação; nenhuma exclusão real é realizada na implementação. Novas migrations são aditivas e não rodam no startup. Não mudar domínio, dashboard original ou política de publicação.

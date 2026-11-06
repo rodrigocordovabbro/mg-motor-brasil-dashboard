@@ -5,12 +5,18 @@ import type { Request, Response } from "express";
 import { TRPCError } from "@trpc/server";
 import { getV2Account } from "./v2Db";
 import { getSessionCookieOptions } from "./_core/cookies";
+import type { UserRole } from "../shared/accountRoles";
 
 export const V2_COOKIE = "mg_v2_session";
 export const V2_SESSION_SCOPE = "mg-dashboard-v2";
 const SESSION_SECONDS = 60 * 60 * 8;
 const attempts = new Map<string, { count: number; until: number }>();
-export type V2Identity = { id: number; username: string };
+export type V2Identity = {
+  id: number;
+  username: string;
+  role?: UserRole;
+  sessionVersion?: number;
+};
 
 function secret() {
   if (!process.env.MANUS_JWT_SECRET || !process.env.MANUS_PROJECT_ID)
@@ -35,11 +41,13 @@ export function verifyV2Password(password: string, stored: string) {
 }
 
 export async function createV2Token(identity: V2Identity) {
-  return new SignJWT({
+  const claims: Record<string, unknown> = {
     scope: V2_SESSION_SCOPE,
     appId: process.env.MANUS_PROJECT_ID,
     username: identity.username,
-  })
+    v: identity.sessionVersion ?? 0,
+  };
+  return new SignJWT(claims)
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(String(identity.id))
     .setIssuedAt()
@@ -59,7 +67,17 @@ export async function verifyV2Token(token: string): Promise<V2Identity | null> {
       return null;
     const id = Number(payload.sub);
     if (!Number.isSafeInteger(id) || id < 1) return null;
-    return { id, username: payload.username };
+    const identity: V2Identity = { id, username: payload.username };
+    if (payload.v !== undefined) {
+      if (
+        typeof payload.v !== "number" ||
+        !Number.isSafeInteger(payload.v) ||
+        payload.v < 0
+      )
+        return null;
+      identity.sessionVersion = payload.v;
+    }
+    return identity;
   } catch {
     return null;
   }
@@ -69,8 +87,16 @@ export async function readV2Session(req: Request): Promise<V2Identity | null> {
   if (!token) return null;
   const identity = await verifyV2Token(token);
   if (!identity) return null;
-  const account = await getV2Account(identity.username);
-  return account?.isActive && account.id === identity.id ? identity : null;
+  const account = await getV2Account(identity.username.trim().toLowerCase());
+  if (!account || !account.isActive || account.id !== identity.id) return null;
+  const currentSessionVersion = Number(account.sessionVersion ?? 0);
+  if ((identity.sessionVersion ?? 0) !== currentSessionVersion) return null;
+  return {
+    ...identity,
+    username: account.username,
+    role: account.role === "admin" ? "admin" : "client",
+    sessionVersion: currentSessionVersion,
+  };
 }
 export async function loginV2(
   req: Request,
@@ -105,12 +131,21 @@ export async function loginV2(
       message: "Usuário ou senha inválidos",
     });
   attempts.delete(key);
-  const identity = { id: account.id, username: account.username };
+  const identity = {
+    id: account.id,
+    username: account.username,
+    role: account.role === "admin" ? ("admin" as const) : ("client" as const),
+    sessionVersion: Number(account.sessionVersion ?? 0),
+  };
   res.cookie(V2_COOKIE, await createV2Token(identity), {
     ...getSessionCookieOptions(req),
     maxAge: SESSION_SECONDS * 1000,
   });
-  return identity;
+  return {
+    id: identity.id,
+    username: identity.username,
+    role: identity.role,
+  };
 }
 export function logoutV2(req: Request, res: Response) {
   res.clearCookie(V2_COOKIE, getSessionCookieOptions(req));

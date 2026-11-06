@@ -8,14 +8,15 @@ import type {
   DispatchReportSummary,
   DispatchRow,
 } from "@shared/v2Dispatch";
-import { effectiveManualOk } from "@shared/v2Dispatch";
 import {
   AlertCircle,
   Check,
   Clock3,
   LockKeyhole,
+  Maximize2,
   RefreshCw,
   Search,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -46,6 +47,7 @@ type ManualFilter = "all" | "pending" | "ok";
 type V2DispatchControlProps = {
   authenticated?: boolean;
   clientMode?: boolean;
+  canManage?: boolean;
   embedded?: boolean;
   filters?: V2Filters;
   onPeriodChange?: (dateFrom: string, dateTo: string) => void;
@@ -68,7 +70,8 @@ function timestampFormat(value: string) {
   }).format(parsed);
 }
 
-function errorMessage(error: unknown) {
+function errorMessage(error: unknown, exposeDetails = true) {
+  if (!exposeDetails) return "Não foi possível carregar os dados. Tente novamente.";
   if (error instanceof Error && error.message) return error.message;
   if (
     typeof error === "object" &&
@@ -82,8 +85,8 @@ function errorMessage(error: unknown) {
   return "Não foi possível concluir a operação. Tente novamente.";
 }
 
-function hasSourceOk(cell: DispatchCell) {
-  return cell.sourceManual.trim().toUpperCase() === "OK";
+function manualIsOk(cell: DispatchCell) {
+  return cell.validation?.isOk ?? false;
 }
 
 function stickyStyle(index: number) {
@@ -205,25 +208,16 @@ function FilterBar({
   );
 }
 
-function SummaryFact({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
-      <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
-        {label}
-      </p>
-      <p className="mt-1.5 text-base font-bold text-slate-900">{value}</p>
-    </div>
-  );
-}
-
 function ManualHistory({
   entries,
   isLoading,
   error,
+  canManage,
 }: {
   entries: DispatchAuditEntry[] | undefined;
   isLoading: boolean;
   error: unknown;
+  canManage: boolean;
 }) {
   if (isLoading) {
     return <p className="text-xs text-slate-500">Carregando histórico…</p>;
@@ -231,7 +225,7 @@ function ManualHistory({
   if (error) {
     return (
       <p role="alert" className="text-xs leading-5 text-red-700">
-        Erro ao carregar histórico: {errorMessage(error)}
+        Erro ao carregar histórico: {errorMessage(error, canManage)}
       </p>
     );
   }
@@ -276,6 +270,7 @@ function ManualCell({
   saving,
   saved,
   onToggle,
+  canManage,
   historyOpen,
   onHistoryOpenChange,
   historyQuery,
@@ -285,6 +280,7 @@ function ManualCell({
   saving: boolean;
   saved: boolean;
   onToggle: (cell: DispatchCell, isOk: boolean) => void;
+  canManage: boolean;
   historyOpen: boolean;
   onHistoryOpenChange: (open: boolean) => void;
   historyQuery: {
@@ -294,21 +290,12 @@ function ManualCell({
   };
 }) {
   const validation = cell.validation;
-  const isOk = effectiveManualOk(cell);
-  const sourceOk = hasSourceOk(cell);
+  const isOk = manualIsOk(cell);
   const responsible = validation?.reviewerLabel || "Wini";
-  const statusLabel = validation
-    ? validation.isOk
-      ? "OK"
-      : "Pendente"
-    : sourceOk
-      ? "Arquivo"
-      : "Pendente";
+  const statusLabel = validation?.isOk ? "OK" : "Pendente";
   const statusTitle = validation
     ? `${statusLabel}. Atualizado por ${validation.updatedBy || "usuário autenticado"} em ${timestampFormat(validation.updatedAt)}. Responsável: ${responsible}.`
-    : sourceOk
-      ? "OK do arquivo. Ainda não há validação manual persistida; responsável pela conferência: Wini."
-      : "Pendente no arquivo. Responsável pela conferência: Wini.";
+    : "Pendente. Ainda não há validação manual persistida; responsável pela conferência: Wini.";
 
   return (
     <div className="flex min-w-0 items-center justify-between gap-1">
@@ -317,7 +304,7 @@ function ManualCell({
           type="checkbox"
           checked={isOk}
           onChange={event => onToggle(cell, event.target.checked)}
-          disabled={saving || cell.id < 1}
+          disabled={!canManage || saving || cell.id < 1}
           aria-label={`Manual ${statusLabel} · ${storeName} · ${cell.date}`}
           className="h-5 w-5 shrink-0 accent-[#1F3864] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
         />
@@ -326,18 +313,6 @@ function ManualCell({
         </span>
       </label>
       <div className="flex shrink-0 items-center gap-0.5">
-        {sourceOk && !validation ? (
-          <button
-            type="button"
-            onClick={() => onToggle(cell, true)}
-            disabled={saving || cell.id < 1}
-            className="rounded px-1 py-0.5 text-[10px] font-bold text-[#1F3864] underline-offset-2 transition hover:bg-slate-100 hover:underline disabled:cursor-wait disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
-            title="Confirmar o OK do arquivo no fluxo Wini, registrando a conta autenticada"
-            aria-label={`Confirmar OK do arquivo · ${storeName} · ${cell.date}`}
-          >
-            Confirmar
-          </button>
-        ) : null}
         <Popover open={historyOpen} onOpenChange={onHistoryOpenChange}>
           <PopoverTrigger asChild>
             <button
@@ -374,6 +349,7 @@ function ManualCell({
               entries={historyQuery.data}
               isLoading={historyQuery.isLoading}
               error={historyQuery.error}
+              canManage={canManage}
             />
           </PopoverContent>
         </Popover>
@@ -391,6 +367,7 @@ function DispatchTable({
   report,
   rows,
   clientMode,
+  canManage,
   savingCellIds,
   savedCellId,
   onToggle,
@@ -401,6 +378,7 @@ function DispatchTable({
   report: DispatchReport;
   rows: DispatchRow[];
   clientMode: boolean;
+  canManage: boolean;
   savingCellIds: ReadonlySet<number>;
   savedCellId: number | null;
   onToggle: (cell: DispatchCell, isOk: boolean) => void;
@@ -413,35 +391,99 @@ function DispatchTable({
   };
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const expandButtonRef = useRef<HTMLButtonElement>(null);
+  const [expanded, setExpanded] = useState(false);
   const lastDate = report.days.at(-1)?.date;
   useEffect(() => {
     if (scrollRef.current)
       scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
   }, [lastDate]);
+  useEffect(() => {
+    if (!expanded) return;
+    const previousOverflow = document.body.style.overflow;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setExpanded(false);
+    };
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", onKeyDown);
+    const focusTimer = window.setTimeout(() => dialogRef.current?.focus(), 0);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+      window.clearTimeout(focusTimer);
+      expandButtonRef.current?.focus();
+    };
+  }, [expanded]);
   const tableMinWidth = 840 + report.days.length * 425;
   const crmResponsibleLabel = (row: DispatchRow) =>
     clientMode ? "Restrito" : row.crmResponsible || "Sem cadastro CRM";
+  const visibleVolumeByDate = report.days.map(day => {
+    const cells = rows
+      .map(row => sourceCellForDate(row, day.date))
+      .filter((cell): cell is DispatchCell => cell !== null);
+    return cells.some(cell => cell.volume !== null)
+      ? cells.reduce((sum, cell) => sum + (cell.volume ?? 0), 0)
+      : null;
+  });
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
+    <div
+      ref={expanded ? dialogRef : undefined}
+      role={expanded ? "dialog" : undefined}
+      aria-modal={expanded ? true : undefined}
+      aria-label={expanded ? "Planilha expandida de controle de envios" : undefined}
+      tabIndex={expanded ? -1 : undefined}
+      className={
+        expanded
+          ? "fixed inset-0 z-[80] bg-slate-950/60 p-2 sm:p-4 md:p-6"
+          : "overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)]"
+      }
+    >
+      <div
+        className={
+          expanded
+            ? "mx-auto flex h-full min-h-0 w-full max-w-[2200px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+            : "contents"
+        }
+      >
       <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-xs text-slate-500">
         <span>
           Deslize a tabela para consultar os dias. Os checks ficam em Manual.
         </span>
-        <button
-          type="button"
-          className="shrink-0 rounded-lg border border-slate-200 px-3 py-2 font-semibold text-slate-700"
-          onClick={() => {
-            if (scrollRef.current)
-              scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
-          }}
-        >
-          Ir ao último dia
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            className="rounded-lg border border-slate-200 px-3 py-2 font-semibold text-slate-700"
+            onClick={() => {
+              if (scrollRef.current)
+                scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
+            }}
+          >
+            Ir ao último dia
+          </button>
+          <button
+            ref={expandButtonRef}
+            type="button"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 font-semibold text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
+            onClick={() => setExpanded(current => !current)}
+            aria-label={expanded ? "Fechar planilha expandida" : "Expandir planilha"}
+            title={expanded ? "Fechar planilha" : "Expandir planilha"}
+          >
+            {expanded ? (
+              <X className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <Maximize2 className="h-4 w-4" aria-hidden="true" />
+            )}
+            <span className="hidden sm:inline">
+              {expanded ? "Fechar" : "Expandir planilha"}
+            </span>
+          </button>
+        </div>
       </div>
       <div
         ref={scrollRef}
-        className="max-h-[70vh] overflow-auto"
+        className={expanded ? "min-h-0 flex-1 overflow-auto" : "max-h-[70vh] overflow-auto"}
         tabIndex={0}
         role="region"
         aria-label="Tabela de controle por loja e dia"
@@ -645,6 +687,7 @@ function DispatchTable({
                           saving={savingCellIds.has(cell.id)}
                           saved={savedCellId === cell.id}
                           onToggle={onToggle}
+                          canManage={canManage}
                           historyOpen={historyCellId === cell.id}
                           onHistoryOpenChange={open =>
                             onHistoryCellChange(cell.id, open)
@@ -692,9 +735,9 @@ function DispatchTable({
                   backgroundColor: GROUP_GRAY,
                 }}
               >
-                Total do dashboard por dia
+                Total das lojas exibidas
               </th>
-              {report.days.flatMap(day => [
+              {report.days.flatMap((day, index) => [
                 <td
                   key={`${day.date}-source-syonet`}
                   className="border-r border-t border-slate-300 px-1 py-3 text-center text-[10px] text-slate-400"
@@ -713,13 +756,9 @@ function DispatchTable({
                   key={`${day.date}-source-volume`}
                   className="border-r border-t border-slate-300 px-1 py-3 text-center text-[11px] font-bold text-slate-800"
                   style={{ backgroundColor: "#fafafa" }}
-                  title={
-                    day.sourceTotal === null
-                      ? "Total aguardando fonte"
-                      : `Total da base do dashboard em ${day.date}`
-                  }
+                  title={`Total de Vol. Lead nas lojas exibidas em ${day.date}`}
                 >
-                  {numberFormat(day.sourceTotal)}
+                  {numberFormat(visibleVolumeByDate[index])}
                 </td>,
               ])}
             </tr>
@@ -727,10 +766,11 @@ function DispatchTable({
         </table>
       </div>
       <div className="border-t border-slate-100 px-4 py-3 text-[11px] leading-5 text-slate-500">
-        Totais no rodapé vêm da base de Leads com os filtros do dashboard. A
-        busca local de loja não altera esses totais. Vol. Lead é quantidade de
-        registros criados no dia, não volume de envio ao CRM. SYONET e Vol.Lead
-        são somente leitura; apenas o check Manual grava uma validação.
+        Totais no rodapé representam somente as lojas exibidas. Vol. Lead é
+        quantidade de registros criados no dia, não volume de envio ao CRM.
+        SYONET e Vol. Lead são somente leitura; apenas o check Manual grava uma
+        validação.
+      </div>
       </div>
     </div>
   );
@@ -761,9 +801,11 @@ function LoadingPanel({ label }: { label: string }) {
 function ErrorPanel({
   error,
   onRetry,
+  canManage = false,
 }: {
   error: unknown;
   onRetry: () => void;
+  canManage?: boolean;
 }) {
   return (
     <div
@@ -774,7 +816,7 @@ function ErrorPanel({
         <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
         <p>
           <span className="font-bold">Erro ao consultar envios:</span>{" "}
-          {errorMessage(error)}
+          {errorMessage(error, canManage)}
         </p>
       </div>
       <button
@@ -792,10 +834,12 @@ function ErrorPanel({
 export default function V2DispatchControl({
   authenticated = true,
   clientMode = true,
+  canManage = false,
   embedded = false,
   filters,
   onPeriodChange,
 }: V2DispatchControlProps = {}) {
+  const effectiveClientMode = !canManage || clientMode;
   const [selectedReportId, setSelectedReportId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const [manualFilter, setManualFilter] = useState<ManualFilter>("all");
@@ -806,10 +850,13 @@ export default function V2DispatchControl({
   const [manualError, setManualError] = useState<string | null>(null);
   const [manualNotice, setManualNotice] = useState<string | null>(null);
   const [historyCellId, setHistoryCellId] = useState<number | null>(null);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const activeRequests = useRef(new Set<number>());
   const utils = trpc.useUtils();
   const [cutoff, setCutoff] = useState(() => getDashboardCutoffDate());
-  const [showCrm, setShowCrm] = useState(() => embedded || !clientMode);
+  const [showCrm, setShowCrm] = useState(
+    () => canManage && !effectiveClientMode
+  );
   const [integrationFilter, setIntegrationFilter] = useState("all");
   const [dateFrom, setDateFrom] = useState(
     () => `${getDashboardCutoffDate().slice(0, 7)}-01`
@@ -856,13 +903,24 @@ export default function V2DispatchControl({
         : current
     );
   }, [cutoff]);
+  useEffect(() => {
+    setShowCrm(canManage && !effectiveClientMode);
+  }, [canManage, effectiveClientMode]);
 
   const reportsQuery = trpc.dispatch.reports.useQuery(undefined, {
     enabled: authenticated,
     retry: false,
     refetchOnWindowFocus: false,
   });
+  const authMeQuery = trpc.auth.me.useQuery(undefined, {
+    enabled: authenticated,
+    retry: false,
+    refetchOnWindowFocus: true,
+    refetchInterval: 30_000,
+  });
   const summaries = reportsQuery.data ?? [];
+  const showAdvancedControls =
+    canManage && authMeQuery.data?.username?.trim().toLowerCase() === "rodrigo";
 
   useEffect(() => {
     setSelectedReportId(current => {
@@ -883,7 +941,7 @@ export default function V2DispatchControl({
       enabled:
         authenticated &&
         selectedReportId !== null &&
-        preparedInputKey === inputKey,
+        (!canManage || preparedInputKey === inputKey),
       retry: false,
       refetchOnWindowFocus: false,
     }
@@ -900,7 +958,7 @@ export default function V2DispatchControl({
 
   const report = reportQuery.data;
   const preparePreviousDay = async () => {
-    if (selectedReportId === null) return null;
+    if (!canManage || selectedReportId === null) return null;
     const requestKey = inputKey;
     setPreparing(true);
     setUpdateError(null);
@@ -932,7 +990,7 @@ export default function V2DispatchControl({
     }
   };
   useEffect(() => {
-    if (!authenticated || selectedReportId === null) return;
+    if (!canManage || !authenticated || selectedReportId === null) return;
     const key = inputKey;
     if (preparedKey.current === key) return;
     preparedKey.current = key;
@@ -946,7 +1004,7 @@ export default function V2DispatchControl({
       active = false;
       window.clearTimeout(retryTimer);
     };
-  }, [authenticated, selectedReportId, cutoff, prepareRetry, inputKey]);
+  }, [canManage, authenticated, selectedReportId, cutoff, prepareRetry, inputKey]);
   const visibleReport = useMemo<DispatchReport | undefined>(() => {
     if (!report) return undefined;
     const days = report.days.filter(
@@ -982,6 +1040,15 @@ export default function V2DispatchControl({
     };
   }, [report, appliedFilters, cutoff]);
   const refreshDaily = async () => {
+    if (!canManage) {
+      const results = await Promise.all([
+        reportsQuery.refetch(),
+        reportQuery.refetch(),
+      ]);
+      if (results.some(result => result.error))
+        setUpdateError("Não foi possível carregar os dados. Tente novamente.");
+      return;
+    }
     const prepared = await preparePreviousDay();
     if (!prepared) return;
     const results = await Promise.all([
@@ -1018,14 +1085,15 @@ export default function V2DispatchControl({
         return false;
       if (integrationFilter === "bbro-ok" && bbro !== "OK") return false;
       if (manualFilter === "all") return true;
-      const hasOk = row.cells.some(cell => effectiveManualOk(cell));
+      const hasOk = row.cells.some(cell => manualIsOk(cell));
       return manualFilter === "ok"
         ? hasOk
-        : row.cells.some(cell => !effectiveManualOk(cell));
+        : row.cells.some(cell => !manualIsOk(cell));
     });
   }, [showCrm, manualFilter, visibleReport, search, integrationFilter]);
 
   const onToggle = async (cell: DispatchCell, isOk: boolean) => {
+    if (!canManage) return;
     if (
       activeRequests.current.has(cell.id) ||
       preparing ||
@@ -1099,6 +1167,7 @@ export default function V2DispatchControl({
       <ErrorPanel
         error={reportsQuery.error}
         onRetry={() => void reportsQuery.refetch()}
+        canManage={canManage}
       />
     );
   }
@@ -1115,19 +1184,25 @@ export default function V2DispatchControl({
         <ErrorPanel
           error={new Error(updateError)}
           onRetry={() => void preparePreviousDay()}
+          canManage={canManage}
         />
       </div>
     );
-  if ((reportQuery.isLoading || preparedInputKey !== inputKey) && !report) {
+  if (
+    (reportQuery.isLoading || (canManage && preparedInputKey !== inputKey)) &&
+    !report
+  ) {
     return (
       <div className="space-y-4">
-        <ReportSelector
-          summaries={summaries}
-          selectedReportId={selectedReportId}
-          onChange={setSelectedReportId}
-          isFetching={reportsQuery.isFetching}
-          onRefresh={() => void reportsQuery.refetch()}
-        />
+        {showAdvancedControls ? (
+          <ReportSelector
+            summaries={summaries}
+            selectedReportId={selectedReportId}
+            onChange={setSelectedReportId}
+            isFetching={reportsQuery.isFetching}
+            onRefresh={() => void reportsQuery.refetch()}
+          />
+        ) : null}
         <LoadingPanel label="Carregando a fotografia importada…" />
       </div>
     );
@@ -1135,16 +1210,19 @@ export default function V2DispatchControl({
   if (reportQuery.error && !report) {
     return (
       <div className="space-y-4">
-        <ReportSelector
-          summaries={summaries}
-          selectedReportId={selectedReportId}
-          onChange={setSelectedReportId}
-          isFetching={reportsQuery.isFetching}
-          onRefresh={() => void reportsQuery.refetch()}
-        />
+        {showAdvancedControls ? (
+          <ReportSelector
+            summaries={summaries}
+            selectedReportId={selectedReportId}
+            onChange={setSelectedReportId}
+            isFetching={reportsQuery.isFetching}
+            onRefresh={() => void reportsQuery.refetch()}
+          />
+        ) : null}
         <ErrorPanel
           error={reportQuery.error}
           onRetry={() => void reportQuery.refetch()}
+          canManage={canManage}
         />
       </div>
     );
@@ -1172,28 +1250,107 @@ export default function V2DispatchControl({
               conferência do Wini. Corte D-1 em São Paulo.
             </p>
           </div>
-          <div className="shrink-0 text-left text-xs text-slate-500 lg:text-right">
-            <p className="font-semibold text-slate-700">
-              LEADS MG — Base · mesma fonte do dashboard
-            </p>
-            <p className="mt-1">
-              {report.importedAt
-                ? report.leadSource?.importedAt
-                  ? `Base carregada em ${timestampFormat(report.leadSource.importedAt)}`
-                  : "Base de Leads sem carga configurada"
-                : "Importação não informada"}
-            </p>
+          <div className="shrink-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs text-slate-600 lg:text-right">
+            <p className="font-bold text-slate-800">Período D-1</p>
+            <p className="mt-0.5">Até {cutoff.split("-").reverse().join("/")}</p>
           </div>
         </div>
-        <ReportSelector
-          summaries={summaries}
-          selectedReportId={selectedReportId}
-          onChange={setSelectedReportId}
-          isFetching={
-            reportsQuery.isFetching || reportQuery.isFetching || preparing
-          }
-          onRefresh={() => void refreshDaily()}
-        />
+        {showAdvancedControls ? (
+          <section className="rounded-xl border border-slate-200 bg-slate-50">
+            <button
+              type="button"
+              aria-expanded={advancedOpen}
+              onClick={() => setAdvancedOpen(current => !current)}
+              className="flex min-h-11 w-full items-center justify-between gap-3 px-4 py-3 text-left text-xs font-bold text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
+            >
+              <span>Configuração do controle</span>
+              <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                {advancedOpen ? "Recolher" : "Expandir"}
+              </span>
+            </button>
+            {advancedOpen ? (
+              <div className="space-y-4 border-t border-slate-200 px-4 py-4">
+                <ReportSelector
+                  summaries={summaries}
+                  selectedReportId={selectedReportId}
+                  onChange={setSelectedReportId}
+                  isFetching={
+                    reportsQuery.isFetching || reportQuery.isFetching || preparing
+                  }
+                  onRefresh={() => void refreshDaily()}
+                />
+                <div className="flex flex-wrap items-end gap-3">
+                  <label>
+                    <span className="v2-label">Envios de</span>
+                    <input
+                      type="date"
+                      className="v2-input"
+                      value={appliedFilters.dateFrom}
+                      max={appliedFilters.dateTo}
+                      disabled={Boolean(filters && !onPeriodChange)}
+                      onChange={event =>
+                        onPeriodChange
+                          ? onPeriodChange(event.target.value, appliedFilters.dateTo)
+                          : setDateFrom(event.target.value)
+                      }
+                    />
+                  </label>
+                  <label>
+                    <span className="v2-label">Até ontem (D-1)</span>
+                    <input
+                      type="date"
+                      className="v2-input"
+                      value={appliedFilters.dateTo}
+                      min={appliedFilters.dateFrom}
+                      max={cutoff}
+                      onChange={event => {
+                        const end =
+                          event.target.value > cutoff ? cutoff : event.target.value;
+                        if (onPeriodChange)
+                          onPeriodChange(appliedFilters.dateFrom, end);
+                        else setDateTo(end);
+                      }}
+                    />
+                  </label>
+                  <label>
+                    <span className="v2-label">Integração cadastrada</span>
+                    <select
+                      className="v2-input"
+                      value={integrationFilter}
+                      onChange={event => setIntegrationFilter(event.target.value)}
+                    >
+                      <option value="all">Todas as lojas</option>
+                      <option value="syonet-ok">Syonet integrado (OK)</option>
+                      <option value="syonet-no">Syonet não integrado</option>
+                      <option value="bbro-ok">API BBRO integrada (OK)</option>
+                    </select>
+                  </label>
+                  <label className="flex min-h-11 items-center gap-2 text-xs text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={showCrm}
+                      onChange={event => setShowCrm(event.target.checked)}
+                      className="h-4 w-4 accent-[#e2212d]"
+                    />{" "}
+                    Mostrar responsáveis CRM
+                  </label>
+                </div>
+                <FilterBar
+                  search={search}
+                  onSearch={setSearch}
+                  manualFilter={manualFilter}
+                  onManualFilter={setManualFilter}
+                  rowCount={`${filteredRows.length} de ${report.rows.length} linhas`}
+                  clientMode={!showCrm}
+                />
+                <p className="text-xs leading-5 text-slate-500">
+                  Atualizar recalcula Vol. Lead diretamente da base do dashboard.
+                  A planilha não alimenta o volume; Manual é uma conferência separada.
+                </p>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
       </div>
 
       {reportsQuery.isFetching || reportQuery.isFetching ? (
@@ -1211,13 +1368,14 @@ export default function V2DispatchControl({
           className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
         >
           Não foi possível atualizar a lista de relatórios:{" "}
-          {errorMessage(reportsQuery.error)}
+          {errorMessage(reportsQuery.error, canManage)}
         </div>
       ) : null}
       {reportQuery.error && report ? (
         <ErrorPanel
           error={reportQuery.error}
           onRetry={() => void reportQuery.refetch()}
+          canManage={canManage}
         />
       ) : null}
       {updateError ? (
@@ -1319,71 +1477,6 @@ export default function V2DispatchControl({
         </div>
       ) : null}
 
-      <FilterBar
-        search={search}
-        onSearch={setSearch}
-        manualFilter={manualFilter}
-        onManualFilter={setManualFilter}
-        rowCount={`${filteredRows.length} de ${report.rows.length} linhas`}
-        clientMode={!showCrm}
-      />
-
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <SummaryFact
-          label="Leads · mesma base do dashboard"
-          value={
-            visibleReport?.rows.some(row =>
-              row.cells.some(cell => cell.volume !== null)
-            )
-              ? numberFormat(visibleReport.totals.computed)
-              : "Aguardando fonte"
-          }
-        />
-        <SummaryFact
-          label="Linhas na tabela"
-          value={numberFormat(report.rows.length)}
-        />
-        <SummaryFact
-          label="OKs do arquivo"
-          value={numberFormat(visibleReport?.totals.sourceManualOk ?? 0)}
-        />
-        <SummaryFact
-          label="Validações OK"
-          value={numberFormat(visibleReport?.totals.auditedOk ?? 0)}
-        />
-        <SummaryFact
-          label="Células conferidas"
-          value={numberFormat(visibleReport?.totals.manualOverridden ?? 0)}
-        />
-      </div>
-
-      <div className="flex flex-wrap gap-3 text-xs text-slate-600">
-        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2">
-          Syonet integrado:{" "}
-          <strong>
-            {
-              report.rows.filter(
-                row => row.syonetIntegration.trim().toUpperCase() === "OK"
-              ).length
-            }
-          </strong>{" "}
-          de {report.rows.length} linhas
-        </span>
-        <span className="rounded-full border border-slate-200 bg-white px-3 py-2">
-          BBRO integrado:{" "}
-          <strong>
-            {
-              report.rows.filter(
-                row => row.bbroIntegration.trim().toUpperCase() === "OK"
-              ).length
-            }
-          </strong>{" "}
-          de {report.rows.length} linhas
-        </span>
-        <span className="rounded-full border border-slate-200 bg-white px-3 py-2">
-          Dias no período: <strong>{visibleReport?.days.length ?? 0}</strong>
-        </span>
-      </div>
       {!visibleReport?.days.length ? (
         <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
           Nenhum dia nesse intervalo. Ajuste o período ou use Atualizar para
@@ -1394,6 +1487,7 @@ export default function V2DispatchControl({
           report={visibleReport}
           rows={filteredRows}
           clientMode={!showCrm}
+          canManage={canManage}
           savingCellIds={savingCellIds}
           savedCellId={savedCellId}
           onToggle={onToggle}

@@ -2,6 +2,7 @@ import {
   previewCommercialUpload,
   commitCommercialUpload,
   readCommercialStatus,
+  removeCommercialSource,
 } from "./v2Commercial";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -9,6 +10,19 @@ import { publicProcedure, router } from "./_core/trpc";
 import { loginV2, logoutV2, readV2Session } from "./v2Auth";
 import { getV2Dashboard } from "./v2Leads";
 import { getV2Goal, saveV2Goal } from "./v2Db";
+import {
+  requireAdministrator,
+  dashboardForClient,
+  dispatchForClient,
+  controlForCRM,
+  genericClientDataError,
+} from "./v2Permissions";
+import {
+  listV2Accounts,
+  createV2Account,
+  updateV2Account,
+  resetV2AccountPassword,
+} from "./v2Accounts";
 import { MAX_GOAL } from "../shared/v2Goals";
 import { MEDIA_PLANS } from "./mediaPlans";
 import {
@@ -26,6 +40,7 @@ import {
 } from "../shared/dashboardDates";
 
 const date = z.string().refine(isIsoCalendarDate, "Data inválida");
+const competence = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/);
 const filters = z
   .object({
     dateFrom: date,
@@ -62,12 +77,25 @@ const filters = z
   });
 const commercialUpload = z.object({
   kind: z.enum(["lead-goals", "sales-goals", "sales"]),
-  competence: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
+  competence,
   asOf: date.optional(),
   sourceWeek: z.number().int().min(1).max(6).optional(),
   fileName: z.string().min(1).max(255),
   base64: z.string().min(1).max(1400000),
 });
+const username = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(
+    /^[a-z0-9._-]{3,64}$/,
+    "Use 3 a 64 letras, números, pontos, traços ou sublinhados."
+  );
+const password = z
+  .string()
+  .min(8, "A senha deve ter ao menos 8 caracteres.")
+  .max(200);
+const role = z.enum(["admin", "client"]);
 const v2Procedure = publicProcedure.use(async ({ ctx, next }) => {
   const identity = await readV2Session(ctx.req);
   if (!identity)
@@ -77,6 +105,10 @@ const v2Procedure = publicProcedure.use(async ({ ctx, next }) => {
     });
   ctx.res.setHeader("Cache-Control", "private, no-store");
   return next({ ctx: { ...ctx, v2User: identity } });
+});
+const adminProcedure = v2Procedure.use(({ ctx, next }) => {
+  requireAdministrator(ctx.v2User);
+  return next({ ctx });
 });
 export const appRouter = router({
   auth: router({
@@ -99,16 +131,58 @@ export const appRouter = router({
       ),
     logout: publicProcedure.mutation(({ ctx }) => logoutV2(ctx.req, ctx.res)),
   }),
+  accounts: router({
+    list: adminProcedure.query(({ ctx }) => listV2Accounts(ctx.v2User)),
+    create: adminProcedure
+      .input(z.object({ username, password, role }))
+      .mutation(({ ctx, input }) => createV2Account(input, ctx.v2User)),
+    update: adminProcedure
+      .input(
+        z
+          .object({
+            id: z.number().int().positive(),
+            role: role.optional(),
+            isActive: z.boolean().optional(),
+          })
+          .refine(
+            value => value.role !== undefined || value.isActive !== undefined,
+            "Informe uma alteração."
+          )
+      )
+      .mutation(({ ctx, input }) => updateV2Account(input, ctx.v2User)),
+    resetPassword: adminProcedure
+      .input(z.object({ id: z.number().int().positive(), password }))
+      .mutation(({ ctx, input }) => resetV2AccountPassword(input, ctx.v2User)),
+  }),
   mediaPlan: router({ plans: v2Procedure.query(() => MEDIA_PLANS) }),
   dispatch: router({
-    reports: v2Procedure.query(() => listDispatchReports()),
-    report: v2Procedure
+    reports: v2Procedure.query(async ({ ctx }) => {
+      const data = await listDispatchReports();
+      return ctx.v2User.role === "admin"
+        ? data
+        : data.map(row => ({
+            ...row,
+            fileName: "Controle por dealer",
+            title: "Lojas & CRM",
+          }));
+    }),
+    report: adminProcedure
       .input(z.object({ reportId: z.number().int().positive() }))
       .query(({ input }) => getDispatchReport(input.reportId)),
     leadControl: v2Procedure
       .input(z.object({ reportId: z.number().int().positive(), filters }))
-      .query(({ input }) => getLeadControl(input.reportId, input.filters)),
-    setManual: v2Procedure
+      .query(async ({ ctx, input }) => {
+        try {
+          const data = controlForCRM(
+            await getLeadControl(input.reportId, input.filters)
+          );
+          return ctx.v2User.role === "admin" ? data : dispatchForClient(data);
+        } catch (error) {
+          if (ctx.v2User.role !== "admin") genericClientDataError();
+          throw error;
+        }
+      }),
+    setManual: adminProcedure
       .input(
         z.object({
           cellId: z.number().int().positive(),
@@ -124,23 +198,23 @@ export const appRouter = router({
           ctx.v2User
         )
       ),
-    history: v2Procedure
+    history: adminProcedure
       .input(z.object({ cellId: z.number().int().positive() }))
       .query(({ input }) => getDispatchHistory(input.cellId)),
-    prepareDay: v2Procedure
+    prepareDay: adminProcedure
       .input(z.object({ reportId: z.number().int().positive() }))
       .mutation(({ input }) => prepareDispatchDay(input.reportId)),
-    prepareLeadControl: v2Procedure
+    prepareLeadControl: adminProcedure
       .input(z.object({ reportId: z.number().int().positive(), filters }))
       .mutation(({ input }) =>
         prepareLeadControl(input.reportId, input.filters)
       ),
-    importWorkbook: v2Procedure
+    importWorkbook: adminProcedure
       .input(
         z.object({
           reportId: z.number().int().positive(),
           fileName: z.string().min(1).max(255),
-          base64: z.string().min(1).max(1_400_000),
+          base64: z.string().min(1).max(1400000),
         })
       )
       .mutation(({ ctx, input }) =>
@@ -153,15 +227,13 @@ export const appRouter = router({
       ),
   }),
   commercial: router({
-    status: v2Procedure
-      .input(
-        z.object({ competence: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/) })
-      )
+    status: adminProcedure
+      .input(z.object({ competence }))
       .query(({ input }) => readCommercialStatus(input.competence)),
-    preview: v2Procedure
+    preview: adminProcedure
       .input(commercialUpload)
       .mutation(({ input }) => previewCommercialUpload(input)),
-    commit: v2Procedure
+    commit: adminProcedure
       .input(
         commercialUpload.extend({
           mappings: z
@@ -170,25 +242,35 @@ export const appRouter = router({
         })
       )
       .mutation(({ ctx, input }) => commitCommercialUpload(input, ctx.v2User)),
+    remove: adminProcedure
+      .input(
+        z.object({
+          kind: z.enum(["lead-goals", "sales-goals", "sales"]),
+          competence,
+          expectedImportId: z.number().int().positive(),
+        })
+      )
+      .mutation(({ ctx, input }) => removeCommercialSource(input, ctx.v2User)),
   }),
   leads: router({
-    dashboard: v2Procedure
-      .input(filters)
-      .query(({ input }) => getV2Dashboard(input)),
-    goal: v2Procedure
-      .input(
-        z.object({ competence: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/) })
-      )
+    dashboard: v2Procedure.input(filters).query(async ({ ctx, input }) => {
+      try {
+        const data = await getV2Dashboard(input);
+        return ctx.v2User.role === "admin" ? data : dashboardForClient(data);
+      } catch (error) {
+        if (ctx.v2User.role !== "admin") genericClientDataError();
+        throw error;
+      }
+    }),
+    goal: adminProcedure
+      .input(z.object({ competence }))
       .query(async ({ input }) => ({
         competence: input.competence,
         goal: await getV2Goal(input.competence),
       })),
-    updateGoal: v2Procedure
+    updateGoal: adminProcedure
       .input(
-        z.object({
-          competence: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
-          goal: z.number().int().min(1).max(MAX_GOAL),
-        })
+        z.object({ competence, goal: z.number().int().min(1).max(MAX_GOAL) })
       )
       .mutation(async ({ ctx, input }) => {
         await saveV2Goal(input.competence, input.goal, ctx.v2User.id);

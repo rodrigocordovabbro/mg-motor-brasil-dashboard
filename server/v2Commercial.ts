@@ -16,12 +16,15 @@ import type {
   CommercialReconciliationResult,
   CommercialSourceRow,
   CommercialSourceSnapshot,
+  CommercialSourceRemovalInput,
+  CommercialSourceRemovalResult,
   CommercialStatus,
   CommercialStatusFile,
   CommercialUnmappedRow,
   CommercialUploadInput,
   CommercialUploadKind,
 } from "../shared/v2Commercial";
+import { isAdministrator } from "../shared/accountRoles";
 import type {
   V2CommercialGroupRecord,
   V2Dashboard,
@@ -50,6 +53,8 @@ export type CommercialStoredImport = {
   rows: CommercialSourceRow[];
   warnings: string[];
   importedAt: string | null;
+  /** Internal lifecycle state; removed snapshots are never exposed as current. */
+  removed?: boolean;
 };
 export type CommercialLatestImports =
   | ReadonlyMap<CommercialUploadKind, CommercialStoredImport>
@@ -359,11 +364,12 @@ function mapStoredImport(row: RowDataPacket): CommercialStoredImport {
     rows: jsonRows(row.rowsJson),
     warnings: jsonWarnings(row.warningsJson),
     importedAt: dateTimeIso(row.importedAt),
+    removed: row.removedAt != null,
   };
 }
 
 const importSelect =
-  "SELECT id,kind,competence,asOf,sourceWeek,fileName,fileSha256,total,rowCount,rowsJson,warningsJson,importedAt FROM v2_commercial_imports WHERE competence=?";
+  "SELECT i.id,i.kind,i.competence,i.asOf,i.sourceWeek,i.fileName,i.fileSha256,i.total,i.rowCount,i.rowsJson,i.warningsJson,i.importedAt,s.removedAt FROM v2_commercial_imports i LEFT JOIN v2_commercial_import_state s ON s.importId=i.id WHERE i.competence=?";
 
 async function readLatestImportsFrom(
   executor: QueryExecutor,
@@ -375,9 +381,14 @@ async function readLatestImportsFrom(
     [competence]
   );
   const latest: SourceSnapshotMap = new Map();
+  const seenKinds = new Set<CommercialUploadKind>();
   for (const row of rows) {
     const mapped = mapStoredImport(row);
-    if (!latest.has(mapped.kind)) latest.set(mapped.kind, mapped);
+    // Select the latest row before applying lifecycle state. If that row is
+    // removed, suppress the kind entirely instead of falling back to history.
+    if (seenKinds.has(mapped.kind)) continue;
+    seenKinds.add(mapped.kind);
+    if (!mapped.removed) latest.set(mapped.kind, mapped);
   }
   return latest;
 }
@@ -395,6 +406,7 @@ function statusFile(
   return stored
     ? {
         kind,
+        id: stored.id,
         configured: true,
         fileName: stored.fileName,
         total: stored.total,
@@ -406,6 +418,7 @@ function statusFile(
       }
     : {
         kind,
+        id: null,
         configured: false,
         fileName: null,
         total: null,
@@ -426,6 +439,67 @@ export async function readCommercialStatus(
     competence,
     files: KINDS.map(kind => statusFile(kind, latest.get(kind))),
   };
+}
+
+/**
+ * Soft-removes the current snapshot for one kind/competence pair. Historical
+ * import rows remain immutable; lifecycle state and append-only audit rows are
+ * the only records changed. The latest row is selected before checking its
+ * state so an older snapshot can never be resurrected by a stale delete.
+ */
+export async function removeCommercialSource(
+  input: CommercialSourceRemovalInput,
+  actor: CommercialActor
+): Promise<CommercialSourceRemovalResult> {
+  if (!isAdministrator(actor.role))
+    throw new Error("Apenas administradores podem remover fontes comerciais.");
+  validateKind(input.kind);
+  validateCompetence(input.competence);
+  if (
+    !Number.isSafeInteger(input.expectedImportId) ||
+    input.expectedImportId <= 0
+  )
+    throw new Error("O id esperado da importação é inválido.");
+
+  const connection = await getV2Pool().getConnection();
+  try {
+    await connection.beginTransaction();
+    const [rows] = await connection.execute<RowDataPacket[]>(
+      "SELECT i.id,s.removedAt FROM v2_commercial_imports i LEFT JOIN v2_commercial_import_state s ON s.importId=i.id WHERE i.kind=? AND i.competence=? ORDER BY i.id DESC LIMIT 1 FOR UPDATE",
+      [input.kind, input.competence]
+    );
+    const current = rows[0];
+    if (!current || Number(current.id) !== input.expectedImportId) {
+      await connection.commit();
+      return { success: false, removed: false };
+    }
+    if (current.removedAt != null) {
+      await connection.commit();
+      return { success: true, removed: false };
+    }
+
+    await connection.execute(
+      "INSERT INTO v2_commercial_import_state (importId,kind,competence,removedAt,removedBy) VALUES (?,?,?,CURRENT_TIMESTAMP,?) ON DUPLICATE KEY UPDATE removedAt=VALUES(removedAt),removedBy=VALUES(removedBy),updatedAt=CURRENT_TIMESTAMP",
+      [input.expectedImportId, input.kind, input.competence, actor.id]
+    );
+    await connection.execute(
+      "INSERT INTO v2_commercial_import_audit (importId,kind,competence,event,accountId) VALUES (?,?,?,?,?)",
+      [
+        input.expectedImportId,
+        input.kind,
+        input.competence,
+        "removed",
+        actor.id,
+      ]
+    );
+    await connection.commit();
+    return { success: true, removed: true };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 }
 
 function mappingSha256(
@@ -465,19 +539,66 @@ export async function commitCommercialUpload(
     const mapped = withDealerSuggestions(parsed, records, input.mappings);
     const rowsJson = JSON.stringify(mapped.rows);
     const warningsJson = JSON.stringify(parsed.warnings);
-    const mappingHash = mappingSha256(mapped.rows, parsed.sourceWeek ?? null);
+    let mappingHash = mappingSha256(mapped.rows, parsed.sourceWeek ?? null);
+    let restoredAsNewRevision = false;
     const [existing] = await connection.execute<RowDataPacket[]>(
-      "SELECT id,total,rowCount,warningsJson FROM v2_commercial_imports WHERE kind=? AND competence=? AND fileSha256=? AND asOfKey=? AND mappingSha256=? LIMIT 1 FOR UPDATE",
+      "SELECT i.id,i.total,i.rowCount,i.warningsJson,s.removedAt FROM v2_commercial_imports i LEFT JOIN v2_commercial_import_state s ON s.importId=i.id WHERE i.kind=? AND i.competence=? AND i.fileSha256=? AND i.asOfKey=? AND i.mappingSha256=? LIMIT 1 FOR UPDATE",
       [parsed.kind, parsed.competence, parsed.fileSha256, asOfKey, mappingHash]
     );
-    if (existing[0]) {
+    let selectedExisting: RowDataPacket | undefined = existing[0];
+    if (selectedExisting) {
+      const [newestRows] = await connection.execute<RowDataPacket[]>(
+        "SELECT i.id,i.fileSha256,i.asOfKey,i.sourceWeek,i.rowsJson,i.total,i.rowCount,i.warningsJson,s.removedAt FROM v2_commercial_imports i LEFT JOIN v2_commercial_import_state s ON s.importId=i.id WHERE i.kind=? AND i.competence=? ORDER BY i.id DESC LIMIT 1 FOR UPDATE",
+        [parsed.kind, parsed.competence]
+      );
+      const newest = newestRows[0];
+      if (newest && Number(newest.id) !== Number(selectedExisting.id)) {
+        const sameCurrentContent =
+          storedText(newest.fileSha256) === parsed.fileSha256 &&
+          storedText(newest.asOfKey) === asOfKey &&
+          mappingSha256(
+            jsonRows(newest.rowsJson),
+            newest.sourceWeek == null ? null : Number(newest.sourceWeek)
+          ) === mappingHash;
+        if (sameCurrentContent) selectedExisting = newest;
+        else {
+          // Re-upload is explicit intent to restore this content. Append a new
+          // immutable revision; changing an old id cannot make it the latest.
+          restoredAsNewRevision = true;
+          mappingHash = createHash("sha256")
+            .update(`${mappingHash}:restored-after:${newest.id}`)
+            .digest("hex");
+          selectedExisting = undefined;
+        }
+      }
+    }
+    if (selectedExisting) {
+      if (selectedExisting.removedAt != null) {
+        await connection.execute(
+          "UPDATE v2_commercial_import_state SET removedAt=NULL,removedBy=NULL WHERE importId=?",
+          [Number(selectedExisting.id)]
+        );
+        await connection.execute(
+          "INSERT INTO v2_commercial_import_audit (importId,kind,competence,event,accountId) VALUES (?,?,?,?,?)",
+          [
+            Number(selectedExisting.id),
+            parsed.kind,
+            parsed.competence,
+            "reactivated",
+            actor.id,
+          ]
+        );
+      }
       await connection.commit();
       return {
-        importId: Number(existing[0].id),
+        importId: Number(selectedExisting.id),
         alreadyImported: true,
-        total: existing[0].total == null ? null : Number(existing[0].total),
-        rows: Number(existing[0].rowCount),
-        warnings: jsonWarnings(existing[0].warningsJson),
+        total:
+          selectedExisting.total == null
+            ? null
+            : Number(selectedExisting.total),
+        rows: Number(selectedExisting.rowCount),
+        warnings: jsonWarnings(selectedExisting.warningsJson),
       };
     }
 
@@ -485,32 +606,6 @@ export async function commitCommercialUpload(
       "SELECT id FROM v2_commercial_imports WHERE kind=? AND competence=? AND fileSha256=? LIMIT 1",
       [parsed.kind, parsed.competence, parsed.fileSha256]
     );
-    // Do not update v2_lead_goals from a mapping-only operation. A manual goal
-    // remains authoritative; the upload's total is only the initial import default.
-    if (
-      parsed.kind === "lead-goals" &&
-      !previousSameFile.length &&
-      parsed.total != null &&
-      parsed.total > 0
-    ) {
-      const [goals] = await connection.execute<RowDataPacket[]>(
-        "SELECT goal FROM v2_lead_goals WHERE competence=? FOR UPDATE",
-        [parsed.competence]
-      );
-      await connection.execute(
-        "INSERT INTO v2_lead_goals (competence,goal,updatedBy) VALUES (?,?,?) ON DUPLICATE KEY UPDATE goal=VALUES(goal),updatedBy=VALUES(updatedBy),updatedAt=CURRENT_TIMESTAMP",
-        [parsed.competence, parsed.total, actor.id]
-      );
-      await connection.execute(
-        "INSERT INTO v2_goal_audit (competence,oldGoal,newGoal,accountId) VALUES (?,?,?,?)",
-        [
-          parsed.competence,
-          goals[0]?.goal == null ? null : Number(goals[0].goal),
-          parsed.total,
-          actor.id,
-        ]
-      );
-    }
 
     const [inserted] = await connection.execute<ResultSetHeader>(
       "INSERT INTO v2_commercial_imports (kind,competence,asOf,sourceWeek,asOfKey,fileName,fileSha256,mappingSha256,total,rowCount,rowsJson,warningsJson,importedBy) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -530,9 +625,48 @@ export async function commitCommercialUpload(
         actor.id,
       ]
     );
+    const importId = Number(inserted.insertId);
+    if (restoredAsNewRevision)
+      await connection.execute(
+        "INSERT INTO v2_commercial_import_audit (importId,kind,competence,event,accountId) VALUES (?,?,?,?,?)",
+        [importId, parsed.kind, parsed.competence, "reactivated", actor.id]
+      );
+
+    // Do not update v2_lead_goals from a mapping-only operation. A manual goal
+    // remains authoritative; the upload's total is only the initial import
+    // default. Once an imported goal is active, a newer source takes ownership
+    // of that auto-derived value and records its source import id.
+    if (
+      parsed.kind === "lead-goals" &&
+      (!previousSameFile.length || restoredAsNewRevision) &&
+      parsed.total != null &&
+      parsed.total > 0
+    ) {
+      const [goals] = await connection.execute<RowDataPacket[]>(
+        "SELECT goal,sourceKind,sourceImportId FROM v2_lead_goals WHERE competence=? FOR UPDATE",
+        [parsed.competence]
+      );
+      const current = goals[0];
+      const manualGoal = current && storedText(current.sourceKind) !== "import";
+      if (!manualGoal) {
+        await connection.execute(
+          "INSERT INTO v2_lead_goals (competence,goal,updatedBy,sourceKind,sourceImportId) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE goal=VALUES(goal),updatedBy=VALUES(updatedBy),sourceKind=VALUES(sourceKind),sourceImportId=VALUES(sourceImportId),updatedAt=CURRENT_TIMESTAMP",
+          [parsed.competence, parsed.total, actor.id, "import", importId]
+        );
+        await connection.execute(
+          "INSERT INTO v2_goal_audit (competence,oldGoal,newGoal,accountId) VALUES (?,?,?,?)",
+          [
+            parsed.competence,
+            current?.goal == null ? null : Number(current.goal),
+            parsed.total,
+            actor.id,
+          ]
+        );
+      }
+    }
     await connection.commit();
     return {
-      importId: Number(inserted.insertId),
+      importId,
       alreadyImported: false,
       total: parsed.total,
       rows: mapped.rows.length,

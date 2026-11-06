@@ -27,6 +27,17 @@ vi.mock("@/lib/trpc", () => ({
         history: { invalidate: vi.fn() },
       },
     }),
+    auth: {
+      me: {
+        useQuery: () =>
+          query({
+            id: 1,
+            username: "rodrigo",
+            role: "admin",
+            sessionVersion: 0,
+          }),
+      },
+    },
     dispatch: {
       reports: { useQuery: () => query(state.list, state.error) },
       leadControl: { useQuery: () => query(state.report) },
@@ -55,6 +66,7 @@ function TestControl(props: {
   authenticated?: boolean;
   embedded?: boolean;
   clientMode?: boolean;
+  canManage?: boolean;
 }) {
   return V2DispatchControl(props);
 }
@@ -77,7 +89,7 @@ function fixture(): DispatchReport {
       {
         id: 1,
         rowNumber: 5,
-        storeName: "Loja  teste (EM BREVE)",
+        storeName: "Autobrand Recife",
         crmResponsible: "Contato de teste restrito",
         syonetIntegration: "OK",
         bbroIntegration: "NÃO",
@@ -125,6 +137,7 @@ describe("Lojas & CRM operational clone", () => {
         authenticated: true,
         embedded: true,
         clientMode: false,
+        canManage: true,
       })
     );
     expect(html).toContain("NOME DA LOJA");
@@ -132,12 +145,16 @@ describe("Lojas & CRM operational clone", () => {
     expect(html).toContain("Integração API BBRO");
     expect(html).toContain("Vol. Lead");
     expect(html).toContain("LEADs Status");
-    expect(html).toContain("Loja  teste (EM BREVE)");
+    expect(html).toContain("Autobrand Recife");
     expect(html).toContain("Contato de teste restrito");
     expect(html).toContain("04/nov");
     expect(html).not.toContain("05/nov");
     expect(html).not.toContain("Como ler");
-    expect(html).toContain("checked");
+    expect(
+      html.match(/<input[^>]+aria-label="Manual Pendente[^>]+>/)?.[0]
+    ).not.toContain('checked=""');
+    expect(html).not.toContain("OKs do arquivo");
+    expect(html).toContain("Expandir planilha");
   });
   it("hides CRM contacts in client presentation unless explicitly shown", () => {
     const html = renderToStaticMarkup(
@@ -176,7 +193,6 @@ describe("Lojas & CRM operational clone", () => {
     const html = renderToStaticMarkup(
       React.createElement(TestControl, { authenticated: true, embedded: true })
     );
-    expect(html).toContain("Aguardando fonte");
     expect(html).toContain("Volume indisponível na base de Leads");
     expect(
       html.match(/<input[^>]+aria-label="Manual Pendente[^>]+>/)?.[0]
@@ -188,7 +204,7 @@ describe("Lojas & CRM operational clone", () => {
     state.report = null;
     state.error = new Error("Falha de leitura teste");
     const html = renderToStaticMarkup(
-      React.createElement(TestControl, { authenticated: true })
+      React.createElement(TestControl, { authenticated: true, canManage: true })
     );
     expect(html).toContain('role="alert"');
     expect(html).toContain("Falha de leitura teste");
@@ -198,6 +214,6 @@ describe("Lojas & CRM operational clone", () => {
       React.createElement(TestControl, { authenticated: false })
     );
     expect(html).toContain("Login necessário");
-    expect(html).not.toContain("Loja  teste");
+    expect(html).not.toContain("Autobrand Recife");
   });
 });

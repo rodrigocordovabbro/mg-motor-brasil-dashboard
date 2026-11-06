@@ -1,3 +1,5 @@
+import type { RegionalModelDistribution } from "./regionalTypes";
+
 export type V2Filters = {
   dateFrom: string;
   dateTo: string;
@@ -85,6 +87,7 @@ export type V2Dashboard = {
   channels: V2Count[];
   models: V2Count[];
   states: V2Count[];
+  regionalModels?: RegionalModelDistribution;
   cities: V2Count[];
   dealers: V2Count[];
   hours: V2Count[];

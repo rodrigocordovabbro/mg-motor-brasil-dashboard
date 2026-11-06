@@ -5,13 +5,25 @@ import {
   CheckCircle2,
   FileSpreadsheet,
   LoaderCircle,
+  Trash2,
   Upload,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 type UploadKind = "lead-goals" | "sales-goals" | "sales";
 
 type StatusFile = {
+  id: number | null;
   kind: UploadKind;
   configured: boolean;
   fileName: string | null;
@@ -182,6 +194,7 @@ function SourceCard({
   onCommit,
   onRetry,
   onMapping,
+  onRemove,
 }: {
   config: SourceConfig;
   status: StatusFile | null;
@@ -197,6 +210,7 @@ function SourceCard({
   onCommit: () => void;
   onRetry: () => void;
   onMapping: (key: string, dealers: string[]) => void;
+  onRemove: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const preview = draft.preview;
@@ -388,6 +402,17 @@ function SourceCard({
               ))}
             </ul>
           ) : null}
+          {status?.configured && status.id != null ? (
+            <button
+              type="button"
+              onClick={onRemove}
+              disabled={busy}
+              className="mt-2 inline-flex h-8 items-center gap-1.5 rounded-lg border border-red-200 bg-white px-2.5 text-[11px] font-bold text-[#b41b26] transition hover:bg-red-50 disabled:cursor-wait disabled:opacity-50"
+            >
+              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+              Remover arquivo ativo
+            </button>
+          ) : null}
         </div>
 
         {draft.warnings.length ? (
@@ -520,28 +545,38 @@ function SourceCard({
 export default function V2CommercialUploads({
   competence,
   onUpdated,
+  canManage = false,
 }: {
   competence: string;
   onUpdated: () => void | Promise<void>;
+  canManage?: boolean;
 }) {
   const [selectedMonth, setSelectedMonth] = useState(competence);
   const [drafts, setDrafts] = useState<Record<UploadKind, Draft>>(() =>
     initialDrafts(competence)
   );
   const [readingKind, setReadingKind] = useState<UploadKind | null>(null);
+  const [removalTarget, setRemovalTarget] = useState<StatusFile | null>(null);
   const monthTouched = useRef(false);
   const cutoff = useMemo(() => getDashboardCutoffDate(), []);
   const utils = trpc.useUtils();
   const statusQuery = trpc.commercial.status.useQuery(
     { competence: selectedMonth },
-    { retry: false, refetchOnWindowFocus: true, staleTime: 0 }
+    {
+      enabled: canManage,
+      retry: false,
+      refetchOnWindowFocus: true,
+      staleTime: 0,
+    }
   );
   const previewMutation = trpc.commercial.preview.useMutation();
   const commitMutation = trpc.commercial.commit.useMutation();
+  const removeMutation = trpc.commercial.remove.useMutation();
   const busy =
     readingKind !== null ||
     previewMutation.isPending ||
-    commitMutation.isPending;
+    commitMutation.isPending ||
+    removeMutation.isPending;
   const files = statusQuery.data?.files ?? [];
 
   useEffect(() => {
@@ -794,6 +829,63 @@ export default function V2CommercialUploads({
     }
   };
 
+  const removeSource = async () => {
+    const target = removalTarget;
+    if (!target || target.id == null || removeMutation.isPending) return;
+    setRemovalTarget(null);
+    updateDraft(target.kind, current => ({
+      ...current,
+      error: null,
+      errorAction: null,
+      notice: null,
+    }));
+    try {
+      const result = await removeMutation.mutateAsync({
+        kind: target.kind,
+        competence: selectedMonth,
+        expectedImportId: target.id,
+      });
+      if (!result.removed) {
+        updateDraft(target.kind, current => ({
+          ...current,
+          notice:
+            "A fonte ativa mudou antes da confirmação. Atualize o status e tente novamente.",
+        }));
+        await utils.commercial.status.invalidate({ competence: selectedMonth });
+        return;
+      }
+      updateDraft(target.kind, current => ({
+        ...current,
+        notice: `Arquivo ativo removido: ${target.fileName ?? "fonte sem nome"} (${selectedMonth}). Histórico preservado.`,
+        error: null,
+        errorAction: null,
+      }));
+      try {
+        await Promise.all([
+          utils.commercial.status.invalidate({ competence: selectedMonth }),
+          utils.leads.dashboard.invalidate(),
+          utils.leads.goal.invalidate({ competence: selectedMonth }),
+          Promise.resolve(onUpdated()),
+        ]);
+      } catch {
+        updateDraft(target.kind, current => ({
+          ...current,
+          notice:
+            "Arquivo removido, mas não foi possível atualizar todos os dados da tela.",
+        }));
+      }
+    } catch (error) {
+      updateDraft(target.kind, current => ({
+        ...current,
+        error: errorMessage(error),
+        errorAction: null,
+        notice: null,
+      }));
+    }
+  };
+
+  if (!canManage) return null;
+
   return (
     <div className="border-b border-slate-100 p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -883,9 +975,69 @@ export default function V2CommercialUploads({
                 errorAction: null,
               }))
             }
+            onRemove={() => {
+              const status = files.find(file => file.kind === config.kind);
+              if (status?.id != null) setRemovalTarget(status);
+            }}
           />
         ))}
       </div>
+      <AlertDialog
+        open={removalTarget !== null}
+        onOpenChange={open => {
+          if (!open && !removeMutation.isPending) setRemovalTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remover arquivo ativo?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-left text-sm leading-6">
+                <p>
+                  Esta ação remove somente a fonte ativa abaixo. Importações
+                  históricas permanecem preservadas e podem ser restauradas por
+                  uma nova importação.
+                </p>
+                <dl className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs leading-5 text-slate-700">
+                  <div className="flex gap-2">
+                    <dt className="font-bold">Arquivo:</dt>
+                    <dd className="break-all">{removalTarget?.fileName ?? "—"}</dd>
+                  </div>
+                  <div className="flex gap-2">
+                    <dt className="font-bold">Competência:</dt>
+                    <dd>{selectedMonth}</dd>
+                  </div>
+                  <div className="flex gap-2">
+                    <dt className="font-bold">ID atual:</dt>
+                    <dd>{removalTarget?.id ?? "—"}</dd>
+                  </div>
+                </dl>
+                {removalTarget?.kind === "lead-goals" ? (
+                  <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                    Remover Meta de Leads pode alterar os KPIs, exceto quando
+                    houver uma meta manual vigente para a competência.
+                  </p>
+                ) : null}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={removeMutation.isPending}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={removeMutation.isPending || removalTarget?.id == null}
+              onClick={event => {
+                event.preventDefault();
+                void removeSource();
+              }}
+              className="bg-[#e2212d] text-white hover:bg-[#c91c28]"
+            >
+              {removeMutation.isPending ? "Removendo…" : "Remover arquivo ativo"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

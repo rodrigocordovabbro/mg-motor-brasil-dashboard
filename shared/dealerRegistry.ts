@@ -48,6 +48,11 @@ export const OFFICIAL_DEALERS: readonly OfficialDealer[] = [
   { name: "Vega Belém", state: "PA" },
 ];
 
+/** Escopo da planilha CRM solicitado pelo usuário; Indianópolis permanece no cadastro comercial. */
+export const CRM_DEALERS = OFFICIAL_DEALERS.filter(
+  dealer => dealer.name !== "Sinal Av. Indianópolis"
+);
+
 export const DEALER_MAPPING_VERSION = "mg-official-2026-11-05-indianopolis";
 
 export function normalizeDealerKey(value: string): string {

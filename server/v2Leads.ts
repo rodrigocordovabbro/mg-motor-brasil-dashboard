@@ -1,4 +1,14 @@
 import {
+  groupedStateLabel,
+  resolveBrazilianState,
+} from "../shared/stateRegistry";
+import { aggregateRegionalModels } from "./v2Regional";
+import {
+  OFFICIAL_MODELS,
+  groupedModelLabel,
+  resolveOfficialModel,
+} from "../shared/modelRegistry";
+import {
   OFFICIAL_DEALERS,
   resolveOfficialDealer,
   officialDealer,
@@ -25,7 +35,11 @@ export function countBy(rows: V2Lead[], key: keyof V2Lead): V2Count[] {
           : `${String(row.hour).padStart(2, "0")}h`
         : key === "dealer"
           ? (resolveOfficialDealer(row.dealer) ?? row.dealer)
-          : String(row[key] ?? "Não informado");
+          : key === "model"
+            ? groupedModelLabel(row.model)
+            : key === "state"
+              ? groupedStateLabel(row.state)
+              : String(row[key] ?? "Não informado");
     map.set(value, (map.get(value) ?? 0) + 1);
   });
   return [...map]
@@ -85,7 +99,9 @@ export function matchesV2LeadFilters(
 ): boolean {
   const lowerSearch = input.search?.toLocaleLowerCase("pt-BR");
   return (
-    (!input.model || row.model === input.model) &&
+    (!input.model ||
+      row.model === input.model ||
+      groupedModelLabel(row.model) === input.model) &&
     (!input.channel || row.channel === input.channel) &&
     (!input.campaign || row.campaign === input.campaign) &&
     (!input.dealer ||
@@ -95,12 +111,14 @@ export function matchesV2LeadFilters(
       [
         row.name,
         row.model,
+        resolveOfficialModel(row.model) ?? "",
         row.channel,
         row.campaign,
         row.dealer,
         resolveOfficialDealer(row.dealer) ?? "",
         row.city,
         row.state,
+        resolveBrazilianState(row.state)?.name ?? "",
       ].some(value => value.toLocaleLowerCase("pt-BR").includes(lowerSearch)))
   );
 }
@@ -246,7 +264,12 @@ export function aggregateV2Leads(
     source,
     period,
     options: {
-      models: countBy(baseRows, "model").map(v => v.label),
+      models: [
+        ...new Set([
+          ...OFFICIAL_MODELS,
+          ...countBy(baseRows, "model").map(v => v.label),
+        ]),
+      ],
       channels: countBy(baseRows, "channel").map(v => v.label),
       campaigns: countBy(baseRows, "campaign").map(v => v.label),
       dealers: [
@@ -258,14 +281,24 @@ export function aggregateV2Leads(
     },
     summary: {
       total: rows.length,
-      models: known(models).length,
+      models: models.filter(
+        item => resolveOfficialModel(item.label) && item.count > 0
+      ).length,
       dealers: known(dealers).length,
-      states: known(states).length,
+      states: states.filter(
+        item => resolveBrazilianState(item.label) && item.count > 0
+      ).length,
       cities: known(cities).length,
       crmRate: null,
       crmDelivered: null,
-      topModel: known(models)[0] ?? null,
-      topState: known(states)[0] ?? null,
+      topModel:
+        models.find(
+          item => resolveOfficialModel(item.label) && item.count > 0
+        ) ?? null,
+      topState:
+        states.find(
+          item => resolveBrazilianState(item.label) && item.count > 0
+        ) ?? null,
       peakHour: known(hours)[0] ?? null,
     },
     pacing,
@@ -273,6 +306,7 @@ export function aggregateV2Leads(
     channels,
     models,
     states,
+    regionalModels: aggregateRegionalModels(rows),
     cities,
     dealers,
     hours,
@@ -309,7 +343,7 @@ export function aggregateV2Leads(
       "Contagem de registros da planilha com data válida, preservando cada linha e sua origem; não representa pessoas únicas deduplicadas nem comprova integração CRM.",
       "Carga inicial autenticada da planilha. Atualização automática ainda não configurada.",
       "Pacing usa o acumulado do mês até a data final, enquanto gráficos e KPIs usam o período selecionado.",
-      "Nomes originais de Leads preservados; distribuição por dealer usa o de-para do cadastro oficial. Identificações sem correspondência permanecem na contagem, sem atribuição forçada.",
+      "Nomes originais de Leads preservados; distribuição por dealer e modelo usa de-para explícito. Identificações sem correspondência permanecem na contagem, sem atribuição forçada.",
       ...(period.dateFrom.slice(0, 7) !== period.dateTo.slice(0, 7)
         ? [
             "Pace diário indisponível em intervalos multicompetência; selecione um único mês para comparar com sua meta.",

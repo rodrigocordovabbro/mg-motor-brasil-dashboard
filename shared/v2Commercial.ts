@@ -1,4 +1,5 @@
 import type { V2Dashboard, V2Filters } from "./v2Types";
+import type { UserRole } from "./accountRoles";
 
 export const COMMERCIAL_UPLOAD_KINDS = [
   "lead-goals",
@@ -47,7 +48,12 @@ export type CommercialCommitInput = CommercialUploadInput & {
   mappings?: Record<string, string[]>;
 };
 
-export type CommercialActor = { id: number; username: string };
+export type CommercialActor = {
+  id: number;
+  username: string;
+  /** Optional for backwards-compatible import/reconciliation callers. */
+  role?: UserRole;
+};
 
 export type CommercialCommitResult = {
   importId: number;
@@ -64,9 +70,22 @@ export type CommercialReconciliationResult = {
   alreadyReconciled: boolean;
 };
 
+export type CommercialSourceRemovalInput = {
+  kind: CommercialUploadKind;
+  competence: string;
+  expectedImportId: number;
+};
+
+export type CommercialSourceRemovalResult = {
+  success: boolean;
+  removed: boolean;
+};
+
 export type CommercialStatusFile = {
   sourceWeek?: number | null;
   kind: CommercialUploadKind;
+  /** Current snapshot id, or null when the current snapshot was removed. */
+  id: number | null;
   configured: boolean;
   fileName: string | null;
   total: number | null;

@@ -2,6 +2,7 @@ import V2CommercialUploads from "./V2CommercialUploads";
 import V2MonthlyGoalEditor from "./V2MonthlyGoalEditor";
 import { useEffect } from "react";
 import V2DispatchControl from "./V2DispatchControl";
+import V2RegionalModelMatrix from "./newcomponentV2RegionalModelMatrix";
 import { trpc } from "@/lib/trpc";
 import {
   addIsoDays,
@@ -10,6 +11,7 @@ import {
   resolveDashboardPeriod,
 } from "@shared/dashboardDates";
 import { OFFICIAL_DEALERS, officialDealer } from "@shared/dealerRegistry";
+import type { RegionalModelDistribution } from "@shared/regionalTypes";
 import type { V2Count, V2Dashboard, V2Filters, V2Lead } from "@shared/v2Types";
 import {
   AlertCircle,
@@ -18,7 +20,6 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleHelp,
-  Clock3,
   Edit3,
   Filter,
   MapPin,
@@ -45,12 +46,18 @@ import {
 } from "recharts";
 import { useMemo, useRef, useState, type ReactNode } from "react";
 
-export type V2AuthUser = { id: number; username: string };
+export type V2AuthUser = {
+  id: number;
+  username: string;
+  role?: "admin" | "client";
+};
 export type V2DashboardFilters = V2Filters;
 export type V2DistributionItem = V2Count;
 export type V2DailyPoint = V2Dashboard["daily"][number];
 export type V2RecentRow = V2Lead;
-export type V2LeadsResponse = V2Dashboard;
+export type V2LeadsResponse = V2Dashboard & {
+  regionalModels?: RegionalModelDistribution;
+};
 
 // Directly inferred from the actual protected V2 AppRouter.
 export const v2Trpc = trpc;
@@ -601,10 +608,11 @@ function SelectFilter({
 function PacingCard({
   data,
   onUpdated,
+  canManage,
 }: {
   data: V2LeadsResponse;
   onUpdated: () => void;
-  clientMode: boolean;
+  canManage: boolean;
 }) {
   const pacing = data.pacing;
   const progressRatio =
@@ -630,10 +638,13 @@ function PacingCard({
             >
               {statusText(pacing.status)}
             </span>
-            <V2MonthlyGoalEditor
-              competence={pacing.competence}
-              onUpdated={onUpdated}
-            />
+            {canManage ? (
+              <V2MonthlyGoalEditor
+                competence={pacing.competence}
+                onUpdated={onUpdated}
+                canManage={canManage}
+              />
+            ) : null}
           </div>
         }
       />
@@ -958,9 +969,11 @@ function GroupedGoalsDetails({ groups }: { groups: GroupedGoal[] }) {
 function DealerPerformanceCard({
   data,
   onUpdated,
+  canManage,
 }: {
   data: V2LeadsResponse;
   onUpdated: () => void;
+  canManage: boolean;
 }) {
   const performance = data.dealerPerformance;
   const available = performance.available;
@@ -1050,10 +1063,13 @@ function DealerPerformanceCard({
           </span>
         }
       />
-      <V2CommercialUploads
-        competence={data.pacing.competence}
-        onUpdated={onUpdated}
-      />
+      {canManage ? (
+        <V2CommercialUploads
+          competence={data.pacing.competence}
+          onUpdated={onUpdated}
+          canManage={canManage}
+        />
+      ) : null}
       {performance.warnings?.length ? (
         <div
           className="mx-5 mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900"
@@ -1441,11 +1457,11 @@ function DailyChart({ daily }: { daily: V2DailyPoint[] }) {
 function OverviewTab({
   data,
   onGoalUpdated,
-  clientMode,
+  canManage,
 }: {
   data: V2LeadsResponse;
   onGoalUpdated: () => void;
-  clientMode: boolean;
+  canManage: boolean;
 }) {
   const { summary } = data;
   return (
@@ -1492,7 +1508,7 @@ function OverviewTab({
       <PacingCard
         data={data}
         onUpdated={onGoalUpdated}
-        clientMode={clientMode}
+        canManage={canManage}
       />
       <Card className="overflow-hidden">
         <CardHeading
@@ -1524,7 +1540,11 @@ function OverviewTab({
           <DistributionList items={data.dealers} />
         </Card>
       </div>
-      <DealerPerformanceCard data={data} onUpdated={onGoalUpdated} />
+      <DealerPerformanceCard
+        data={data}
+        onUpdated={onGoalUpdated}
+        canManage={canManage}
+      />
       {data.notes.length ? <Notes notes={data.notes} /> : null}
     </div>
   );
@@ -1555,7 +1575,9 @@ function RegionsTab({ data }: { data: V2LeadsResponse }) {
           description="Distribuição conforme o campo de estado recebido."
           icon={MapPin}
         />
-        <DistributionList items={data.states} limit={12} />
+        <div className="max-h-[520px] overflow-y-auto">
+          <DistributionList items={data.states} limit={28} />
+        </div>
       </Card>
       <Card className="overflow-hidden">
         <CardHeading
@@ -1583,117 +1605,9 @@ function RegionsTab({ data }: { data: V2LeadsResponse }) {
           />
         </div>
       </Card>
-    </div>
-  );
-}
-
-function HoursTab({ data }: { data: V2LeadsResponse }) {
-  const peak = data.summary.peakHour;
-  const chartData = data.hours.map(item => ({
-    ...item,
-    label: formatHour(item.label),
-  }));
-  return (
-    <div className="grid gap-4 lg:grid-cols-[1.4fr_0.8fr]">
-      <Card className="overflow-hidden">
-        <CardHeading
-          eyebrow="Distribuição intradiária"
-          title="Leads por horário"
-          description="Horário conforme o dado recebido; sem estimativa para registros sem hora."
-          icon={Clock3}
-        />
-        <div className="h-[360px] px-3 py-5">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={chartData}
-              margin={{ top: 10, right: 12, left: -18, bottom: 4 }}
-            >
-              <CartesianGrid stroke="#eef1f4" vertical={false} />
-              <XAxis
-                dataKey="label"
-                tick={{ fill: "#94a3b8", fontSize: 10 }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis
-                allowDecimals={false}
-                tick={{ fill: "#94a3b8", fontSize: 10 }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <Tooltip
-                formatter={(value: number) => [
-                  numberFormat(Number(value)),
-                  "Leads",
-                ]}
-                contentStyle={{
-                  borderRadius: 12,
-                  border: "1px solid #e2e8f0",
-                  fontSize: 12,
-                }}
-              />
-              <Bar
-                dataKey="count"
-                name="Leads"
-                fill={RED}
-                radius={[5, 5, 0, 0]}
-              />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </Card>
-      <Card className="overflow-hidden">
-        <CardHeading title="Pico identificado" icon={Clock3} />
-        <div className="p-5">
-          {peak ? (
-            <>
-              <p className="text-4xl font-bold tracking-tight text-slate-950">
-                {formatHour(peak.label)}
-              </p>
-              <p className="mt-2 text-sm text-slate-500">
-                {numberFormat(peak.count)} leads atribuídos a este horário.
-              </p>
-            </>
-          ) : (
-            <EmptyDistribution label="Pico indisponível para a fonte atual." />
-          )}
-        </div>
-        <div className="border-t border-slate-100 px-5 py-4 text-xs leading-5 text-slate-500">
-          O horário não é inferido quando o registro não possui metadado
-          confiável.
-        </div>
-      </Card>
-    </div>
-  );
-}
-
-function ModelsTab({ data }: { data: V2LeadsResponse }) {
-  return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <Card className="overflow-hidden">
-        <CardHeading
-          title="Modelos"
-          description="Volume por modelo recebido na fonte."
-          icon={BarChart3}
-        />
-        <DistributionList items={data.models} limit={15} />
-      </Card>
-      <Card className="overflow-hidden">
-        <CardHeading
-          title="Versões"
-          description="Detalhamento de versão quando disponível."
-          icon={BarChart3}
-        />
-        <DistributionList items={data.versions} limit={15} />
-      </Card>
-      <Card className="overflow-hidden lg:col-span-2">
-        <CardHeading
-          title="Campanhas associadas"
-          description="Campanhas presentes nos registros selecionados."
-          icon={Target}
-        />
-        <DistributionList items={data.campaigns} limit={15} />
-      </Card>
+      <div className="lg:col-span-2">
+        <V2RegionalModelMatrix data={data.regionalModels} />
+      </div>
     </div>
   );
 }
@@ -1760,14 +1674,19 @@ function CrmDonut({ items }: { items: V2DistributionItem[] }) {
 function StoresCrmTab({
   filters,
   onPeriodChange,
+  clientMode,
+  canManage,
 }: {
   filters: V2DashboardFilters;
   onPeriodChange: (from: string, to: string) => void;
+  clientMode: boolean;
+  canManage: boolean;
 }) {
   return (
     <V2DispatchControl
       authenticated
-      clientMode={false}
+      clientMode={clientMode}
+      canManage={canManage}
       embedded
       filters={filters}
       onPeriodChange={onPeriodChange}
@@ -1928,8 +1847,6 @@ function SummaryFact({ label, value }: { label: string; value: string }) {
 const TABS = [
   "Visão Geral",
   "Regiões",
-  "Horários",
-  "Modelos",
   "Lojas & CRM",
   "Leads",
 ] as const;
@@ -1938,9 +1855,11 @@ type V2Tab = (typeof TABS)[number];
 export default function V2LeadsDashboard({
   authenticated,
   clientMode = true,
+  canManage = false,
 }: {
   authenticated: boolean;
   clientMode?: boolean;
+  canManage?: boolean;
 }) {
   const [cutoff, setCutoff] = useState(() => getDashboardCutoffDate());
   useEffect(() => {
@@ -2064,6 +1983,8 @@ export default function V2LeadsDashboard({
         ) : null}
         <StoresCrmTab
           filters={applied}
+          clientMode={clientMode}
+          canManage={canManage}
           onPeriodChange={(from, to) => {
             setDraft(current => ({
               ...current,
@@ -2110,9 +2031,9 @@ export default function V2LeadsDashboard({
                 {fullDate(data.period.dateTo)}
               </p>
               <p className="mt-1 text-[11px] text-slate-400">
-                {data.source.name || "Importação autenticada"} ·{" "}
-                {formatImportedAt(data.source.importedAt)} · importação inicial,
-                sem sincronização automática
+                {canManage
+                  ? `${data.source.name || "Importação autenticada"} · ${formatImportedAt(data.source.importedAt)} · importação inicial, sem sincronização automática`
+                  : "Dados atualizados pela fonte autenticada"}
               </p>
             </div>
             <div className="flex items-center gap-2 text-xs text-slate-500">
@@ -2144,12 +2065,10 @@ export default function V2LeadsDashboard({
             <OverviewTab
               data={data}
               onGoalUpdated={refresh}
-              clientMode={clientMode}
+              canManage={canManage}
             />
           ) : null}
           {activeTab === "Regiões" ? <RegionsTab data={data} /> : null}
-          {activeTab === "Horários" ? <HoursTab data={data} /> : null}
-          {activeTab === "Modelos" ? <ModelsTab data={data} /> : null}
           {activeTab === "Leads" ? (
             <LeadsTableTab
               data={data}

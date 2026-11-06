@@ -17,6 +17,10 @@
       "title": "MG Sales — Controle de Envios"
     },
     {
+      "path": "/?module=users",
+      "title": "MG Sales — Usuários"
+    },
+    {
       "path": "/?module=leads&tab=stores",
       "title": "MG Sales — Lojas & CRM"
     }
