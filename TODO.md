@@ -144,7 +144,7 @@ Identidade validada: SVGs com proporção original, favicons íntegros e servido
 
 ## Remoção da faixa de cartões indicada
 
-- [ ] Remover da Visão Geral a faixa Leads, Modelos, Dealers com Leads e CRM. Preservar pacing mensal, KPIs comerciais, conversão, gráficos, filtros e menu fixo; não alterar dados, metas ou projeções. Manter a conexão GitHub cancelada e salvar somente no repositório Manus.
+- [x] Remover da Visão Geral a faixa Leads, Modelos, Dealers com Leads e CRM. Preservar pacing mensal, KPIs comerciais, conversão, gráficos, filtros e menu fixo; não alterar dados, metas ou projeções. Manter a conexão GitHub cancelada e salvar somente no repositório Manus.
 
 - [x] Tabela de unidades/dealers na Visão Geral com rolagem interna de altura limitada, barra fina e discreta, cabeçalho fixo e acesso por teclado. Preservar busca, ordenação, valores e totais; não introduzir scrollbar customizado pesado ou desenho chamativo.
 
@@ -156,3 +156,5 @@ Identidade validada: SVGs com proporção original, favicons íntegros e servido
 - [x] Adicionar atalho Mês passado aos filtros, cobrindo primeiro e último dia do mês anterior no calendário de São Paulo, inclusive virada de ano. Remover campo de seleção Campanha e limpar campanha dos filtros aplicados para não existir filtro oculto; manter demais campos e o limite D-1.
 
 - [x] Adicionar Atualizar base de Leads junto a Atualizar metas no pacing. Reexecutar a consulta autenticada do dashboard e do acumulado mensal na base já importada, com estado de carregamento, sucesso/erro e preservação dos filtros e metas. Não afirmar sincronização com planilha externa nem nova importação quando ocorrer somente releitura do banco.
+
+Validação final desta entrega: 186 testes, TypeScript e build aprovados; Prévia HTTP 200. Perfil BBRO disponível sem criação de senha ou conta inexistente. Código aceito no repositório Manus, sem transferência GitHub nem publicação automática.
