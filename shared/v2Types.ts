@@ -9,6 +9,14 @@ export type V2Filters = {
   page?: number;
 };
 export type V2Count = { label: string; count: number };
+export type V2CommercialGroupRecord = {
+  kind: "lead-goals" | "sales-goals" | "sales";
+  key: string;
+  sourceLabel: string;
+  dealers: string[];
+  value: number | null;
+  leads: number;
+};
 export type V2Lead = {
   id: number;
   date: string;
@@ -93,6 +101,8 @@ export type V2Dashboard = {
       state: string | null;
       value: number | null;
     }>;
+    unreconciledDealers?: Array<{ sourceLabel: string; leads: number }>;
+    groupedGoals?: V2CommercialGroupRecord[];
     available: boolean;
     sourceName: string | null;
     updatedAt: string | null;

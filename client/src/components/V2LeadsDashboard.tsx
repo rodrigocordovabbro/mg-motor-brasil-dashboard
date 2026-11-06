@@ -9,6 +9,7 @@ import {
   getDashboardCutoffDate,
   resolveDashboardPeriod,
 } from "@shared/dashboardDates";
+import { OFFICIAL_DEALERS, officialDealer } from "@shared/dealerRegistry";
 import type { V2Count, V2Dashboard, V2Filters, V2Lead } from "@shared/v2Types";
 import {
   AlertCircle,
@@ -776,6 +777,184 @@ function performancePercent(value: number | null, available: boolean) {
   return percentFormat(value);
 }
 
+type DealerPerformanceRow =
+  V2LeadsResponse["dealerPerformance"]["rows"][number];
+type GroupedGoal = NonNullable<
+  V2LeadsResponse["dealerPerformance"]["groupedGoals"]
+>[number];
+
+type DealerDisplayRow = DealerPerformanceRow & {
+  official: boolean;
+  sourceLabels: string[];
+};
+
+function commercialKindLabel(kind: GroupedGoal["kind"]) {
+  if (kind === "lead-goals") return "Meta de Leads";
+  if (kind === "sales-goals") return "Meta de Vendas";
+  return "Vendas";
+}
+
+function sourcesByOfficialDealer(groups: GroupedGoal[]) {
+  const sources = new Map<string, string[]>();
+  for (const group of groups) {
+    for (const dealer of group.dealers) {
+      const canonical = officialDealer(dealer)?.name ?? dealer;
+      const current = sources.get(canonical) ?? [];
+      const label = `${commercialKindLabel(group.kind)}: ${group.sourceLabel}`;
+      if (!current.includes(label)) current.push(label);
+      sources.set(canonical, current);
+    }
+  }
+  return sources;
+}
+
+function GroupGoalBadge({
+  value,
+  groups,
+}: {
+  value: number | null;
+  groups: GroupedGoal[];
+}) {
+  const collectiveGroups = groups.filter(group => group.dealers.length !== 1);
+  if (value != null || !collectiveGroups.length) return null;
+  return (
+    <div className="mt-1">
+      <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-800">
+        Meta de grupo
+      </span>
+      <details className="mt-1 text-[11px] font-normal text-slate-500">
+        <summary className="cursor-pointer list-none underline decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
+          Origem do grupo ({collectiveGroups.length})
+        </summary>
+        <ul className="mt-1 space-y-0.5 leading-4">
+          {collectiveGroups.map(group => (
+            <li key={`${group.kind}:${group.key}`}>
+              {group.sourceLabel} · valor do grupo:{" "}
+              {group.value == null ? "N/D" : numberFormat(group.value)}
+            </li>
+          ))}
+        </ul>
+      </details>
+    </div>
+  );
+}
+
+function UnmatchedLeadDetails({ rows }: { rows: DealerPerformanceRow[] }) {
+  if (!rows.length) return null;
+  return (
+    <details className="mx-5 mb-4 rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-xs">
+      <summary className="cursor-pointer font-semibold text-amber-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
+        Leads sem dealer oficial conciliado ({rows.length} linhas)
+      </summary>
+      <p className="mt-2 leading-5 text-amber-900">
+        Os nomes abaixo permanecem na origem e não são transferidos para uma
+        unidade oficial por aproximação. Os totais globais não mudam.
+      </p>
+      <div className="mt-3 max-h-64 overflow-auto rounded-lg border border-amber-200 bg-white">
+        <table className="w-full text-left">
+          <thead className="bg-amber-50 text-[10px] font-bold uppercase tracking-[0.1em] text-amber-900">
+            <tr>
+              <th className="px-3 py-2">Dealer original</th>
+              <th className="px-3 py-2">UF</th>
+              <th className="px-3 py-2 text-right">Leads</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-amber-100">
+            {rows.map((row, index) => (
+              <tr key={`${row.dealer}:${row.state}:${index}`}>
+                <td className="px-3 py-2 font-semibold text-slate-700">
+                  {row.dealer || "Não informado"}
+                </td>
+                <td className="px-3 py-2 text-slate-500">
+                  {row.state || "N/D"}
+                </td>
+                <td className="px-3 py-2 text-right font-bold text-slate-900">
+                  {numberFormat(row.leads)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  );
+}
+
+function GroupedGoalsDetails({ groups }: { groups: GroupedGoal[] }) {
+  if (!groups.length) return null;
+  return (
+    <details className="mx-5 mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs">
+      <summary className="cursor-pointer font-semibold text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
+        Metas e vendas na origem ({groups.length}) — individuais e coletivas,
+        sem somar grupos aos KPIs
+      </summary>
+      <p className="mt-2 leading-5 text-slate-500">
+        A tabela principal mostra valores individuais por unidade. Cada valor
+        coletivo abaixo aparece uma única vez, com o nome original preservado;
+        não há rateio por loja.
+      </p>
+      <div className="mt-3 max-h-72 overflow-auto rounded-lg border border-slate-200 bg-white">
+        <table className="min-w-[760px] w-full text-left">
+          <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">
+            <tr>
+              <th className="px-3 py-2">Unidade oficial</th>
+              <th className="px-3 py-2">Fonte original</th>
+              <th className="px-3 py-2">Classificação</th>
+              <th className="px-3 py-2 text-right">Valor do grupo</th>
+              <th className="px-3 py-2 text-right">Leads na base</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {groups.map((group, index) => {
+              const dealers = group.dealers.length
+                ? group.dealers.map(
+                    dealer => officialDealer(dealer)?.name ?? dealer
+                  )
+                : ["Fora do cadastro oficial"];
+              const collective = group.dealers.length !== 1;
+              return (
+                <tr key={`${group.kind}:${group.key}:${index}`}>
+                  <td className="px-3 py-2 align-top text-slate-700">
+                    {dealers.map(dealer => (
+                      <span className="block" key={dealer}>
+                        {dealer}
+                      </span>
+                    ))}
+                  </td>
+                  <td
+                    className="max-w-[220px] break-words px-3 py-2 align-top font-semibold text-slate-700"
+                    title={group.sourceLabel}
+                  >
+                    {group.sourceLabel}
+                    <span className="mt-0.5 block text-[11px] font-normal text-slate-400">
+                      {commercialKindLabel(group.kind)}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 align-top">
+                    <span
+                      className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-bold ${collective ? "border-amber-200 bg-amber-50 text-amber-800" : "border-blue-200 bg-blue-50 text-blue-800"}`}
+                    >
+                      {collective
+                        ? "Coletiva — sem rateio por loja"
+                        : "Individual — unidade oficial"}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-right align-top font-bold text-slate-900">
+                    {group.value == null ? "N/D" : numberFormat(group.value)}
+                  </td>
+                  <td className="px-3 py-2 text-right align-top text-slate-600">
+                    {numberFormat(group.leads)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  );
+}
+
 function DealerPerformanceCard({
   data,
   onUpdated,
@@ -789,13 +968,54 @@ function DealerPerformanceCard({
   const [dealerSearch, setDealerSearch] = useState("");
   const [dealerSort, setDealerSort] = useState("leads");
   const [page, setPage] = useState(1);
+  const groupedGoals = performance.groupedGoals ?? [];
+  const sourceLabels = useMemo(
+    () => sourcesByOfficialDealer(groupedGoals),
+    [groupedGoals]
+  );
+  const goalGroupsByDealer = useMemo(() => {
+    const groups = new Map<string, GroupedGoal[]>();
+    for (const group of groupedGoals) {
+      for (const dealer of group.dealers) {
+        const official = officialDealer(dealer);
+        const key = official?.name ?? dealer;
+        const current = groups.get(key) ?? [];
+        current.push(group);
+        groups.set(key, current);
+      }
+    }
+    return groups;
+  }, [groupedGoals]);
+  const unmatchedLeadRows = useMemo(
+    () => performance.rows.filter(row => !officialDealer(row.dealer)),
+    [performance.rows]
+  );
+  const displayRows = useMemo<DealerDisplayRow[]>(() => {
+    return performance.rows
+      .filter(row => Boolean(officialDealer(row.dealer)))
+      .map(row => {
+        const official = officialDealer(row.dealer);
+        const labels = new Set(
+          official ? (sourceLabels.get(official.name) ?? []) : []
+        );
+        if (official && row.dealer !== official.name)
+          labels.add(`Fonte original: ${row.dealer}`);
+        return {
+          ...row,
+          dealer: official?.name ?? row.dealer,
+          state: row.state || official?.state || row.state,
+          official: true,
+          sourceLabels: Array.from(labels),
+        };
+      });
+  }, [performance.rows, sourceLabels]);
   const filteredRows = useMemo(
     () =>
-      performance.rows
+      displayRows
         .filter(
           row =>
             !dealerSearch.trim() ||
-            [row.dealer, row.state].some(value =>
+            [row.dealer, row.state, ...row.sourceLabels].some(value =>
               value
                 .toLocaleLowerCase("pt-BR")
                 .includes(dealerSearch.trim().toLocaleLowerCase("pt-BR"))
@@ -806,7 +1026,7 @@ function DealerPerformanceCard({
             ? a.dealer.localeCompare(b.dealer, "pt-BR")
             : b.leads - a.leads
         ),
-    [performance.rows, dealerSearch, dealerSort]
+    [displayRows, dealerSearch, dealerSort]
   );
   const pageSize = 12;
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
@@ -820,7 +1040,7 @@ function DealerPerformanceCard({
       <CardHeading
         eyebrow="Acompanhamento comercial"
         title="Vendas e metas por concessionária"
-        description="Leads da base do dashboard; metas mensais e vendas por dealer importadas de arquivos separados."
+        description="Cadastro oficial conciliado; Leads da mesma base do dashboard, com nomes originais preservados."
         icon={TrendingUp}
         action={
           <span
@@ -839,7 +1059,9 @@ function DealerPerformanceCard({
           className="mx-5 mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900"
           role="status"
         >
-          <p className="font-bold">Leitura das fontes comerciais</p>
+          <p className="font-bold">
+            Leitura das fontes comerciais — sem alocação por aproximação
+          </p>
           <ul className="mt-1 list-disc space-y-1 pl-4">
             {performance.warnings.map(warning => (
               <li key={warning}>{warning}</li>
@@ -847,17 +1069,25 @@ function DealerPerformanceCard({
           </ul>
         </div>
       ) : null}
+      <UnmatchedLeadDetails rows={unmatchedLeadRows} />
       {performance.unmapped?.length ? (
         <details className="mx-5 mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs">
           <summary className="cursor-pointer font-semibold text-slate-700">
             {performance.unmapped.length} linhas comerciais sem vínculo com
-            dealer — ver metas de origem
+            unidade oficial — ver origem preservada
           </summary>
           <p className="mt-2 leading-5 text-slate-500">
-            Totais dos arquivos permanecem preservados. Não repetimos metas
-            coletivas por loja. Reenvie o arquivo e ajuste o de-para no preview
-            para vincular os nomes originais.
+            Linha fora do cadastro ou vínculo ainda não definido; metas mantidas
+            na origem, sem alocação por aproximação.
           </p>
+          {performance.unmapped.some(row =>
+            row.sourceLabel.toLocaleLowerCase("pt-BR").includes("indianopolis")
+          ) ? (
+            <p className="mt-2 rounded-lg border border-amber-200 bg-amber-100/60 px-3 py-2 font-semibold text-amber-900">
+              “SINAL AV INDIANOPOLIS” está fora do cadastro oficial e não foi
+              transferida para Sinal Av. Europa.
+            </p>
+          ) : null}
           <div className="mt-2 max-h-64 overflow-auto">
             <table className="w-full text-left">
               <thead>
@@ -926,6 +1156,7 @@ function DealerPerformanceCard({
           }
         />
       </div>
+      <GroupedGoalsDetails groups={groupedGoals} />
       <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-end">
         <label className="min-w-0 flex-1">
           <span className="v2-label">Consultar concessionária ou UF</span>
@@ -958,12 +1189,12 @@ function DealerPerformanceCard({
         <table className="min-w-[760px] w-full text-left">
           <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.13em] text-slate-500">
             <tr>
-              <th className="px-5 py-3">Concessionária</th>
+              <th className="px-5 py-3">Unidade oficial / fonte</th>
               <th className="px-4 py-3">UF</th>
               <th className="px-4 py-3 text-right">Leads</th>
-              <th className="px-4 py-3 text-right">Meta leads</th>
+              <th className="px-4 py-3 text-right">Meta leads · unidade</th>
               <th className="px-4 py-3 text-right">Vendas</th>
-              <th className="px-4 py-3 text-right">Meta vendas</th>
+              <th className="px-4 py-3 text-right">Meta vendas · unidade</th>
               <th className="px-5 py-3 text-right">Conversão</th>
             </tr>
           </thead>
@@ -975,10 +1206,31 @@ function DealerPerformanceCard({
                   className="transition hover:bg-slate-50"
                 >
                   <td
-                    className="max-w-[240px] truncate px-5 py-3 font-semibold text-slate-800"
+                    className="max-w-[260px] px-5 py-3 font-semibold text-slate-800"
                     title={row.dealer}
                   >
-                    {row.dealer || "Não informado"}
+                    <span className="block truncate">
+                      {row.dealer || "Não informado"}
+                    </span>
+                    <span
+                      className={`mt-1 inline-flex rounded-full border px-1.5 py-0.5 text-[9px] font-bold ${row.official ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-800"}`}
+                    >
+                      {row.official
+                        ? "Cadastro oficial"
+                        : "Fora do cadastro oficial"}
+                    </span>
+                    {row.sourceLabels.length ? (
+                      <details className="mt-1 text-[11px] font-normal text-slate-500">
+                        <summary className="cursor-pointer list-none underline decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
+                          Fontes originais ({row.sourceLabels.length})
+                        </summary>
+                        <ul className="mt-1 space-y-0.5 leading-4">
+                          {row.sourceLabels.map(source => (
+                            <li key={source}>{source}</li>
+                          ))}
+                        </ul>
+                      </details>
+                    ) : null}
                   </td>
                   <td className="px-4 py-3 text-slate-500">
                     {row.state || "N/D"}
@@ -988,12 +1240,28 @@ function DealerPerformanceCard({
                   </td>
                   <td className="px-4 py-3 text-right">
                     {performanceNumber(row.leadGoal, available)}
+                    <GroupGoalBadge
+                      value={row.leadGoal}
+                      groups={
+                        goalGroupsByDealer
+                          .get(row.dealer)
+                          ?.filter(group => group.kind === "lead-goals") ?? []
+                      }
+                    />
                   </td>
                   <td className="px-4 py-3 text-right">
                     {performanceNumber(row.sales, available)}
                   </td>
                   <td className="px-4 py-3 text-right">
                     {performanceNumber(row.salesGoal, available)}
+                    <GroupGoalBadge
+                      value={row.salesGoal}
+                      groups={
+                        goalGroupsByDealer
+                          .get(row.dealer)
+                          ?.filter(group => group.kind === "sales-goals") ?? []
+                      }
+                    />
                   </td>
                   <td className="px-5 py-3 text-right">
                     {performancePercent(row.conversionRate, available)}
@@ -1209,13 +1477,9 @@ function OverviewTab({
           icon={BarChart3}
         />
         <KpiCard
-          label="Lojas"
+          label="Dealers com Leads"
           value={numberFormat(summary.dealers)}
-          hint={
-            summary.topState
-              ? `Estado líder: ${summary.topState.label}`
-              : "Sem liderança disponível"
-          }
+          hint={`Cadastro oficial: ${OFFICIAL_DEALERS.length} unidades`}
           icon={MapPin}
         />
         <KpiCard

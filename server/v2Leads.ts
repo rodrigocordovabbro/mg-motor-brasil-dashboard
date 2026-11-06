@@ -1,3 +1,8 @@
+import {
+  OFFICIAL_DEALERS,
+  resolveOfficialDealer,
+  officialDealer,
+} from "../shared/dealerRegistry";
 import { getCommercialPerformance } from "./v2Commercial";
 import type { RowDataPacket } from "mysql2/promise";
 import { getV2Pool, getV2Goal } from "./v2Db";
@@ -18,7 +23,9 @@ export function countBy(rows: V2Lead[], key: keyof V2Lead): V2Count[] {
         ? row.hour == null
           ? "Não informado"
           : `${String(row.hour).padStart(2, "0")}h`
-        : String(row[key] ?? "Não informado");
+        : key === "dealer"
+          ? (resolveOfficialDealer(row.dealer) ?? row.dealer)
+          : String(row[key] ?? "Não informado");
     map.set(value, (map.get(value) ?? 0) + 1);
   });
   return [...map]
@@ -81,7 +88,9 @@ export function matchesV2LeadFilters(
     (!input.model || row.model === input.model) &&
     (!input.channel || row.channel === input.channel) &&
     (!input.campaign || row.campaign === input.campaign) &&
-    (!input.dealer || row.dealer === input.dealer) &&
+    (!input.dealer ||
+      row.dealer === input.dealer ||
+      resolveOfficialDealer(row.dealer) === input.dealer) &&
     (!lowerSearch ||
       [
         row.name,
@@ -89,6 +98,7 @@ export function matchesV2LeadFilters(
         row.channel,
         row.campaign,
         row.dealer,
+        resolveOfficialDealer(row.dealer) ?? "",
         row.city,
         row.state,
       ].some(value => value.toLocaleLowerCase("pt-BR").includes(lowerSearch)))
@@ -222,7 +232,9 @@ export function aggregateV2Leads(
   const dealerRows = dealers.map(item => ({
     dealer: item.label,
     state:
-      rows.find(row => row.dealer === item.label)?.state ?? "Não informado",
+      officialDealer(item.label)?.state ??
+      rows.find(row => row.dealer === item.label)?.state ??
+      "Não informado",
     leads: item.count,
     leadGoal: null,
     sales: null,
@@ -237,7 +249,12 @@ export function aggregateV2Leads(
       models: countBy(baseRows, "model").map(v => v.label),
       channels: countBy(baseRows, "channel").map(v => v.label),
       campaigns: countBy(baseRows, "campaign").map(v => v.label),
-      dealers: countBy(baseRows, "dealer").map(v => v.label),
+      dealers: [
+        ...new Set([
+          ...OFFICIAL_DEALERS.map(dealer => dealer.name),
+          ...countBy(baseRows, "dealer").map(v => v.label),
+        ]),
+      ],
     },
     summary: {
       total: rows.length,
@@ -292,7 +309,7 @@ export function aggregateV2Leads(
       "Contagem de registros da planilha com data válida, preservando cada linha e sua origem; não representa pessoas únicas deduplicadas nem comprova integração CRM.",
       "Carga inicial autenticada da planilha. Atualização automática ainda não configurada.",
       "Pacing usa o acumulado do mês até a data final, enquanto gráficos e KPIs usam o período selecionado.",
-      "Fonte de vendas e metas por concessionária ainda não configurada. Conversão de Leads em vendas indisponível.",
+      "Nomes originais de Leads preservados; distribuição por dealer usa o de-para do cadastro oficial. Identificações sem correspondência permanecem na contagem, sem atribuição forçada.",
       ...(period.dateFrom.slice(0, 7) !== period.dateTo.slice(0, 7)
         ? [
             "Pace diário indisponível em intervalos multicompetência; selecione um único mês para comparar com sua meta.",

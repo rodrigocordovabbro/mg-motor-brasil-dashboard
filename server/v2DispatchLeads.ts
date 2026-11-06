@@ -1,3 +1,4 @@
+import { resolveOfficialDealer } from "../shared/dealerRegistry";
 import { TRPCError } from "@trpc/server";
 import type { RowDataPacket } from "mysql2/promise";
 import {
@@ -190,9 +191,34 @@ function findDeterministicRow(
   rows: DispatchRow[],
   metadata: LeadMetadata
 ): Assigned | null {
+  const canonical = resolveOfficialDealer(rawDealer);
+  if (canonical) {
+    const official = rows.find(row => row.storeName === canonical);
+    if (official)
+      return {
+        rowId: official.id,
+        metadataMatched: true,
+        matchMethod: "official-de-para",
+      };
+    const officialAliases = rows.filter(
+      row => resolveOfficialDealer(row.storeName) === canonical
+    );
+    if (officialAliases.length === 1)
+      return {
+        rowId: officialAliases[0].id,
+        metadataMatched: true,
+        matchMethod: "official-de-para",
+      };
+  }
   const existingIds = new Set(rows.map(row => row.id));
   const persisted = mappedRowId(metadata.leadDealerMap[rawDealer]);
-  if (persisted && existingIds.has(persisted)) {
+  const persistedRow = rows.find(row => row.id === persisted);
+  const destinationCanonical = persistedRow
+    ? resolveOfficialDealer(persistedRow.storeName)
+    : null;
+  const officialDestinationAllowed =
+    !destinationCanonical || destinationCanonical === canonical;
+  if (persisted && existingIds.has(persisted) && officialDestinationAllowed) {
     const meta = metadata.leadDealerMapMeta[rawDealer];
     return {
       rowId: persisted,
@@ -405,7 +431,7 @@ export async function getLeadControl(
     notes: [
       ...report.notes,
       "Volume de Leads calculado diretamente de v2_leads com os mesmos filtros do dashboard; a planilha Envios não é fonte dessa contagem.",
-      "Nomes de concessionária mantêm o valor original e só são associados a uma loja por correspondência exata ou normalização determinística sem substring.",
+      "Nomes de concessionária mantêm o valor original; aliases inequívocos usam o de-para do cadastro oficial, sem substring, rateio ou alteração dos checks históricos.",
     ],
   };
 }

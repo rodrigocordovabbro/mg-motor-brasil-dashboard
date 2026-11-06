@@ -17,6 +17,8 @@ export type CommercialSourceRow = {
   value: number | null;
   /** Explicitly linked dashboard dealer labels; never inferred from a substring. */
   rawDealers: string[];
+  /** Raw targets retained when an immutable mapping-only revision canonicalizes them. */
+  originalRawDealers?: string[];
 };
 
 export type CommercialPreview = {
@@ -53,6 +55,13 @@ export type CommercialCommitResult = {
   total: number | null;
   rows: number;
   warnings: string[];
+};
+
+export type CommercialReconciliationResult = {
+  competence: string;
+  revised: number;
+  importIds: number[];
+  alreadyReconciled: boolean;
 };
 
 export type CommercialStatusFile = {

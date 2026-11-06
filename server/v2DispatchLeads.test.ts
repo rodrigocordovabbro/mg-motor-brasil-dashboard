@@ -326,3 +326,75 @@ describe("lead-control preparation", () => {
     ).toBe(false);
   });
 });
+
+it("concilia o alias oficial sem mover IDs ou validar checks por conta própria", async () => {
+  const previousLeads = mock.state.leads;
+  const original = report();
+  original.rows[0].storeName = "Barigui Curitiba";
+  original.rows.push({
+    ...original.rows[0],
+    id: 22,
+    rowNumber: 7,
+    storeName: "Barigui — Curitiba/PR",
+    cells: [],
+  });
+  mock.state.leads = [
+    { ...previousLeads[0], dealer: "BARIGUI - CURITIBA", state: "SP" },
+  ];
+  mock.state.metadata = {
+    days: [],
+    leadDealerMap: { "BARIGUI - CURITIBA": 22 },
+  };
+  const { getDispatchReport } = await import("./v2Dispatch");
+  vi.mocked(getDispatchReport).mockResolvedValueOnce(original);
+  try {
+    const result = await getLeadControl(1, {
+      dateFrom: "2026-11-01",
+      dateTo: "2026-11-04",
+    });
+    const official = result.rows.find(row => row.id === 10)!;
+    expect(official.cells[0].leadVolume).toBe(1);
+    expect(official.cells[0].id).toBe(205);
+    expect(official.cells[0].validation).toEqual(
+      original.rows[0].cells[0].validation
+    );
+    expect(result.rows.find(row => row.id === 22)?.cells[0].leadVolume).toBe(0);
+    expect(result.totals.computed).toBe(1);
+    expect(
+      mock.state.sql.some(sql => sql.includes("UPDATE v2_dispatch_checks"))
+    ).toBe(false);
+  } finally {
+    mock.state.leads = previousLeads;
+  }
+});
+
+it("não transfere nome fora do cadastro para loja oficial por mapping histórico", async () => {
+  const previousLeads = mock.state.leads;
+  const original = report();
+  original.rows[0].storeName = "Sinal Av. Europa";
+  mock.state.leads = [{ ...previousLeads[0], dealer: "SINAL AV INDIANOPOLIS" }];
+  mock.state.metadata = {
+    days: [],
+    leadDealerMap: { "SINAL AV INDIANOPOLIS": 10 },
+  };
+  const { getDispatchReport } = await import("./v2Dispatch");
+  vi.mocked(getDispatchReport).mockResolvedValueOnce(original);
+  try {
+    const result = await getLeadControl(1, {
+      dateFrom: "2026-11-01",
+      dateTo: "2026-11-04",
+    });
+    expect(result.rows.find(row => row.id === 10)?.cells[0].leadVolume).toBe(0);
+    expect(
+      result.rows.find(row => row.storeName === "SINAL AV INDIANOPOLIS")
+        ?.cells[0].leadVolume
+    ).toBe(1);
+    expect(result.totals.computed).toBe(1);
+    expect(result.rows.find(row => row.id === 10)?.cells[0].id).toBe(205);
+    expect(result.rows.find(row => row.id === 10)?.cells[0].validation).toEqual(
+      original.rows[0].cells[0].validation
+    );
+  } finally {
+    mock.state.leads = previousLeads;
+  }
+});
