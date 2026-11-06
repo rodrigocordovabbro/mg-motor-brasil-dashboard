@@ -22,6 +22,10 @@ import { getV2Pool, getV2Goal } from "./v2Db";
 import { readExtraDealerRegistry } from "./v2DealerRegistry";
 import { aggregateModelAnalysis, resolveModelVersion } from "./v2ModelAnalysis";
 import { addIsoDays, resolveDashboardPeriod } from "../shared/dashboardDates";
+import {
+  countLegacyCompatibleLeads,
+  isLegacyLeadChannelActive,
+} from "./v2LeadCounting";
 import type {
   V2Dashboard,
   V2Filters,
@@ -160,6 +164,7 @@ export function filterV2LeadRows(
     row =>
       row.date >= period.dateFrom &&
       row.date <= period.dateTo &&
+      isLegacyLeadChannelActive(row.channel, row.date) &&
       matchesV2LeadFilters(row, input, extraDealers)
   );
 }
@@ -186,7 +191,62 @@ export function mapV2LeadRow(row: RowDataPacket): V2Lead {
 
 type LeadPeriod = Pick<V2Filters, "dateFrom" | "dateTo">;
 
-/** Reads the shared v2_leads source without using the Envios workbook. */
+/** Private SELECT shared with CRM preparation; never serialize raw provenance. */
+export const V2_COUNTING_SOURCE_SELECT = `SELECT l.id,l.leadDate AS date,l.leadHour AS hour,l.name,l.model,l.version,l.channel,l.campaign,l.dealer,l.city,l.state,l.crm,
+  l.sourceSheet,r.headersJson,r.valuesJson,r.sourceTimestampRaw
+  FROM v2_leads l LEFT JOIN v2_lead_sync_rows r ON r.sourceId=1 AND r.leadId=l.id
+  ORDER BY CASE l.sourceSheet WHEN 'Site' THEN 0 WHEN 'Interlagos' THEN 1 WHEN 'Tiktok - Live' THEN 2 WHEN 'Tikok' THEN 3 WHEN 'Meta' THEN 4 WHEN 'Weebmotors' THEN 5 WHEN 'Mercado Livre' THEN 6 WHEN 'Uol' THEN 7 ELSE 8 END,l.sourceRow,l.id`;
+
+export function mapLegacyCountedLeadRows(
+  raw: readonly RowDataPacket[]
+): V2Lead[] {
+  return countLegacyCompatibleLeads(
+    raw.map(row => ({
+      lead: mapV2LeadRow(row),
+      provenance: {
+        sourceSheet: row.sourceSheet,
+        headersJson: row.headersJson,
+        valuesJson: row.valuesJson,
+        sourceTimestampRaw: row.sourceTimestampRaw,
+      },
+    }))
+  );
+}
+
+let countingCache: { version: string; rows: Promise<V2Lead[]> } | undefined;
+async function readCountedSourceRows(): Promise<V2Lead[]> {
+  const pool = getV2Pool();
+  const [sources] = await pool.query<RowDataPacket[]>(
+    "SELECT importedAt,totalRows,inputSha256 FROM v2_sources WHERE id=1"
+  );
+  const version = sources[0]?.importedAt
+    ? JSON.stringify([
+        sources[0].importedAt,
+        sources[0].totalRows,
+        sources[0].inputSha256,
+      ])
+    : null;
+  const load = async () => {
+    // Read the complete snapshot before date filtering: corrected dates can cross
+    // a month boundary. Cache only the safe projected rows, not contacts/payloads.
+    const [raw] = await pool.execute<RowDataPacket[]>(
+      V2_COUNTING_SOURCE_SELECT
+    );
+    return mapLegacyCountedLeadRows(raw);
+  };
+  if (!version) return load();
+  if (countingCache?.version === version) return countingCache.rows;
+  const rows = load();
+  countingCache = { version, rows };
+  try {
+    return await rows;
+  } catch (error) {
+    if (countingCache?.rows === rows) countingCache = undefined;
+    throw error;
+  }
+}
+
+/** Shared analytical source; physical v2_leads and Envios remain unmodified. */
 export async function readV2LeadsForPeriod(
   periodOrDateFrom: LeadPeriod | string,
   dateTo?: string
@@ -198,11 +258,10 @@ export async function readV2LeadsForPeriod(
   const end =
     typeof periodOrDateFrom === "string" ? dateTo : periodOrDateFrom.dateTo;
   if (!end) throw new Error("Período de leads incompleto");
-  const [raw] = await getV2Pool().execute<RowDataPacket[]>(
-    "SELECT id,leadDate AS date,leadHour AS hour,name,model,version,channel,campaign,dealer,city,state,crm FROM v2_leads WHERE leadDate>=? AND leadDate<=?",
-    [dateFrom, end]
-  );
-  return raw.map(mapV2LeadRow);
+  const rows = await readCountedSourceRows();
+  return rows
+    .filter(row => row.date >= dateFrom && row.date <= end)
+    .map(row => ({ ...row }));
 }
 
 export function aggregateV2Leads(
@@ -214,8 +273,11 @@ export function aggregateV2Leads(
   extraDealers: readonly ExtraDealerRegistryEntry[] = []
 ): V2Dashboard {
   const period = resolveDashboardPeriod(input.dateFrom, input.dateTo, now);
-  const baseRows = all.filter(
-    row => row.date >= period.dateFrom && row.date <= period.dateTo
+  const baseRows = filterV2LeadRows(
+    all,
+    { dateFrom: period.dateFrom, dateTo: period.dateTo },
+    now,
+    extraDealers
   );
   const rows = filterV2LeadRows(all, input, now, extraDealers);
   const monthFrom = `${period.dateTo.slice(0, 7)}-01`;
@@ -370,10 +432,10 @@ export function aggregateV2Leads(
       },
     },
     notes: [
-      "Contagem de registros da planilha com data válida, preservando cada linha e sua origem; não representa pessoas únicas deduplicadas nem comprova integração CRM.",
-      "Carga inicial autenticada da planilha. Atualização automática ainda não configurada.",
+      "Contagem analítica compatível com o dashboard antigo: deduplicação por conteúdo e ciclo de canais, antes dos filtros. Registros físicos e proveniência permanecem preservados; não representa pessoas únicas nem comprova entrega CRM.",
+      "Data analítica e validação de modelo/concessionária seguem o transformador da versão antiga sobre os campos de cada aba; Site prioriza data. Atualizar base sincroniza a planilha mediante ação administrativa.",
       "Pacing usa o acumulado do mês até a data final, enquanto gráficos e KPIs usam o período selecionado.",
-      "Nomes originais de Leads preservados; distribuição por dealer e modelo usa de-para explícito. Identificações sem correspondência permanecem na contagem, sem atribuição forçada.",
+      "Nomes originais de Leads preservados; distribuição por dealer e modelo usa de-para explícito. Linhas que não passam a validação histórica permanecem na base bruta, fora da contagem analítica.",
       ...(period.dateFrom.slice(0, 7) !== period.dateTo.slice(0, 7)
         ? [
             "Pace diário indisponível em intervalos multicompetência; selecione um único mês para comparar com sua meta.",

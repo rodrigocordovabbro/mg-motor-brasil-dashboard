@@ -16,10 +16,12 @@ import type { V2Filters, V2Lead } from "../shared/v2Types";
 import { getV2Pool } from "./v2Db";
 import {
   filterV2LeadRows,
-  mapV2LeadRow,
+  mapLegacyCountedLeadRows,
+  V2_COUNTING_SOURCE_SELECT,
   readV2LeadsForPeriod,
 } from "./v2Leads";
 import { getDispatchReport } from "./v2Dispatch";
+import { readExtraDealerRegistry } from "./v2DealerRegistry";
 
 type LeadMapValue =
   | number
@@ -44,8 +46,6 @@ type Assigned = {
   matchMethod: string;
 };
 
-const LEAD_SELECT =
-  "SELECT id,leadDate AS date,leadHour AS hour,name,model,version,channel,campaign,dealer,city,state,crm FROM v2_leads WHERE leadDate>=? AND leadDate<=?";
 const QUALIFICATION_ROW = "Leads em qualificação";
 
 function parseMetadata(value: unknown): LeadMetadata {
@@ -350,13 +350,19 @@ export async function getLeadControl(
   filters: V2Filters
 ): Promise<DispatchReport> {
   const period = resolveDashboardPeriod(filters.dateFrom, filters.dateTo);
-  const [report, source, metadata, loaded] = await Promise.all([
+  const [report, source, metadata, loaded, extraDealers] = await Promise.all([
     getDispatchReport(reportId),
     readLeadSource(),
     reportMetadata(reportId),
     readV2LeadsForPeriod(period),
+    readExtraDealerRegistry(),
   ]);
-  const filtered = filterV2LeadRows(loaded, { ...filters, ...period });
+  const filtered = filterV2LeadRows(
+    loaded,
+    { ...filters, ...period },
+    new Date(),
+    extraDealers
+  );
   const mapped = mapLeadRows(
     report.rows,
     metadata,
@@ -482,14 +488,15 @@ export async function prepareLeadControl(
     );
     const sourceReady = sourceDate(sourceRows[0]?.importedAt) != null;
     const [rawLeadRows] = await connection.execute<RowDataPacket[]>(
-      LEAD_SELECT,
-      [period.dateFrom, period.dateTo]
+      V2_COUNTING_SOURCE_SELECT
     );
+    const extraDealers = await readExtraDealerRegistry(connection);
     const selectedLeads = sourceReady
       ? filterV2LeadRows(
-          rawLeadRows.map(mapV2LeadRow),
+          mapLegacyCountedLeadRows(rawLeadRows),
           { ...filters, ...period },
-          now
+          now,
+          extraDealers
         )
       : [];
     const [rawRows] = await connection.execute<RowDataPacket[]>(

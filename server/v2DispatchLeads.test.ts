@@ -61,6 +61,7 @@ const mock = vi.hoisted(() => {
     ] as Record<string, unknown>[],
     sql: [] as string[],
     cellsPrepared: false,
+    extraRows: [] as Record<string, unknown>[],
     connection: null as any,
   };
   const execute = vi.fn();
@@ -155,6 +156,7 @@ beforeEach(() => {
   ];
   mock.state.sql = [];
   mock.state.cellsPrepared = false;
+  mock.state.extraRows = [];
   mock.execute.mockImplementation(async (sql: string, params?: unknown[]) => {
     mock.state.sql.push(sql);
     if (sql.includes("FROM v2_sources"))
@@ -172,6 +174,8 @@ beforeEach(() => {
     if (sql.includes("SELECT metadata FROM v2_dispatch_reports"))
       return [[{ metadata: JSON.stringify(mock.state.metadata) }], []];
     if (sql.includes("FROM v2_leads")) return [mock.state.leads, []];
+    if (sql.includes("FROM v2_dealer_registry"))
+      return [mock.state.extraRows, []];
     return [[], []];
   });
   mock.query.mockImplementation(async () => [[], []]);
@@ -192,6 +196,8 @@ beforeEach(() => {
           [],
         ];
       if (sql.includes("FROM v2_leads")) return [mock.state.leads, []];
+      if (sql.includes("FROM v2_dealer_registry"))
+        return [mock.state.extraRows, []];
       if (sql.includes("SELECT id,rowNumber,storeName"))
         return [mock.state.rows, []];
       if (sql.startsWith("INSERT INTO v2_dispatch_rows")) {
@@ -260,6 +266,49 @@ describe("dashboard lead dispatch", () => {
       result.rows.find(row => row.storeName === "Loja A")?.cells[0].validation
         ?.version
     ).toBe(1);
+  });
+
+  it("compartilha deduplicação histórica no volume e na preparação sem alterar o check", async () => {
+    const original = mock.state.leads;
+    const fields = {
+      data: "01/11/2026",
+      "Modelo de Interesse": "MG4",
+      Concessionária: "Loja A",
+      "Nome do solicitante": "Pessoa fixture",
+      "E-mail do solicitante": "fixture@example.invalid",
+      "Número de telefone do solicitante": "1100000000",
+      Estado: "SP",
+      Cidade: "São Paulo",
+      "Canal / Campanha": "Fixture",
+    };
+    const lead = {
+      ...original[0],
+      channel: "Site",
+      sourceSheet: "Site",
+      headersJson: JSON.stringify(Object.keys(fields)),
+      valuesJson: JSON.stringify(Object.values(fields)),
+    };
+    mock.state.leads = [lead, { ...lead, id: 2 }];
+    try {
+      const filters = { dateFrom: "2026-11-01", dateTo: "2026-11-02" };
+      const result = await getLeadControl(1, filters);
+      expect(result.totals.computed).toBe(1);
+      expect(result.days.map(day => day.computedTotal)).toEqual([1, 0]);
+      expect(result.rows.find(row => row.id === 10)?.cells[0]).toMatchObject({
+        volume: 1,
+        sourceManual: "OK",
+        validation: { isOk: true, version: 1 },
+      });
+      await prepareLeadControl(1, filters, new Date("2026-11-05T15:00:00Z"));
+      expect(
+        mock.state.sql.some(sql => sql.includes("r.headersJson,r.valuesJson"))
+      ).toBe(true);
+      expect(mock.state.rows).toHaveLength(1);
+      expect(mock.state.connection.commit).toHaveBeenCalledOnce();
+      expect(mock.state.leads).toHaveLength(2);
+    } finally {
+      mock.state.leads = original;
+    }
   });
 
   it("recorta também os totais de validação ao período visível, sem carregar a fotografia inteira", async () => {
@@ -452,4 +501,35 @@ it("limita o preparo BBRO às lojas CRM sem criar novas unidades ou dias futuros
       expect(values[offset + 1] <= "2026-11-04").toBe(true);
     }
   }
+});
+
+it("usa o mesmo alias extra de dealer no dashboard, volume CRM e preparação", async () => {
+  mock.state.extraRows = [
+    {
+      id: 99,
+      label: "NOVA LOJA SEM CADASTRO",
+      normalizedKey: "",
+      state: "SP",
+      sourceImportId: null,
+      createdBy: 1,
+      createdByUsername: "fixture",
+      createdAt: "2026-11-01T12:00:00Z",
+    },
+  ];
+  const filters = {
+    dateFrom: "2026-11-01",
+    dateTo: "2026-11-02",
+    dealer: "NOVA LOJA SEM CADASTRO",
+  };
+  const result = await getLeadControl(1, filters);
+  expect(result.totals.computed).toBe(1);
+  expect(result.days.map(day => day.computedTotal)).toEqual([0, 1]);
+  await prepareLeadControl(1, filters, new Date("2026-11-05T15:00:00Z"));
+  expect(mock.state.rows).toHaveLength(2);
+  expect(
+    mock.state.rows.some(row => row.storeName === "Nova Loja sem cadastro")
+  ).toBe(true);
+  expect(
+    mock.state.sql.some(sql => sql.includes("FROM v2_dealer_registry"))
+  ).toBe(true);
 });
