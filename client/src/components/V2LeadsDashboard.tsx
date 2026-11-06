@@ -203,35 +203,46 @@ function CardHeading({
   description,
   icon: Icon,
   action,
+  actionHelp,
 }: {
   eyebrow?: string;
   title: string;
   description?: string;
   icon?: typeof BarChart3;
   action?: ReactNode;
+  actionHelp?: ReactNode;
 }) {
   return (
-    <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
-      <div>
-        {eyebrow ? (
-          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#e2212d]">
-            {eyebrow}
-          </p>
-        ) : null}
-        <h2 className="mt-0.5 text-[15px] font-bold tracking-[-0.01em] text-slate-900">
-          {title}
-        </h2>
-        {description ? (
-          <p className="mt-1 text-xs leading-5 text-slate-500">{description}</p>
-        ) : null}
-      </div>
-      <div className="flex items-center gap-2">
-        {action}
-        {Icon ? (
-          <Icon
-            className="mt-0.5 h-4 w-4 shrink-0 text-[#e2212d]"
-            aria-hidden="true"
-          />
+    <div className="v2-card-heading border-b border-slate-100 px-5 py-4">
+      <div className="v2-card-heading-layout grid gap-x-4 gap-y-2">
+        <div className="min-w-0">
+          {eyebrow ? (
+            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#e2212d]">
+              {eyebrow}
+            </p>
+          ) : null}
+          <h2 className="mt-0.5 text-[15px] font-bold tracking-[-0.01em] text-slate-900">
+            {title}
+          </h2>
+          {description ? (
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              {description}
+            </p>
+          ) : null}
+        </div>
+        <div className="v2-card-heading-actions flex min-w-0 items-start justify-end gap-2">
+          {action ? <div className="min-w-0 flex-1">{action}</div> : null}
+          {Icon ? (
+            <Icon
+              className="mt-0.5 h-4 w-4 shrink-0 text-[#e2212d]"
+              aria-hidden="true"
+            />
+          ) : null}
+        </div>
+        {actionHelp ? (
+          <div className="v2-card-heading-help min-w-0 text-[11px] leading-4 text-slate-500">
+            {actionHelp}
+          </div>
         ) : null}
       </div>
     </div>
@@ -624,24 +635,35 @@ function PacingCard({
         description="Pacing MTD da competência até D-1; as demais métricas respeitam o período filtrado."
         icon={Target}
         action={
-          <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="pacing-card-actions">
             <span
-              className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${statusTone(pacing.status)}`}
+              className={`pacing-card-status rounded-full border px-2.5 py-1 text-[10px] font-bold ${statusTone(pacing.status)}`}
             >
               {statusText(pacing.status)}
             </span>
-            <V2LeadsReloadButton
-              competence={pacing.competence}
-              onReload={onReloadMonth}
-            />
-            {canManage ? (
-              <V2MonthlyGoalEditor
+            <div className="pacing-card-action-control">
+              <V2LeadsReloadButton
                 competence={pacing.competence}
-                onUpdated={onUpdated}
-                canManage={canManage}
+                onReload={onReloadMonth}
+                syncExternal={canManage}
+                showFeedback={false}
               />
+            </div>
+            {canManage ? (
+              <div className="pacing-card-action-control">
+                <V2MonthlyGoalEditor
+                  competence={pacing.competence}
+                  onUpdated={onUpdated}
+                  canManage={canManage}
+                />
+              </div>
             ) : null}
           </div>
+        }
+        actionHelp={
+          canManage
+            ? "Atualizar base importa a planilha-base pelo servidor; requer conexão Google própria configurada. Atualizar metas altera somente a meta mensal."
+            : "Atualizar indicadores consulta os dados armazenados. A importação externa é controlada pelo administrador."
         }
       />
       <div className="grid gap-5 p-5 lg:grid-cols-[1.25fr_1fr]">
@@ -1913,6 +1935,7 @@ export default function V2LeadsDashboard({
   const [reloadNotice, setReloadNotice] = useState<string | null>(null);
   useEffect(() => setReloadNotice(null), [applied]);
   const queryUtils = v2Trpc.useUtils();
+  const syncBaseMutation = v2Trpc.leads.syncBase.useMutation();
   const dashboardQuery = v2Trpc.leads.dashboard.useQuery(
     omitLeadCampaign(applied),
     {
@@ -1950,31 +1973,69 @@ export default function V2LeadsDashboard({
     setApplied(current => ({ ...current, page }));
   const refresh = () => void dashboardQuery.refetch();
   const reloadMonthlyBase = async (): Promise<LeadsReloadResult> => {
-    const previousImport = data?.source.importedAt;
-    // Mark related views stale without immediately issuing duplicate requests.
-    await Promise.all([
-      queryUtils.leads.dashboard.invalidate(undefined, { refetchType: "none" }),
-      queryUtils.dispatch.leadControl.invalidate(undefined, {
-        refetchType: "none",
-      }),
-    ]);
-    const result = await dashboardQuery.refetch({ throwOnError: true });
-    if (result.error) throw result.error;
-    const fresh = result.data;
-    if (!fresh || fresh.status !== "READY")
-      throw new Error("Fonte de Leads não configurada.");
-    const summary: LeadsReloadResult = {
-      competence: fresh.pacing.competence,
-      total: fresh.summary.total,
-      monthlyTotal: fresh.pacing.current,
-      checkedAt: fresh.checkedAt ?? new Date().toISOString(),
-      importedAt: fresh.source.importedAt,
-      latestLeadDate: fresh.source.latestLeadDate ?? null,
-      requestedDateTo: fresh.period.dateTo,
-      newImport: fresh.source.importedAt !== previousImport,
-    };
-    setReloadNotice(describeLeadsReload(summary));
-    return summary;
+    try {
+      const previousImport = data?.source.importedAt;
+      let syncResult;
+      if (canManage) {
+        try {
+          syncResult = await syncBaseMutation.mutateAsync();
+        } catch (error) {
+          const code = (error as { data?: { code?: string } })?.data?.code;
+          setReloadNotice(
+            code === "PRECONDITION_FAILED"
+              ? "Conexão Google pendente: forneça GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON pelo cartão seguro e compartilhe a planilha-base como Leitor com o client_email dessa conta. A base armazenada foi preservada."
+              : "Não foi possível sincronizar a planilha-base. Os dados anteriores foram preservados; tente novamente."
+          );
+          throw error;
+        }
+      }
+      // Mark related views stale without immediately issuing duplicate requests.
+      await Promise.all([
+        queryUtils.leads.dashboard.invalidate(undefined, {
+          refetchType: "none",
+        }),
+        queryUtils.dispatch.leadControl.invalidate(undefined, {
+          refetchType: "none",
+        }),
+      ]);
+      const result = await dashboardQuery.refetch({ throwOnError: true });
+      if (result.error) throw result.error;
+      const fresh = result.data;
+      if (!fresh || fresh.status !== "READY")
+        throw new Error("Fonte de Leads não configurada.");
+      const summary: LeadsReloadResult = {
+        competence: fresh.pacing.competence,
+        total: fresh.summary.total,
+        monthlyTotal: fresh.pacing.current,
+        checkedAt: fresh.checkedAt ?? new Date().toISOString(),
+        importedAt: fresh.source.importedAt,
+        latestLeadDate: fresh.source.latestLeadDate ?? null,
+        requestedDateTo: fresh.period.dateTo,
+        newImport: fresh.source.importedAt !== previousImport,
+        ...(syncResult
+          ? {
+              sync: {
+                changed: syncResult.changed,
+                inserted: syncResult.inserted,
+                updated: syncResult.updated,
+                totalRows: syncResult.totalRows,
+              },
+            }
+          : {}),
+      };
+      setReloadNotice(describeLeadsReload(summary));
+      return summary;
+    } catch (error) {
+      const code = (error as { data?: { code?: string } })?.data?.code;
+      setReloadNotice(
+        code === "UNAUTHORIZED"
+          ? "Sua sessão expirou. Faça login novamente para atualizar os dados."
+          : code === "PRECONDITION_FAILED"
+            ? "Conexão Google pendente: forneça a conta de serviço pelo cartão seguro e compartilhe a planilha-base como Leitor com seu client_email. A base armazenada foi preservada."
+            : "Não foi possível atualizar a base. Os dados anteriores foram preservados; tente novamente."
+      );
+      throw error;
+    }
   };
 
   if (!authenticated) return null;
@@ -1986,7 +2047,11 @@ export default function V2LeadsDashboard({
       <LeadsSectionNavigation activeTab={activeTab} onChange={selectTab} />
       {reloadNotice ? (
         <div
-          role="status"
+          role={
+            /Não foi|pendente|sessão expirou/.test(reloadNotice)
+              ? "alert"
+              : "status"
+          }
           className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs leading-5 text-slate-600"
         >
           {reloadNotice}
@@ -2042,7 +2107,7 @@ export default function V2LeadsDashboard({
                     </p>
                     <p className="mt-1 text-[11px] text-slate-400">
                       {canManage
-                        ? `${data.source.name || "Importação autenticada"} · ${formatImportedAt(data.source.importedAt)} · importação inicial, sem sincronização automática`
+                        ? `${data.source.name || "Importação autenticada"} · ${formatImportedAt(data.source.importedAt)} · atualização manual autenticada`
                         : "Base autenticada · consulta dos dados já importados"}
                     </p>
                     {data.source.latestLeadDate ? (

@@ -66,7 +66,7 @@ A meta mensal global nunca é rateada nem comparada a um subconjunto. Remover fi
 
 A fonte V2 é a planilha autenticada carregada em `v2_sources`/`v2_leads`. Cada linha preserva data, hora, nome, modelo, versão, canal, campanha, dealer, cidade, estado e campo CRM. A leitura do dashboard faz consulta por data em `v2_leads`.
 
-O botão **Atualizar base de Leads** apenas relê do banco os dados já importados e recalcula a competência; não importa novamente uma planilha externa e não executa ETL. A carga inicial/reload de uma fonte é uma operação explícita de importação, não uma integração contínua.
+O botão administrativo **Atualizar base de Leads** importa a planilha-base pelo servidor com conta de serviço Google própria e somente leitura; valida todas as abas de canais e aplica a carga atomicamente antes de invalidar os caches. Uma carga idêntica não recria registros nem muda o timestamp. Ocorrências manuais não são deduplicadas por ID. Sem credencial/acesso ele informa pendência/falha e preserva o banco. Cliente/BBRO têm apenas **Atualizar indicadores**, que relê a base armazenada. Não há agendamento automático de importação nesta aplicação.
 
 Quando a fonte não está configurada:
 

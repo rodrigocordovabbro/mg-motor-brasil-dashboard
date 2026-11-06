@@ -17,6 +17,11 @@ import { z } from "zod";
 import { publicProcedure, router } from "./_core/trpc";
 import { loginV2, logoutV2, readV2Session } from "./v2Auth";
 import { getV2Dashboard } from "./v2Leads";
+import {
+  syncLeadsFromGoogle,
+  getLeadsSyncConnectionStatus,
+  LeadsSyncError,
+} from "./v2LeadsSync";
 import { getV2Goal, saveV2Goal } from "./v2Db";
 import {
   requireAdministrator,
@@ -345,6 +350,31 @@ export const appRouter = router({
       .mutation(({ ctx, input }) => removeCommercialSource(input, ctx.v2User)),
   }),
   leads: router({
+    syncConnection: adminProcedure.query(() => getLeadsSyncConnectionStatus()),
+    syncBase: adminProcedure.mutation(async ({ ctx }) => {
+      try {
+        return await syncLeadsFromGoogle(ctx.v2User);
+      } catch (error) {
+        if (error instanceof LeadsSyncError)
+          throw new TRPCError({
+            code:
+              error.code === "PRECONDITION_FAILED"
+                ? "PRECONDITION_FAILED"
+                : error.code === "INVALID_SOURCE"
+                  ? "BAD_REQUEST"
+                  : "INTERNAL_SERVER_ERROR",
+            message:
+              error.code === "PRECONDITION_FAILED"
+                ? "Configure GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON e o acesso de Leitor à planilha-base."
+                : "A sincronização não foi concluída. A base anterior foi preservada; confira a fonte e tente novamente.",
+          });
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            "Não foi possível atualizar a fonte. A base anterior foi preservada.",
+        });
+      }
+    }),
     salesGoal: ownerProcedure
       .input(z.object({ competence }))
       .query(async ({ input }) => ({

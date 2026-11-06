@@ -500,3 +500,39 @@ it.each(["client", "bbro"] as const)(
     });
   }
 );
+
+describe("sincronização externa de Leads", () => {
+  it.each(["client", "bbro"] as const)(
+    "bloqueia %s antes de ler a fonte externa",
+    async role => {
+      state.role = role;
+      await expect(caller().leads.syncBase()).rejects.toMatchObject({
+        code: "FORBIDDEN",
+      });
+      await expect(caller().leads.syncConnection()).rejects.toMatchObject({
+        code: "FORBIDDEN",
+      });
+    }
+  );
+  it("exige sessão antes de acessar sincronização", async () => {
+    state.role = null;
+    await expect(caller().leads.syncBase()).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    });
+  });
+});
+
+it("informa configuração pendente ao administrador sem sucesso fictício", async () => {
+  vi.stubEnv("GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON", "");
+  try {
+    state.role = "admin";
+    await expect(caller().leads.syncBase()).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+    });
+    expect(await caller().leads.syncConnection()).toMatchObject({
+      configured: false,
+    });
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});

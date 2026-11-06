@@ -190,6 +190,93 @@
     opacity: 0.65;
   }
 
+  .v2-card-heading {
+    container-type: inline-size;
+  }
+
+  .v2-card-heading-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+  }
+
+  .v2-card-heading-help {
+    grid-column: 1 / -1;
+  }
+
+  .pacing-card-actions {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: repeat(3, minmax(0, max-content));
+    align-items: start;
+    justify-content: end;
+    gap: 0.5rem;
+  }
+
+  .pacing-card-status {
+    align-self: start;
+    justify-self: end;
+    white-space: nowrap;
+  }
+
+  /* Flatten the two button wrappers on wide cards so their help/status copy
+     cannot make only one control taller than the rest of the action row. */
+  .pacing-card-action-control,
+  .pacing-card-action-control > div {
+    display: contents;
+  }
+
+  .pacing-card-actions > .pacing-card-action-control > div > p {
+    grid-column: 1 / -1;
+    min-width: 0;
+    justify-self: stretch;
+  }
+
+  .pacing-card-actions > .pacing-card-action-control > div > button {
+    grid-row: 1;
+    min-width: 0;
+  }
+
+  @container (max-width: 700px) {
+    .v2-card-heading-layout {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .v2-card-heading-actions {
+      grid-column: 1;
+    }
+
+    .pacing-card-actions {
+      width: 100%;
+      grid-template-columns: minmax(0, 1fr);
+      justify-content: stretch;
+    }
+
+    .pacing-card-status {
+      grid-column: 1;
+      justify-self: start;
+    }
+
+    .pacing-card-action-control,
+    .pacing-card-action-control > div {
+      display: block;
+      min-width: 0;
+      width: 100%;
+    }
+
+    .pacing-card-action-control > div {
+      max-width: none;
+      align-items: stretch;
+    }
+
+    .pacing-card-action-control > div > button {
+      width: 100%;
+    }
+
+    .pacing-card-action-control > div > p {
+      width: 100%;
+      text-align: left;
+    }
+  }
+
   /**
    * Custom container utility that centers content and adds responsive padding.
    *

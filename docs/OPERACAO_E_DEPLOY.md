@@ -159,6 +159,7 @@ pnpm exec tsx server/migrateV2DealerRegistry.ts
 pnpm exec tsx server/migrateV2DispatchDaily.ts
 pnpm exec tsx server/migrateV2SalesGoal.ts
 pnpm exec tsx server/migrateV2MediaPlanProjections.ts
+pnpm exec tsx server/migrateV2LeadsSync.ts
 ```
 
 O motivo e o efeito esperado de cada runner são:
@@ -173,6 +174,7 @@ O motivo e o efeito esperado de cada runner são:
 | 6 | [`server/migrateV2DispatchDaily.ts`](../server/migrateV2DispatchDaily.ts) | Exige `v2_dispatch_cells`, torna `volume` anulável, adiciona `sourcePending` e cria `v2_dispatch_imports`. |
 | 7 | [`server/migrateV2SalesGoal.ts`](../server/migrateV2SalesGoal.ts) | Cria tabelas de override, auditoria e mutex da meta total de vendas; não semeia valor. |
 | 8 | [`server/migrateV2MediaPlanProjections.ts`](../server/migrateV2MediaPlanProjections.ts) | Cria versões, overrides e auditoria de projeções; executa três DDLs independentes e não semeia projeções. |
+| 9 | [`server/migrateV2LeadsSync.ts`](../server/migrateV2LeadsSync.ts) | Cria apenas as três tabelas privadas de proveniência/cargas de Leads; exige fonte/contas já existentes e não importa dados. |
 
 Os runners são aditivos em sua intenção, mas alguns executam `ALTER TABLE` e o lifecycle pode vincular com segurança dados legados quando os encontra. Por isso o backup e a revisão de ambiente vêm antes da execução. Não existe rollback SQL automático ou um comando único de “migrate all”.
 
@@ -273,3 +275,17 @@ Não remova tabelas, não execute `db:push` para “corrigir” produção e nã
 - [Controle de dispatch — `drizzle/v2-dispatch.sql`](../drizzle/v2-dispatch.sql)
 - [Runners customizados — diretório `server/`](../server/)
 - [Segurança e matriz de acesso — `docs/SEGURANCA_E_ACESSO.md`](./SEGURANCA_E_ACESSO.md)
+
+## 12. Sincronização manual REAL da planilha-base de Leads
+
+O botão administrativo **Atualizar base de Leads** chama `leads.syncBase`, que consulta o Google Sheets no servidor, valida o snapshot completo e aplica uma carga transacional em `v2_leads`. Não se limita a invalidar caches. Clientes e BBRO não podem executar essa importação; a ação de leitura desses perfis apenas atualiza os indicadores do banco.
+
+Configure **GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON** como segredo somente do servidor pelo cartão seguro do Manus, nunca em chat, arquivo versionado, JavaScript do cliente ou comando de shell. O valor deve ser o JSON de uma conta de serviço Google própria, com `client_email` e `private_key`. Habilite Google Sheets API no projeto Google dessa conta e compartilhe a planilha-base somente como **Leitor** com seu `client_email`. Não torne a planilha pública. Não copie tokens OAuth do conector da sessão ao site. A chamada pede apenas `spreadsheets.readonly`, usa os endpoints fixos oficiais do Google e nunca escreve na planilha.
+
+O ID da base vem do registro `v2_sources.id=1`; `GOOGLE_SHEETS_SPREADSHEET_ID` pode confirmar explicitamente esse mesmo ID. Uma fotografia de outra planilha é recusada. Se a chave estiver ausente, inválida ou sem acesso, não haverá sucesso fictício: a base anterior é mantida e a interface informa a pendência/falha. Um valor configurado precisa existir no ambiente de execução efetivo; configurar somente produção não carrega o segredo na Prévia.
+
+Antes da primeira carga deste mecanismo, execute explicitamente `pnpm exec tsx server/migrateV2LeadsSync.ts` no banco autorizado, após revisão. A migration cria apenas `v2_lead_imports`, `v2_lead_sync_rows` e `v2_lead_sync_history`; não roda no startup e não cria metas ou contas. Desenvolvimento e publicação deste projeto Manus compartilham o banco gerenciado, portanto não use importações reais como testes.
+
+As abas de canais reconhecidas são Site, Meta, Tiktok - Live, Tikok, Weebmotors, Uol, Mercado Livre e Interlagos. Página10 não é uma fonte. Header/date inválidos rejeitam a carga antes de gravar. A identidade de uma ocorrência é **aba + linha**, não ID de plataforma: duplicidades manuais autorizadas permanecem como ocorrências separadas. IDs, timestamps, modelos, dealers e células brutas permanecem em proveniência privada no banco; esses payloads não são enviados pelas APIs de dashboard. IDs internos existentes são preservados por UPSERT e registros históricos/linhas ausentes nunca são apagados. Cargas iguais são no-op, sem alterar o timestamp da última importação.
+
+A importação não modifica contas, metas de Leads/vendas, projeções de mídia, checks ou auditorias administrativas. Após um commit confirmado, a interface invalida as leituras de Leads e CRM e apresenta data da importação/cobertura da fonte. O filtro padrão continua até D-1 em America/Sao_Paulo. Este botão não configura cron, agendamento nem publicação; isso permanece separado da sincronização manual.

@@ -8,9 +8,13 @@ import {
 export function V2LeadsReloadButton({
   competence,
   onReload,
+  syncExternal = false,
+  showFeedback = true,
 }: {
   competence: string;
   onReload: () => Promise<LeadsReloadResult>;
+  syncExternal?: boolean;
+  showFeedback?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -45,7 +49,9 @@ export function V2LeadsReloadButton({
         authError?.data?.code === "UNAUTHORIZED" ||
           authError?.code === "UNAUTHORIZED"
           ? "Sua sessão expirou. Faça login novamente para atualizar os dados."
-          : "Não foi possível consultar a base. Os dados anteriores foram mantidos; tente novamente."
+          : authError?.data?.code === "PRECONDITION_FAILED"
+            ? "Conexão Google pendente. Configure a conta de serviço no cartão seguro e dê acesso de Leitor à planilha-base. Nenhum dado foi alterado."
+            : "Não foi possível atualizar a base. Os dados anteriores foram mantidos; tente novamente."
       );
     } finally {
       locked.current = false;
@@ -53,28 +59,35 @@ export function V2LeadsReloadButton({
     }
   };
   return (
-    <div className="flex max-w-md flex-col items-end gap-1.5">
+    <div className="min-w-0">
       <button
         type="button"
         onClick={() => void reload()}
         disabled={busy}
         aria-busy={busy}
-        title="Consultar novamente o banco autenticado e atualizar as telas. Não importa a fonte externa."
+        title={
+          syncExternal
+            ? "Importar a planilha-base com conexão Google própria do servidor e atualizar as telas."
+            : "Consultar novamente a base armazenada."
+        }
         className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 shadow-sm transition hover:border-red-200 hover:bg-red-50 hover:text-[#b41b26] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 disabled:cursor-wait disabled:opacity-60"
       >
         <RefreshCw
           className={`h-4 w-4 ${busy ? "animate-spin" : ""}`}
           aria-hidden="true"
         />
-        {busy ? "Consultando base…" : "Atualizar base de Leads"}
+        {busy
+          ? syncExternal
+            ? "Sincronizando base…"
+            : "Consultando base…"
+          : syncExternal
+            ? "Atualizar base de Leads"
+            : "Atualizar indicadores"}
       </button>
-      <p className="text-right text-[10px] text-slate-500">
-        Consulta a base já importada; não sincroniza a fonte externa.
-      </p>
-      {message ? (
+      {showFeedback && message ? (
         <p
           role={failed ? "alert" : "status"}
-          className={`text-right text-[11px] leading-4 ${failed ? "text-red-700" : "text-slate-600"}`}
+          className={`pacing-reload-feedback mt-2 text-[11px] leading-4 ${failed ? "text-red-700" : "text-slate-600"}`}
         >
           {message}
         </p>

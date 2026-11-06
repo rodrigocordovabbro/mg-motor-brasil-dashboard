@@ -7,6 +7,12 @@ export type LeadsReloadResult = {
   latestLeadDate: string | null;
   requestedDateTo: string;
   newImport: boolean;
+  sync?: {
+    changed: boolean;
+    inserted: number;
+    updated: number;
+    totalRows: number;
+  };
 };
 
 const date = (iso: string) => iso.split("-").reverse().join("/");
@@ -23,7 +29,9 @@ export function describeLeadsReload(result: LeadsReloadResult): string {
     : "Nenhuma data de Lead disponível na base.";
   const importStatus = result.newImport
     ? "Nova importação encontrada no banco."
-    : "Nenhuma nova importação registrada; a fonte externa não foi sincronizada por este botão.";
+    : result.sync
+      ? "Carga preservada: a planilha não trouxe mudanças."
+      : "Nenhuma nova importação registrada; a fonte externa não foi sincronizada por este botão.";
   const lastImport = result.importedAt
     ? `Última importação: ${new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" }).format(new Date(result.importedAt))}.`
     : "Sem importação registrada.";
@@ -31,5 +39,10 @@ export function describeLeadsReload(result: LeadsReloadResult): string {
     result.latestLeadDate && result.latestLeadDate < result.requestedDateTo
       ? ` O período vai até ${date(result.requestedDateTo)}; a base ainda não cobre esse dia.`
       : "";
-  return `Consulta concluída às ${time}. ${count} Leads no acumulado de ${result.competence.split("-").reverse().join("/")}. ${coverage} ${lastImport} ${importStatus}${gap}`;
+  const syncStatus = result.sync
+    ? result.sync.changed
+      ? `Planilha-base importada: ${result.sync.inserted} novos registros e ${result.sync.updated} atualizações; ${result.sync.totalRows} registros na base completa. `
+      : "Planilha-base conferida; nenhuma mudança desde a última carga. "
+    : "";
+  return `${syncStatus}Consulta concluída às ${time}. ${count} Leads no acumulado de ${result.competence.split("-").reverse().join("/")}. ${coverage} ${lastImport} ${importStatus}${gap}`;
 }

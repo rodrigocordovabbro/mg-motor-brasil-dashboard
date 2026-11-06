@@ -127,7 +127,7 @@ fonte XLSX autenticada
 
 `aggregateV2Leads` mantém duas coleções: `baseRows` para opções do recorte de período e `rows` para o recorte completo aplicado. O pacing usa ainda `mtdRows` da competência de `dateTo`. A função `matchesV2LeadFilters` é compartilhada pelo dashboard e pelo controle de Leads, evitando uma contagem divergente entre as telas.
 
-O botão [`V2LeadsReloadButton.tsx`](../client/src/components/V2LeadsReloadButton.tsx) apenas invalida/relê dados já importados. Não há ETL, polling de planilha, conexão CRM ou fallback local de números.
+O botão [`V2LeadsReloadButton.tsx`](../client/src/components/V2LeadsReloadButton.tsx) chama `leads.syncBase` para administradores: importa o snapshot real da planilha por conta de serviço Google própria, aplica transação e só depois atualiza os caches. Sem credencial/acesso não há sucesso fictício. Cliente/BBRO apenas relêem o banco. A sincronização é manual; não há polling de planilha, conexão CRM nem fallback local de números. Consulte [configuração segura](./OPERACAO_E_DEPLOY.md#12-sincronização-manual-real-da-planilha-base-de-leads).
 
 ### 4.2 Metas e fontes comerciais
 

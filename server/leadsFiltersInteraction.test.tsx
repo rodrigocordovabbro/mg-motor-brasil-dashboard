@@ -38,7 +38,10 @@ vi.mock("@/lib/trpc", () => ({
       leads: { dashboard: { invalidate: mock.invalidateLeads } },
       dispatch: { leadControl: { invalidate: mock.invalidateCRM } },
     }),
-    leads: { dashboard: { useQuery: mock.query } },
+    leads: {
+      syncBase: { useMutation: () => ({ mutateAsync: vi.fn() }) },
+      dashboard: { useQuery: mock.query },
+    },
   },
 }));
 import Dashboard from "../client/src/components/V2LeadsDashboard";
@@ -234,12 +237,10 @@ it("rejeita fonte ausente mesmo quando a query HTTP resolveu sem erro", async ()
     source: { importedAt: "2026-11-04T12:00:00Z" },
     notes: [],
   };
-  const refetch = vi
-    .fn()
-    .mockResolvedValue({
-      data: { ...data, status: "NOT_CONFIGURED" },
-      error: null,
-    });
+  const refetch = vi.fn().mockResolvedValue({
+    data: { ...data, status: "NOT_CONFIGURED" },
+    error: null,
+  });
   mock.query.mockReturnValue({
     data,
     isLoading: false,
@@ -249,5 +250,5 @@ it("rejeita fonte ausente mesmo quando a query HTTP resolveu sem erro", async ()
   await expect(findOverview().props.onReloadMonth()).rejects.toThrow(
     "não configurada"
   );
-  expect(mock.values[6]).toBeNull();
+  expect(mock.values[6]).toContain("Não foi possível atualizar a base");
 });
