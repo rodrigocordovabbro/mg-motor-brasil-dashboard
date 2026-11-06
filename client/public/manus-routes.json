@@ -23,6 +23,10 @@
     {
       "path": "/?module=leads&tab=stores",
       "title": "MG Motor Brasil — Lojas & CRM"
+    },
+    {
+      "path": "/?module=leads&tab=models",
+      "title": "MG Motor Brasil — Modelos e versões"
     }
   ]
 }

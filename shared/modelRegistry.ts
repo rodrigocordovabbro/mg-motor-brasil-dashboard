@@ -6,6 +6,8 @@ export const OFFICIAL_MODELS = [
   "IM 6",
 ] as const;
 
+export const UNIDENTIFIED_MODEL = "Modelo não identificado";
+
 export type OfficialModel = (typeof OFFICIAL_MODELS)[number];
 
 export function normalizeModelKey(value: string): string {
@@ -37,6 +39,8 @@ register("MG 4", [
   "MG4 XPower",
   "XPOWER",
   "X-Power",
+  "Formulário -  Ago/26 - MG4 Prospecção - 13.08.26 (Novo)",
+  "Formulário - Ago e Set/26 - Retargeting - MG4 - 11.09.26",
 ]);
 register("MG Urban", [
   "Urban",
@@ -52,8 +56,17 @@ register("MG Urban", [
   "Formulário - Ago/26 - Urban Prospecção (Oferta) - 13.08.26 (Novo)",
   "Formulário - Ago e Set/26 - Hyperlocal (Urban) - 10.09.26",
 ]);
-register("MG S5", ["S5", "MGS5", "MG S5 EV"]);
-register("MG Cyberster", ["Cyberster", "MG-CYBERSTER"]);
+register("MG S5", [
+  "S5",
+  "MGS5",
+  "MG S5 EV",
+  "Formulário - Ago e Set/26 - MGS5 2 - 11.09.26",
+]);
+register("MG Cyberster", [
+  "Cyberster",
+  "MG-CYBERSTER",
+  "Formulário - Ago e Set/26 - Cyberster 2 - Prospecção - 11.09.26",
+]);
 register("IM 6", ["IM6", "MG IM6", "MG IM 6"]);
 
 /** Somente aliases registrados. Não usa substring ou o nome de campanha para inferir modelo. */

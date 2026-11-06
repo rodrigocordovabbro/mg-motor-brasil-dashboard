@@ -1,14 +1,15 @@
-import { BarChart3, MapPin, Store, Users } from "lucide-react";
+import { BarChart3, Car, MapPin, Store, Users } from "lucide-react";
 import { useRef, type KeyboardEvent } from "react";
 
 export const LEADS_SECTION_TABS = [
   "Visão Geral",
+  "Modelos",
   "Regiões",
   "Lojas & CRM",
   "Leads",
 ] as const;
 export type LeadsSectionTab = (typeof LEADS_SECTION_TABS)[number];
-const ICONS = [BarChart3, MapPin, Store, Users];
+const ICONS = [BarChart3, Car, MapPin, Store, Users];
 
 export function LeadsSectionNavigation({
   activeTab,

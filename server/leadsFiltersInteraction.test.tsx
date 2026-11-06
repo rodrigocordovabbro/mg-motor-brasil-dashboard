@@ -252,3 +252,141 @@ it("rejeita fonte ausente mesmo quando a query HTTP resolveu sem erro", async ()
   );
   expect(mock.values[6]).toContain("Não foi possível atualizar a base");
 });
+
+it("retira modelos da inicial e mantém canais, estados e concessionárias", () => {
+  const channels = [{ label: "Meta", count: 7 }];
+  mock.query.mockReturnValue({
+    data: {
+      status: "READY",
+      period: {
+        dateFrom: "2026-11-01",
+        dateTo: "2026-11-04",
+        cutoffDate: "2026-11-04",
+      },
+      options: { models: [], channels: [], campaigns: [], dealers: [] },
+      source: {},
+      notes: [],
+      channels,
+      states: [],
+      dealers: [],
+      daily: [],
+    },
+    isLoading: false,
+    isFetching: false,
+    refetch: vi.fn(),
+  });
+  const overview = findOverview();
+  const body = overview.type(overview.props);
+  expect(
+    findElement(
+      body,
+      element => element.props.title === "Distribuição por modelo"
+    )
+  ).toBeNull();
+  for (const title of [
+    "Distribuição por canal",
+    "Distribuição por estado",
+    "Distribuição por concessionária",
+  ]) {
+    expect(
+      findElement(body, element => element.props.title === title)
+    ).not.toBeNull();
+  }
+  const heading = findElement(
+    body,
+    element => element.props.title === "Distribuição por canal"
+  );
+  const card = findElement(
+    body,
+    element => element.props.children?.[0] === heading
+  );
+  expect(card.props.className).toContain("lg:col-span-2");
+});
+
+it("posiciona um único total por dia na última barra empilhada, não em cada canal", () => {
+  mock.query.mockReturnValue({
+    data: {
+      status: "READY",
+      period: {},
+      options: { models: [], channels: [], campaigns: [], dealers: [] },
+      source: {},
+      notes: [],
+      channels: [],
+      states: [],
+      dealers: [],
+      daily: [
+        {
+          date: "2026-11-01",
+          total: 5,
+          cumulative: 5,
+          pace: null,
+          channels: { Meta: 5, Site: 0 },
+        },
+      ],
+    },
+    isLoading: false,
+    isFetching: false,
+    refetch: vi.fn(),
+  });
+  const overview = findOverview();
+  const body = overview.type(overview.props);
+  const chart = findElement(
+    body,
+    element => element.type?.name === "DailyChart"
+  );
+  mock.index = 0;
+  const chartTree = chart.type(chart.props);
+  const labels: any[] = [];
+  const visit = (node: any) => {
+    if (Array.isArray(node)) return node.forEach(visit);
+    if (!node?.props) return;
+    if (
+      node.type?.displayName === "LabelList" ||
+      node.type?.name === "LabelList"
+    )
+      labels.push(node);
+    visit(node.props.children);
+  };
+  visit(chartTree);
+  expect(labels).toHaveLength(1);
+  expect(labels[0].props.dataKey).toBe("total");
+  expect(labels[0].props.position).toBe("top");
+  expect(labels[0].props.formatter(1353)).toBe("1.353");
+  expect(labels[0].props.formatter(0)).toBe("0");
+});
+
+it("informa explicitamente período sem Leads em vez de renderizar eixos sem barras", () => {
+  mock.query.mockReturnValue({
+    data: {
+      status: "READY",
+      period: {},
+      options: { models: [], channels: [], campaigns: [], dealers: [] },
+      source: {},
+      notes: [],
+      channels: [],
+      states: [],
+      dealers: [],
+      daily: [
+        {
+          date: "2026-11-01",
+          total: 0,
+          cumulative: 0,
+          pace: null,
+          channels: {},
+        },
+      ],
+    },
+    isLoading: false,
+    isFetching: false,
+    refetch: vi.fn(),
+  });
+  const overview = findOverview();
+  const body = overview.type(overview.props);
+  const chart = findElement(
+    body,
+    element => element.type?.name === "DailyChart"
+  );
+  mock.index = 0;
+  const empty = chart.type(chart.props);
+  expect(empty.props.label).toBe("Nenhum Lead no período selecionado.");
+});

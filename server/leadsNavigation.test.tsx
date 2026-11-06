@@ -8,12 +8,14 @@ import { readFileSync } from "node:fs";
 
 describe("Menu persistente de Leads", () => {
   it.each(LEADS_SECTION_TABS)(
-    "mantém quatro opções e seleção correta em %s",
+    "mantém todas as opções e seleção correta em %s",
     activeTab => {
       const html = renderToStaticMarkup(
         <LeadsSectionNavigation activeTab={activeTab} onChange={() => {}} />
       );
-      expect((html.match(/role="tab"/g) || []).length).toBe(4);
+      expect((html.match(/role="tab"/g) || []).length).toBe(
+        LEADS_SECTION_TABS.length
+      );
       expect((html.match(/aria-selected="true"/g) || []).length).toBe(1);
       expect((html.match(/tabindex="0"/g) || []).length).toBe(1);
       expect(html).toContain("min-h-12");
@@ -38,4 +40,14 @@ describe("Menu persistente de Leads", () => {
     );
     expect(css).toContain("top: var(--mg-app-header-height, 68px)");
   });
+});
+
+it("limpa a aba específica quando o usuário troca de módulo", () => {
+  const source = readFileSync(
+    new URL("../client/src/pages/Home.tsx", import.meta.url),
+    "utf8"
+  );
+  expect(source).toContain(
+    'if (nextModule !== module) url.searchParams.delete("tab")'
+  );
 });

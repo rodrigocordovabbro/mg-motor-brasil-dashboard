@@ -1,4 +1,5 @@
 import type { RegionalModelDistribution } from "./regionalTypes";
+import type { ModelAnalysis } from "./modelAnalysis";
 
 export type V2Filters = {
   dateFrom: string;
@@ -94,6 +95,7 @@ export type V2Dashboard = {
   models: V2Count[];
   states: V2Count[];
   regionalModels?: RegionalModelDistribution;
+  modelAnalysis?: ModelAnalysis;
   cities: V2Count[];
   dealers: V2Count[];
   hours: V2Count[];

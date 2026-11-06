@@ -153,3 +153,11 @@ O botão administrativo chamará importação protegida real Google Sheets com c
 Cabeçalho de pacing usa título/descrição em uma área e badge+ações alinhadas em outra, ajuda/resultado em linha própria, sem alargamento da barra provocado por texto. Adaptar desktop/tablet/celular preservando marca. Salvar no Manus sem novo projeto, publicação, GitHub ou mudanças no agendamento externo.
 
 Configuração concluída em 06/11/2026 pelo cartão seguro: conta de serviço própria com acesso readonly à base, disponível ao ambiente do servidor. Prévia reiniciada; teste real do serviço e segundo envio idempotente confirmados, dados administrativos preservados. A atualização segue manual pelo botão do administrador, não cron. Sem nova publicação.
+
+## Ajuste visual — modelos fora da página inicial
+
+Remover somente a distribuição por modelo da Visão Geral e ajustar o contêiner remanescente. Os dados e cálculos de modelos continuam disponíveis nos filtros e na matriz regional; nenhuma alteração de fonte, meta, permissão, sincronização ou publicação.
+
+## Detalhamento de modelos e total das barras
+
+Adicionar Modelos ao menu persistente e agregar na base completa filtrada (não na página de Leads recentes). Reutilizar o de-para dos cinco modelos e identificar lacunas de modelo e versão com categorias explícitas. Detalhar origem sem reescrever a planilha ou inventar especificações. Dados reais desconhecidos permanecem contabilizados. No gráfico diário, rotular o topo de cada pilha com o total de Leads daquela data, preservando canais e linhas acumuladas.

@@ -1,7 +1,11 @@
 import { canValidateCRM } from "../shared/accountRoles";
 import { TRPCError } from "@trpc/server";
 import type { UserRole } from "../shared/accountRoles";
-import { OFFICIAL_MODELS, resolveOfficialModel } from "../shared/modelRegistry";
+import {
+  OFFICIAL_MODELS,
+  UNIDENTIFIED_MODEL,
+  resolveOfficialModel,
+} from "../shared/modelRegistry";
 import { groupedStateLabel } from "../shared/stateRegistry";
 import type { V2Dashboard } from "../shared/v2Types";
 import { CRM_DEALERS, resolveOfficialDealer } from "../shared/dealerRegistry";
@@ -28,20 +32,34 @@ export function requireManualValidator(
 export function dashboardForClient(data: V2Dashboard): V2Dashboard {
   const models = new Map<string, number>();
   for (const row of data.models) {
-    const label = resolveOfficialModel(row.label) ?? "Modelo não identificado";
+    const label = resolveOfficialModel(row.label) ?? UNIDENTIFIED_MODEL;
     models.set(label, (models.get(label) ?? 0) + row.count);
   }
+  const hasUnidentifiedModel =
+    data.options.models.includes(UNIDENTIFIED_MODEL) ||
+    (data.modelAnalysis?.unclassified != null &&
+      data.modelAnalysis.unclassified > 0) ||
+    models.has(UNIDENTIFIED_MODEL);
+  const modelAnalysis = data.modelAnalysis
+    ? { ...data.modelAnalysis, diagnostics: [] }
+    : undefined;
   return {
     ...data,
     source: { ...data.source, name: "Base de Leads MG" },
-    options: { ...data.options, models: [...OFFICIAL_MODELS] },
+    options: {
+      ...data.options,
+      models: [
+        ...OFFICIAL_MODELS,
+        ...(hasUnidentifiedModel ? [UNIDENTIFIED_MODEL] : []),
+      ],
+    },
     models: [...models].map(([label, count]) => ({ label, count })),
+    modelAnalysis,
     notes: [],
     recent: {
       ...data.recent,
       rows: data.recent.rows.map(row => ({
         ...row,
-        model: resolveOfficialModel(row.model) ?? "Modelo não identificado",
         state: groupedStateLabel(row.state),
       })),
     },

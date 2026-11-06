@@ -403,6 +403,7 @@ function AuthenticatedDashboard({
     setModule(nextModule);
     const url = new URL(window.location.href);
     url.searchParams.set("module", nextModule);
+    if (nextModule !== module) url.searchParams.delete("tab");
     window.history.replaceState({}, "", url);
   };
 

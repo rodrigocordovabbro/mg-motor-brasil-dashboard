@@ -197,3 +197,14 @@ Validação da correção: 226 testes em 34 arquivos passaram; TypeScript e buil
 Evidência: carga real concluída às 01:08:17 de 06/11 (São Paulo), 498 ocorrências novas, 49.626 histórico, 1.851 em novembro, Meta 1.002. A:U/IDs/timestamps Meta iguais à planilha; IDs internos preservados, reenvio no-op e hashes de 21 tabelas administrativas idênticos. APIs administrativas e tratamento de configuração/falha implementados; Credencial própria configurada pelo cartão seguro nos escopos aplicáveis e acesso Leitor validado em 06/11/2026. Layout responsivo separado da ajuda e feedback. TypeScript, build e 242 testes passaram. Código será salvo no Manus sem publicação.
 
 Conexão concluída em 06/11/2026: teste real do mesmo serviço usado pelo botão às 09:02:02 (São Paulo), 740 registros existentes atualizados da fonte, 0 inseridos, 49.626 histórico, novembro 1.851 (Meta 1.002). As 21 tabelas administrativas permaneceram idênticas por hash. Segunda chamada mudou 0 linhas e manteve o timestamp, comprovando idempotência. Prévia reiniciada com a credencial do ambiente; health/manifesto HTTP200. Nenhuma chave/token em código, logs ou Git; nenhuma publicação.
+
+## Modelos fora da página inicial — 06/11/2026
+
+- [x] Remover somente o cartão Distribuição por modelo da Visão Geral/página inicial e aproveitar o espaço sem deixar um cartão vazio. Preservar filtros de modelos, matriz regional, Leads, contagens, metas, integração Google e demais indicadores; não publicar nem alterar o dashboard antigo.
+
+## Aba Modelos e totais diários
+
+- [x] Criar aba Modelos no menu fixo, com distribuição, detalhamento por modelo/versão e cobertura de classificação; respeitar os mesmos filtros de período, canal/dealer/busca e D-1. Usar MG 4, MG Urban, MG S5, MG Cyberster, IM 6 já conciliados; preservar o valor original e classificar todos os registros em modelo reconhecido ou Não identificado, sem perder Leads ou inferir versões não informadas. Mostrar versão não informada separadamente e detalhes de origem para administradores sem expor contatos ou credenciais.
+- [x] Mostrar um total acima de cada barra empilhada do gráfico Leads por dia e canal, uma vez por dia e não por segmento; refletir exatamente o total do servidor e manter linhas de acumulado/pace, legenda e responsividade.
+
+Evidência: TypeScript/build e suíte de 258 testes aprovados antes da revisão; após corrigir origem, navegação e período vazio, 52 regressões afetadas passaram. Leitura real de novembro soma 1.851 registros em cinco modelos e mantém as somas por versão. Nenhuma escrita em dados reais ou nova importação nesta entrega.

@@ -5,6 +5,7 @@ import {
 import { aggregateRegionalModels } from "./v2Regional";
 import {
   OFFICIAL_MODELS,
+  UNIDENTIFIED_MODEL,
   groupedModelLabel,
   resolveOfficialModel,
 } from "../shared/modelRegistry";
@@ -19,6 +20,7 @@ import { getCommercialPerformance } from "./v2Commercial";
 import type { RowDataPacket } from "mysql2/promise";
 import { getV2Pool, getV2Goal } from "./v2Db";
 import { readExtraDealerRegistry } from "./v2DealerRegistry";
+import { aggregateModelAnalysis, resolveModelVersion } from "./v2ModelAnalysis";
 import { addIsoDays, resolveDashboardPeriod } from "../shared/dashboardDates";
 import type {
   V2Dashboard,
@@ -43,7 +45,7 @@ export function countBy(
         : key === "dealer"
           ? (resolveRegisteredDealer(row.dealer, extraDealers) ?? row.dealer)
           : key === "model"
-            ? groupedModelLabel(row.model)
+            ? (resolveOfficialModel(row.model) ?? UNIDENTIFIED_MODEL)
             : key === "state"
               ? groupedStateLabel(row.state)
               : String(row[key] ?? "Não informado");
@@ -109,28 +111,40 @@ export function matchesV2LeadFilters(
   extraDealers: readonly ExtraDealerRegistryEntry[] = []
 ): boolean {
   const lowerSearch = input.search?.toLocaleLowerCase("pt-BR");
+  const modelMatches =
+    !input.model ||
+    (input.model === UNIDENTIFIED_MODEL
+      ? resolveOfficialModel(row.model) === null
+      : row.model === input.model ||
+        groupedModelLabel(row.model) === input.model);
+  const searchValues = [
+    row.name,
+    row.model,
+    resolveOfficialModel(row.model) ?? "",
+    row.version,
+    row.channel,
+    row.campaign,
+    row.dealer,
+    resolveRegisteredDealer(row.dealer, extraDealers) ?? "",
+    row.city,
+    row.state,
+    resolveBrazilianState(row.state)?.name ?? "",
+  ];
+  if (lowerSearch) {
+    const version = resolveModelVersion(row.model, row.version);
+    if (version.status === "IDENTIFIED") searchValues.push(version.version);
+  }
   return (
-    (!input.model ||
-      row.model === input.model ||
-      groupedModelLabel(row.model) === input.model) &&
+    modelMatches &&
     (!input.channel || row.channel === input.channel) &&
     (!input.campaign || row.campaign === input.campaign) &&
     (!input.dealer ||
       row.dealer === input.dealer ||
       resolveRegisteredDealer(row.dealer, extraDealers) === input.dealer) &&
     (!lowerSearch ||
-      [
-        row.name,
-        row.model,
-        resolveOfficialModel(row.model) ?? "",
-        row.channel,
-        row.campaign,
-        row.dealer,
-        resolveRegisteredDealer(row.dealer, extraDealers) ?? "",
-        row.city,
-        row.state,
-        resolveBrazilianState(row.state)?.name ?? "",
-      ].some(value => value.toLocaleLowerCase("pt-BR").includes(lowerSearch)))
+      searchValues.some(value =>
+        value.toLocaleLowerCase("pt-BR").includes(lowerSearch)
+      ))
   );
 }
 
@@ -322,6 +336,7 @@ export function aggregateV2Leads(
     models,
     states,
     regionalModels: aggregateRegionalModels(rows),
+    modelAnalysis: aggregateModelAnalysis(rows, extraDealers),
     cities,
     dealers,
     hours,

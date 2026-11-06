@@ -306,6 +306,7 @@ describe("permissões na API", () => {
     expect(JSON.stringify(result)).toContain("Pessoa privada de fixture");
     expect(JSON.stringify(result)).toContain("Contato privado");
     expect(result.recent.rows[0].dealer).toBe("Dealer original");
+    expect(result.recent.rows[0].model).toBe(d.recent.rows[0].model);
     expect(result.recent.rows[0].state).toBe("São Paulo");
   });
   it.each(["client", "bbro"] as const)(

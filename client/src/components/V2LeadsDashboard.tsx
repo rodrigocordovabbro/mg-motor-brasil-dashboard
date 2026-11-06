@@ -21,6 +21,7 @@ import V2MonthlyGoalEditor from "./V2MonthlyGoalEditor";
 import { useEffect } from "react";
 import V2DispatchControl from "./V2DispatchControl";
 import V2RegionalModelMatrix from "./newcomponentV2RegionalModelMatrix";
+import V2ModelsDashboard from "./V2ModelsDashboard";
 import { trpc } from "@/lib/trpc";
 import {
   addIsoDays,
@@ -53,6 +54,7 @@ import {
   CartesianGrid,
   Cell,
   Line,
+  LabelList,
   ComposedChart,
   Pie,
   PieChart,
@@ -1387,6 +1389,8 @@ function DailyChart({ daily }: { daily: V2DailyPoint[] }) {
   );
   if (!daily.length)
     return <EmptyDistribution label="Sem dados diários para este período." />;
+  if (!daily.some(item => item.total > 0))
+    return <EmptyDistribution label="Nenhum Lead no período selecionado." />;
   return (
     <div className="px-3 pb-5 pt-3 sm:px-5">
       <div className="mb-3 flex flex-wrap gap-x-4 gap-y-2 text-[11px] text-slate-500">
@@ -1411,83 +1415,116 @@ function DailyChart({ daily }: { daily: V2DailyPoint[] }) {
           Pace acumulado
         </span>
       </div>
-      <div className="h-[330px] w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart
-            data={chartData}
-            margin={{ top: 8, right: 8, left: -18, bottom: 4 }}
-          >
-            <CartesianGrid stroke="#eef1f4" vertical={false} />
-            <XAxis
-              dataKey="date"
-              tickFormatter={compactDate}
-              tick={{ fill: "#94a3b8", fontSize: 10 }}
-              axisLine={false}
-              tickLine={false}
-              minTickGap={24}
-            />
-            <YAxis
-              yAxisId="bars"
-              allowDecimals={false}
-              tick={{ fill: "#94a3b8", fontSize: 10 }}
-              axisLine={false}
-              tickLine={false}
-            />
-            <YAxis
-              yAxisId="lines"
-              orientation="right"
-              allowDecimals={false}
-              tick={{ fill: "#94a3b8", fontSize: 10 }}
-              axisLine={false}
-              tickLine={false}
-            />
-            <Tooltip
-              labelFormatter={label => fullDate(String(label))}
-              formatter={(value: number, name: string) => [
-                numberFormat(Number(value)),
-                name,
-              ]}
-              contentStyle={{
-                borderRadius: 12,
-                border: "1px solid #e2e8f0",
-                fontSize: 12,
-              }}
-            />
-            {channelKeys.map((key, index) => (
-              <Bar
-                key={key}
-                yAxisId="bars"
-                dataKey={`channel:${key}`}
-                stackId="leads"
-                name={key}
-                fill={
-                  CHANNEL_COLOR_MAP[key] ??
-                  CHANNEL_COLORS[index % CHANNEL_COLORS.length]
-                }
+      <div
+        className="overflow-x-auto"
+        role="region"
+        aria-label="Gráfico diário de Leads, com totais sobre as barras"
+        tabIndex={0}
+      >
+        <div
+          className="h-[330px] w-full"
+          style={{
+            minWidth: daily.length > 14 ? daily.length * 48 : undefined,
+          }}
+        >
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart
+              data={chartData}
+              margin={{ top: 28, right: 8, left: -18, bottom: 4 }}
+            >
+              <CartesianGrid stroke="#eef1f4" vertical={false} />
+              <XAxis
+                dataKey="date"
+                tickFormatter={compactDate}
+                tick={{ fill: "#94a3b8", fontSize: 10 }}
+                axisLine={false}
+                tickLine={false}
+                minTickGap={24}
               />
-            ))}
-            <Line
-              yAxisId="lines"
-              type="monotone"
-              dataKey="cumulative"
-              name="Real acumulado"
-              stroke="#1e293b"
-              strokeWidth={2.5}
-              dot={false}
-            />
-            <Line
-              yAxisId="lines"
-              type="monotone"
-              dataKey="pace"
-              name="Pace acumulado"
-              stroke="#2563eb"
-              strokeWidth={1.8}
-              strokeDasharray="5 4"
-              dot={false}
-              connectNulls
-            />
-          </ComposedChart>
-        </ResponsiveContainer>
+              <YAxis
+                yAxisId="bars"
+                allowDecimals={false}
+                domain={[
+                  0,
+                  (maximum: number) => Math.max(1, Math.ceil(maximum * 1.15)),
+                ]}
+                tick={{ fill: "#94a3b8", fontSize: 10 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <YAxis
+                yAxisId="lines"
+                orientation="right"
+                allowDecimals={false}
+                tick={{ fill: "#94a3b8", fontSize: 10 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <Tooltip
+                labelFormatter={label => fullDate(String(label))}
+                formatter={(value: number, name: string) => [
+                  numberFormat(Number(value)),
+                  name,
+                ]}
+                contentStyle={{
+                  borderRadius: 12,
+                  border: "1px solid #e2e8f0",
+                  fontSize: 12,
+                }}
+              />
+              {channelKeys.map((key, index) => (
+                <Bar
+                  key={key}
+                  yAxisId="bars"
+                  dataKey={`channel:${key}`}
+                  stackId="leads"
+                  name={key}
+                  fill={
+                    CHANNEL_COLOR_MAP[key] ??
+                    CHANNEL_COLORS[index % CHANNEL_COLORS.length]
+                  }
+                >
+                  {index === channelKeys.length - 1 ? (
+                    <LabelList
+                      dataKey="total"
+                      position="top"
+                      offset={10}
+                      fill="#334155"
+                      fontSize={12}
+                      fontWeight={700}
+                      stroke="#ffffff"
+                      strokeWidth={3}
+                      paintOrder="stroke"
+                      formatter={(value: unknown) =>
+                        numberFormat(Number(value))
+                      }
+                    />
+                  ) : null}
+                </Bar>
+              ))}
+              <Line
+                yAxisId="lines"
+                type="monotone"
+                dataKey="cumulative"
+                name="Real acumulado"
+                stroke="#1e293b"
+                strokeWidth={2.5}
+                dot={false}
+              />
+              <Line
+                yAxisId="lines"
+                type="monotone"
+                dataKey="pace"
+                name="Pace acumulado"
+                stroke="#2563eb"
+                strokeWidth={1.8}
+                strokeDasharray="5 4"
+                dot={false}
+                connectNulls
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
       </div>
     </div>
   );
@@ -1522,16 +1559,12 @@ function OverviewTab({
         <DailyChart daily={data.daily} />
       </Card>
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card className="overflow-hidden">
+        <Card className="overflow-hidden lg:col-span-2">
           <CardHeading title="Distribuição por canal" icon={BarChart3} />
           <DistributionList
             items={data.channels}
             limit={data.channels.length}
           />
-        </Card>
-        <Card className="overflow-hidden">
-          <CardHeading title="Distribuição por modelo" icon={BarChart3} />
-          <DistributionList items={data.models} />
         </Card>
         <Card className="overflow-hidden">
           <CardHeading title="Distribuição por estado" icon={MapPin} />
@@ -1905,13 +1938,16 @@ export default function V2LeadsDashboard({
   const [activeTab, setActiveTab] = useState<V2Tab>(() =>
     new URLSearchParams(window.location.search).get("tab") === "stores"
       ? "Lojas & CRM"
-      : "Visão Geral"
+      : new URLSearchParams(window.location.search).get("tab") === "models"
+        ? "Modelos"
+        : "Visão Geral"
   );
   const dashboardTopRef = useRef<HTMLDivElement>(null);
   const selectTab = (tab: V2Tab) => {
     setActiveTab(tab);
     const url = new URL(window.location.href);
     if (tab === "Lojas & CRM") url.searchParams.set("tab", "stores");
+    else if (tab === "Modelos") url.searchParams.set("tab", "models");
     else url.searchParams.delete("tab");
     window.history.replaceState({}, "", url);
     window.requestAnimationFrame(() => {
@@ -2133,6 +2169,12 @@ export default function V2LeadsDashboard({
                     data={data}
                     onGoalUpdated={refresh}
                     onReloadMonth={reloadMonthlyBase}
+                    canManage={canManage}
+                  />
+                ) : null}
+                {activeTab === "Modelos" ? (
+                  <V2ModelsDashboard
+                    analysis={data.modelAnalysis}
                     canManage={canManage}
                   />
                 ) : null}
