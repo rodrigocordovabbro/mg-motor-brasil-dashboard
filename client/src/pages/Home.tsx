@@ -58,20 +58,31 @@ function errorMessage(error: unknown) {
   return "Usuário ou senha inválidos. Confira os dados e tente novamente.";
 }
 
-function BrandMark() {
+function BrandMark({ inverted = false }: { inverted?: boolean }) {
   return (
-    <div className="flex items-center gap-2.5" aria-label="MG Sales">
-      <img
-        src="/mg-logo.png"
-        alt="MG"
-        className="h-10 w-10 rounded-lg object-contain"
-      />
+    <div
+      className="flex shrink-0 items-center gap-3"
+      aria-label="MG Motor Brasil — Acompanhamento de resultados"
+    >
+      <span className="inline-flex h-12 w-[104px] shrink-0 items-center justify-center px-1 py-1.5">
+        <img
+          src={inverted ? "/logo-mg-horizontal.svg" : "/logo-mg-red.svg"}
+          alt="Logo MG Motor"
+          width={142}
+          height={65}
+          className="h-full w-full object-contain"
+        />
+      </span>
       <div className="hidden leading-none sm:block">
-        <p className="text-sm font-black tracking-[-0.03em] text-slate-950">
-          MG SALES
+        <p
+          className={`text-[15px] font-bold tracking-tight ${inverted ? "text-white" : "text-slate-950"}`}
+        >
+          MG Motor Brasil
         </p>
-        <p className="mt-1 text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400">
-          Gestão de Leads e vendas
+        <p
+          className={`mt-1.5 text-[11px] font-medium ${inverted ? "text-slate-300" : "text-slate-500"}`}
+        >
+          Acompanhamento de resultados
         </p>
       </div>
     </div>
@@ -105,17 +116,17 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: () => Promise<void> }) {
       <div className="grid w-full max-w-4xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.1)] lg:grid-cols-[0.9fr_1.1fr]">
         <div className="hidden flex-col justify-between bg-[#141d2c] p-9 text-white lg:flex">
           <div>
-            <BrandMark />
+            <BrandMark inverted />
             <div className="mt-16 max-w-xs">
               <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-red-300">
                 Ambiente de homologação
               </p>
               <h1 className="mt-3 text-3xl font-bold leading-tight tracking-tight">
-                Dados de leads com contexto para decidir.
+                Acompanhamento de resultados.
               </h1>
               <p className="mt-4 text-sm leading-6 text-slate-300">
-                Acesso restrito ao painel comercial MG Sales. Os números
-                exibidos vêm da fonte autenticada configurada pela equipe.
+                Leads, metas, vendas e mídia em uma visão integrada da MG Motor
+                Brasil, com dados das fontes configuradas pela equipe.
               </p>
             </div>
           </div>
@@ -134,10 +145,10 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: () => Promise<void> }) {
                 <LockKeyhole className="h-5 w-5" />
               </div>
               <h2 className="text-2xl font-bold tracking-tight text-slate-950">
-                Entrar no MG Sales
+                MG Motor Brasil
               </h2>
               <p className="mt-2 text-sm leading-6 text-slate-500">
-                Use o acesso de homologação fornecido para consultar os dados.
+                Acompanhamento de resultados. Entre com seu usuário e senha.
               </p>
             </div>
             <form onSubmit={submit} className="mt-7 space-y-4" noValidate>
@@ -186,7 +197,7 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: () => Promise<void> }) {
               </button>
             </form>
             <p className="mt-7 text-center text-[11px] leading-5 text-slate-400">
-              Acesso de homologação. Não há credenciais preenchidas por padrão.
+              Acesso restrito a usuários autorizados.
             </p>
           </div>
         </div>

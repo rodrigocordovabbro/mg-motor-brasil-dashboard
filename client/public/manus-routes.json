@@ -2,27 +2,27 @@
   "routes": [
     {
       "path": "/",
-      "title": "MG Sales — Visão geral"
+      "title": "MG Motor Brasil — Visão geral"
     },
     {
       "path": "/?module=leads",
-      "title": "MG Sales — Leads"
+      "title": "MG Motor Brasil — Leads"
     },
     {
       "path": "/?module=media",
-      "title": "MG Sales — Plano de Mídia"
+      "title": "MG Motor Brasil — Plano de Mídia"
     },
     {
       "path": "/?module=dispatch",
-      "title": "MG Sales — Controle de Envios"
+      "title": "MG Motor Brasil — Controle de Envios"
     },
     {
       "path": "/?module=users",
-      "title": "MG Sales — Usuários"
+      "title": "MG Motor Brasil — Usuários"
     },
     {
       "path": "/?module=leads&tab=stores",
-      "title": "MG Sales — Lojas & CRM"
+      "title": "MG Motor Brasil — Lojas & CRM"
     }
   ]
 }

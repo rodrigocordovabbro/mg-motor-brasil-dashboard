@@ -107,3 +107,7 @@ Vendas gerais passam a usar o MTD Registration do bloco Current Month/DAILY_FUP 
 Por solicitação do usuário, o cartão geral calcula Vendas MTD do FUP dividido pelos Leads reais do período, mesmo quando as duas referências de data diferem. Mostrar duas casas decimais e a fórmula, identificando a razão como comparativo geral e não como conversão comprovada de uma coorte. O cálculo geral não libera atribuição de vendas a modelos/canais/dealers; recortes sem denominador ou numerador válido permanecem indisponíveis. Não há alterações de dados nem de metas — a meta manual de vendas atualmente salva como 660 deve permanecer intacta.
 
 O Plano de Mídia usa a largura integral do contêiner principal, sem max-width de 1680px e sem margens internas duplicadas. Margens responsivas ficam sob responsabilidade do mesmo contêiner usado pelas demais abas. O ajuste é somente visual e não altera projeções ou valores salvos.
+
+## Identidade MG Motor Brasil
+
+A marca visível passa a MG Motor Brasil — Acompanhamento de resultados. Usar o SVG horizontal enviado pelo usuário, branco no login de fundo escuro e vermelho no cabeçalho claro, com variante preta disponível e proporção preservada. Favicon/ícone Apple e ícone do projeto usam o símbolo MG vermelho enviado; nenhuma forma do símbolo é reconstruída. Login mantém autenticação e campos inicialmente vazios, apenas com texto institucional revisado. A transição canônica GitHub foi cancelada pelo usuário: repositório gerenciado pelo Manus permanece ativo e nenhum novo destino será aberto/receberá código sem nova solicitação.

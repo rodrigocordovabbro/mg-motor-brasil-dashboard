@@ -131,3 +131,13 @@ Evidências desta entrega: 159 testes, TypeScript e build aprovados; MTD geral 4
 - [x] Plano de Mídia ocupa a mesma largura total disponível das outras abas, sem max-width centralizador; manter margens de segurança e adaptação móvel. Preservar projeções manuais de 16.600 e os cálculos salvos pelo usuário.
 
 Verificação desta correção: 164 testes, TypeScript e build aprovados; consulta real somente leitura confirmou conversão 3,18%, meta manual 660 e projeção do Plano de Mídia 16.600 preservadas.
+
+## Logo MG enviado
+
+- [x] Usar logo-mg-horizontal.svg original no cabeçalho e no login do MG Sales, com proporção preservada e contraste adequado. Não substituir ou reconstruir o símbolo; não alterar dados, metas ou projeções. A conexão canônica GitHub foi cancelada pelo usuário; manter Manus e não reabrir a confirmação nem transferir código para outro destino sem nova solicitação.
+
+- [x] Identificação pública passa a MG Motor Brasil — Acompanhamento de resultados na marca/cabeçalho e tela de acesso, com o logo enviado. Manter fluxo de login seguro e campos sem preenchimento programado; atualizar título da página e identificação pública correspondente. Não renomear bancos, branches ou identificadores internos.
+
+- [x] Favicon MG gerado da imagem fornecida, com versões ICO/PNG e ícone Apple; logo branco no login escuro, vermelho no cabeçalho claro e variante preta disponível. Preservar proporção e desenho do símbolo original. Não reabrir a transferência GitHub cancelada.
+
+Identidade validada: SVGs com proporção original, favicons íntegros e servidos com HTTP 200, título atualizado; 164 testes, TypeScript e build aprovados. Nenhuma nova transferência GitHub após cancelamento.

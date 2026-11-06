@@ -14,7 +14,11 @@ async function startServer() {
   app.use(express.json({ limit: "2mb" }));
   app.use(express.urlencoded({ limit: "2mb", extended: true }));
   app.get("/api/health", (_req, res) =>
-    res.json({ status: "ok", product: "MG Sales", environment: "homologacao" })
+    res.json({
+      status: "ok",
+      product: "MG Motor Brasil",
+      environment: "homologacao",
+    })
   );
   app.get("/api/platform/config.js", (_req, res) => {
     res

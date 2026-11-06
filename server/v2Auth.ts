@@ -20,7 +20,7 @@ export type V2Identity = {
 
 function secret() {
   if (!process.env.MANUS_JWT_SECRET || !process.env.MANUS_PROJECT_ID)
-    throw new Error("Sessão do MG Sales não configurada");
+    throw new Error("Sessão do MG Motor Brasil não configurada");
   return new TextEncoder().encode(process.env.MANUS_JWT_SECRET);
 }
 export function hashV2Password(password: string) {
