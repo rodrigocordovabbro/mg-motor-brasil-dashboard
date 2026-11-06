@@ -69,6 +69,46 @@ export type CommercialCommitResult = {
   warnings: string[];
 };
 
+export type CombinedGoalsUploadInput = {
+  competence: string;
+  fileName: string;
+  base64: string;
+};
+
+export type CombinedGoalsCommitInput = CombinedGoalsUploadInput & {
+  /** Explicit links shared by the lead and sales-goal row with the same key. */
+  mappings?: Record<string, string[]>;
+};
+
+export type CombinedGoalsPreviewRow = {
+  key: string;
+  sourceLabel: string;
+  state: string | null;
+  leadGoal: number | null;
+  salesGoal: number | null;
+  rawDealers: string[];
+  isNewDealer?: boolean;
+};
+
+export type CombinedGoalsPreview = {
+  competence: string;
+  fileName: string;
+  fileSha256: string;
+  rows: CombinedGoalsPreviewRow[];
+  leadTotal: number | null;
+  salesTotal: number | null;
+  warnings: string[];
+  availableDealers: string[];
+  newDealers?: Array<{ name: string; state: string | null }>;
+};
+
+export type CombinedGoalsCommitResult = {
+  lead: CommercialCommitResult;
+  sales: CommercialCommitResult;
+  /** True only when both source snapshots were already imported. */
+  alreadyImported: boolean;
+};
+
 export type CommercialReconciliationResult = {
   competence: string;
   revised: number;

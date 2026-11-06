@@ -34,6 +34,8 @@ vi.mock("./v2Accounts", () => ({
 }));
 vi.mock("./v2Commercial", () => ({
   previewCommercialUpload: vi.fn(),
+  previewCombinedGoalsUpload: vi.fn(),
+  commitCombinedGoalsUpload: vi.fn(),
   commitCommercialUpload: vi.fn(),
   readCommercialStatus: vi.fn(),
   removeCommercialSource: vi.fn(),
@@ -479,3 +481,22 @@ describe("Edições exclusivas da conta Rodrigo", () => {
       await expect(action()).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });
+
+it.each(["client", "bbro"] as const)(
+  "%s não pode pré-visualizar nem importar as duas metas",
+  async role => {
+    state.role = role;
+    const api = caller();
+    const input = {
+      competence: "2026-11",
+      fileName: "metas.xlsx",
+      base64: "YWJj",
+    };
+    await expect(api.commercial.previewGoals(input)).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(api.commercial.commitGoals(input)).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+  }
+);

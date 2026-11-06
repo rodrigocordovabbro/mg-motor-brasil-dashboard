@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
-import type { RowDataPacket, ResultSetHeader } from "mysql2/promise";
+import type {
+  PoolConnection,
+  RowDataPacket,
+  ResultSetHeader,
+} from "mysql2/promise";
 import { getDashboardCutoffDate } from "../shared/dashboardDates";
 import {
   OFFICIAL_DEALERS,
@@ -8,6 +12,10 @@ import {
   resolveOfficialDealer,
 } from "../shared/dealerRegistry";
 import type {
+  CombinedGoalsCommitInput,
+  CombinedGoalsCommitResult,
+  CombinedGoalsPreview,
+  CombinedGoalsUploadInput,
   CommercialActor,
   CommercialCommitInput,
   CommercialCommitResult,
@@ -26,6 +34,10 @@ import type {
   CommercialUploadKind,
 } from "../shared/v2Commercial";
 import { isAdministrator } from "../shared/accountRoles";
+import {
+  classifyNonDealerLabel,
+  type ExtraDealerRegistryEntry,
+} from "../shared/dealerRegistryExtensions";
 import type {
   V2CommercialGroupRecord,
   V2Dashboard,
@@ -34,14 +46,24 @@ import type {
 import { getV2Pool } from "./v2Db";
 import { getV2SalesTotalGoal } from "./v2SalesGoal";
 import {
+  readExtraDealerRegistry,
+  registerNewUploadDealers,
+} from "./v2DealerRegistry";
+import {
   normalizeCommercialText,
+  parseCombinedGoalsUpload,
   parseCommercialWorkbook,
+  type ParsedCombinedGoalsWorkbook,
   type ParsedCommercialWorkbook,
 } from "./v2CommercialParser";
 
 const KINDS: CommercialUploadKind[] = ["lead-goals", "sales-goals", "sales"];
 
-type DealerRecord = { dealer: string; state: string | null };
+type DealerRecord = {
+  dealer: string;
+  state: string | null;
+  registryExtra?: boolean;
+};
 export type CommercialStoredImport = {
   id: number;
   kind: CommercialUploadKind;
@@ -72,10 +94,13 @@ type WorkRow = V2Dashboard["dealerPerformance"]["rows"][number] & {
   aliases: string[];
   aliasKeys: string[];
   canonical: string | null;
+  registryExtra?: boolean;
 };
 type SourceSnapshotMap = Map<CommercialUploadKind, CommercialStoredImport>;
 type QueryExecutor = {
-  execute: (...args: any[]) => Promise<[RowDataPacket[], unknown]>;
+  execute: <T extends RowDataPacket[] | ResultSetHeader = RowDataPacket[]>(
+    ...args: any[]
+  ) => Promise<[T, unknown]>;
 };
 
 function validateCompetence(competence: string): void {
@@ -146,18 +171,54 @@ function canonicalDealer(value: unknown): string | null {
 }
 
 async function readDealerRecords(
-  executor: QueryExecutor
+  executor: QueryExecutor,
+  extras: readonly ExtraDealerRegistryEntry[] = []
 ): Promise<DealerRecord[]> {
   const [rows] = await executor.execute(
     "SELECT DISTINCT BINARY dealer AS dealer,BINARY state AS state FROM v2_leads WHERE TRIM(dealer) <> '' ORDER BY BINARY dealer,BINARY state"
   );
-  return rows.map(row => ({
+  const leadRecords = rows.map(row => ({
     dealer: storedText(row.dealer),
     state:
       row.state == null || storedText(row.state).trim() === ""
         ? null
         : storedText(row.state),
   }));
+  const known = new Set(
+    leadRecords.map(
+      record =>
+        `${normalizeCommercialText(record.dealer)}\u0000${dealerState(record.state) ?? ""}`
+    )
+  );
+  const registryRecords = extras.flatMap(extra => {
+    const record = {
+      dealer: extra.name,
+      state: extra.state,
+      registryExtra: true,
+    } satisfies DealerRecord;
+    const key = `${normalizeCommercialText(record.dealer)}\u0000${dealerState(record.state) ?? ""}`;
+    if (known.has(key)) return [];
+    known.add(key);
+    return [record];
+  });
+  return [...leadRecords, ...registryRecords];
+}
+
+type DealerRecordsWithRegistry = {
+  records: DealerRecord[];
+  registryAvailable: boolean;
+};
+
+async function readDealerRecordsWithRegistry(
+  executor: QueryExecutor
+): Promise<DealerRecordsWithRegistry> {
+  const extras = await readExtraDealerRegistry(
+    executor as unknown as PoolConnection
+  );
+  return {
+    records: await readDealerRecords(executor, extras),
+    registryAvailable: true,
+  };
 }
 
 function dealerBase(value: string): string {
@@ -216,7 +277,22 @@ function automaticDealers(
   if (registered.length) return [...new Set(registered)];
   const single = canonicalDealer(row.sourceLabel);
   if (single) return [single];
-  return legacyAutomaticDealers(row, records);
+  const normalizedSource = normalizeCommercialText(row.sourceLabel);
+  const dynamicExact = records.filter(
+    record =>
+      record.registryExtra &&
+      normalizeCommercialText(record.dealer) === normalizedSource &&
+      (!row.state || dealerState(record.state) === dealerState(row.state))
+  );
+  if (dynamicExact.length === 1) return [dynamicExact[0].dealer];
+  const legacy = legacyAutomaticDealers(
+    row,
+    records.filter(record => !record.registryExtra)
+  );
+  if (legacy.length) return legacy;
+  return classifyNonDealerLabel(row.sourceLabel, row.state) === null
+    ? [row.sourceLabel.trim()]
+    : [];
 }
 
 function withDealerSuggestions(
@@ -228,9 +304,13 @@ function withDealerSuggestions(
   const unresolvedRaw = records
     .map(record => record.dealer)
     .filter(dealer => !canonicalDealer(dealer));
-  const available = [...new Set([...official, ...unresolvedRaw])].sort((a, b) =>
-    a.localeCompare(b, "pt-BR")
-  );
+  const newCandidates = parsed.rows
+    .filter(row => classifyNonDealerLabel(row.sourceLabel, row.state) === null)
+    .map(row => row.sourceLabel.trim())
+    .filter(Boolean);
+  const available = [
+    ...new Set([...official, ...unresolvedRaw, ...newCandidates]),
+  ].sort((a, b) => a.localeCompare(b, "pt-BR"));
   const known = new Set(available);
   const mappingKeys = mappings ? Object.keys(mappings) : [];
   const parsedKeys = new Set(parsed.rows.map(row => row.key));
@@ -255,7 +335,10 @@ function withDealerSuggestions(
           `Concessionária não disponível no dashboard: ${String(selected)}.`
         );
       const dealer = canonicalDealer(selected) ?? selected;
-      if (!known.has(dealer))
+      const isNewCandidate =
+        dealer === row.sourceLabel.trim() &&
+        classifyNonDealerLabel(row.sourceLabel, row.state) === null;
+      if (!known.has(dealer) && !isNewCandidate)
         throw new Error(
           `Concessionária não disponível no dashboard: ${String(selected)}.`
         );
@@ -286,8 +369,8 @@ export async function previewCommercialUpload(
     input.base64,
     input.sourceWeek
   );
-  const records = await readDealerRecords(getV2Pool());
-  const suggested = withDealerSuggestions(parsed, records);
+  const registry = await readDealerRecordsWithRegistry(getV2Pool());
+  const suggested = withDealerSuggestions(parsed, registry.records);
   return {
     kind: parsed.kind,
     competence: parsed.competence,
@@ -302,6 +385,87 @@ export async function previewCommercialUpload(
     registrationMtd: parsed.registrationMtd,
     registrationAsOf: parsed.registrationAsOf,
     sourceSheet: parsed.sourceSheet,
+  };
+}
+
+function combinedSource(
+  parsed: ParsedCombinedGoalsWorkbook,
+  kind: "lead-goals" | "sales-goals"
+): ParsedCommercialWorkbook {
+  const isLead = kind === "lead-goals";
+  return {
+    kind,
+    competence: parsed.competence,
+    asOf: null,
+    sourceWeek: undefined,
+    fileName: parsed.fileName,
+    fileSha256: parsed.fileSha256,
+    rows: parsed.rows.map(row => ({
+      key: row.key,
+      sourceLabel: row.sourceLabel,
+      state: row.state,
+      value: isLead ? row.leadGoal : row.salesGoal,
+      rawDealers: [],
+    })),
+    total: isLead ? parsed.leadTotal : parsed.salesTotal,
+    warnings: parsed.warnings,
+  };
+}
+
+export async function previewCombinedGoalsUpload(
+  input: CombinedGoalsUploadInput
+): Promise<CombinedGoalsPreview> {
+  const parsed = await parseCombinedGoalsUpload(input);
+  const registry = await readDealerRecordsWithRegistry(getV2Pool());
+  const mapped = withDealerSuggestions(
+    combinedSource(parsed, "lead-goals"),
+    registry.records
+  );
+  const dealersByKey = new Map(
+    mapped.rows.map(row => [row.key, row.rawDealers] as const)
+  );
+  const candidates = registryRowsForCommit(
+    combinedSource(parsed, "lead-goals"),
+    mapped.rows,
+    Object.fromEntries(mapped.rows.map(row => [row.key, row.rawDealers]))
+  ).filter(
+    row =>
+      !row.rawDealers.length &&
+      classifyNonDealerLabel(row.sourceLabel, row.state) === null &&
+      !registry.records.some(
+        record =>
+          record.registryExtra &&
+          normalizeCommercialText(record.dealer) ===
+            normalizeCommercialText(row.sourceLabel)
+      )
+  );
+  const newKeys = new Set(candidates.map(row => row.key));
+  const newDealers = [
+    ...new Map(
+      candidates.map(row => [
+        normalizeCommercialText(row.sourceLabel),
+        { name: row.sourceLabel, state: row.state },
+      ])
+    ).values(),
+  ];
+  return {
+    newDealers,
+    competence: parsed.competence,
+    fileName: parsed.fileName,
+    fileSha256: parsed.fileSha256,
+    rows: parsed.rows.map(row => ({
+      key: row.key,
+      sourceLabel: row.sourceLabel,
+      state: row.state,
+      leadGoal: row.leadGoal,
+      salesGoal: row.salesGoal,
+      rawDealers: dealersByKey.get(row.key) ?? [],
+      isNewDealer: newKeys.has(row.key),
+    })),
+    leadTotal: parsed.leadTotal,
+    salesTotal: parsed.salesTotal,
+    warnings: parsed.warnings,
+    availableDealers: mapped.availableDealers,
   };
 }
 
@@ -571,6 +735,225 @@ function mappingSha256(
   return hash.digest("hex");
 }
 
+type CommercialConnection = QueryExecutor & {
+  beginTransaction: () => Promise<void>;
+  commit: () => Promise<void>;
+  rollback: () => Promise<void>;
+  release: () => void;
+};
+
+function registryRowsForCommit(
+  parsed: ParsedCommercialWorkbook,
+  mapped: CommercialSourceRow[],
+  mappings: Record<string, string[]> | undefined
+): CommercialSourceRow[] {
+  return parsed.rows.flatMap((source, index) => {
+    const normalizedSource = normalizeCommercialText(source.sourceLabel);
+    if (
+      isExplicitlyUnmappedCommercialLabel(source.sourceLabel) ||
+      normalizedSource === "global"
+    )
+      return [];
+    const mappedRow = mapped[index] ?? source;
+    const hasExplicitMapping =
+      mappings != null &&
+      Object.prototype.hasOwnProperty.call(mappings, source.key);
+    if (!hasExplicitMapping) {
+      // `withDealerSuggestions` may place an unknown source label in
+      // rawDealers so preview can render a prospective target. That is not an
+      // explicit de-para and must still be eligible for registry creation.
+      return [{ ...mappedRow, rawDealers: [] }];
+    }
+    const selected = mappings?.[source.key] ?? [];
+    const mapsToOwnProspectiveLabel =
+      selected.length > 0 &&
+      selected.every(
+        target =>
+          normalizeCommercialText(target) ===
+          normalizeCommercialText(source.sourceLabel)
+      ) &&
+      classifyNonDealerLabel(source.sourceLabel, source.state) === null;
+    return [
+      {
+        ...mappedRow,
+        // An explicit choice of the prospective source label is still a request
+        // to register that label. Mapping the source to another existing unit,
+        // on the other hand, remains authoritative and suppresses registration.
+        rawDealers: mapsToOwnProspectiveLabel ? [] : selected,
+      },
+    ];
+  });
+}
+
+async function commitParsedCommercialUpload(
+  parsed: ParsedCommercialWorkbook,
+  mappings: Record<string, string[]> | undefined,
+  actor: CommercialActor,
+  connection: QueryExecutor,
+  records: DealerRecord[],
+  registryAvailable = true
+): Promise<CommercialCommitResult> {
+  const asOfKey = parsed.asOf ?? "";
+  const mapped = withDealerSuggestions(parsed, records, mappings);
+  const rowsJson = JSON.stringify(mapped.rows);
+  const warningsJson = JSON.stringify(parsed.warnings);
+  let mappingHash = mappingSha256(
+    mapped.rows,
+    parsed.sourceWeek ?? null,
+    parsed.registrationMtd,
+    parsed.registrationAsOf
+  );
+  let restoredAsNewRevision = false;
+  const [existing] = await connection.execute<RowDataPacket[]>(
+    "SELECT i.id,i.total,i.rowCount,i.warningsJson,s.removedAt FROM v2_commercial_imports i LEFT JOIN v2_commercial_import_state s ON s.importId=i.id WHERE i.kind=? AND i.competence=? AND i.fileSha256=? AND i.asOfKey=? AND i.mappingSha256=? LIMIT 1 FOR UPDATE",
+    [parsed.kind, parsed.competence, parsed.fileSha256, asOfKey, mappingHash]
+  );
+  let selectedExisting: RowDataPacket | undefined = existing[0];
+  if (selectedExisting) {
+    const [newestRows] = await connection.execute<RowDataPacket[]>(
+      "SELECT i.id,i.fileSha256,i.asOfKey,i.sourceWeek,i.registrationMtd,i.registrationAsOf,i.rowsJson,i.total,i.rowCount,i.warningsJson,s.removedAt FROM v2_commercial_imports i LEFT JOIN v2_commercial_import_state s ON s.importId=i.id WHERE i.kind=? AND i.competence=? ORDER BY i.id DESC LIMIT 1 FOR UPDATE",
+      [parsed.kind, parsed.competence]
+    );
+    const newest = newestRows[0];
+    if (newest && Number(newest.id) !== Number(selectedExisting.id)) {
+      const sameCurrentContent =
+        storedText(newest.fileSha256) === parsed.fileSha256 &&
+        storedText(newest.asOfKey) === asOfKey &&
+        mappingSha256(
+          jsonRows(newest.rowsJson),
+          newest.sourceWeek == null ? null : Number(newest.sourceWeek),
+          Object.prototype.hasOwnProperty.call(newest, "registrationMtd")
+            ? newest.registrationMtd == null
+              ? null
+              : Number(newest.registrationMtd)
+            : undefined,
+          Object.prototype.hasOwnProperty.call(newest, "registrationAsOf")
+            ? dateOnly(newest.registrationAsOf)
+            : undefined
+        ) === mappingHash;
+      if (sameCurrentContent) selectedExisting = newest;
+      else {
+        // Re-upload is explicit intent to restore this content. Append a new
+        // immutable revision; changing an old id cannot make it the latest.
+        restoredAsNewRevision = true;
+        mappingHash = createHash("sha256")
+          .update(`${mappingHash}:restored-after:${newest.id}`)
+          .digest("hex");
+        selectedExisting = undefined;
+      }
+    }
+  }
+  if (selectedExisting) {
+    if (selectedExisting.removedAt != null) {
+      await connection.execute(
+        "UPDATE v2_commercial_import_state SET removedAt=NULL,removedBy=NULL WHERE importId=?",
+        [Number(selectedExisting.id)]
+      );
+      await connection.execute(
+        "INSERT INTO v2_commercial_import_audit (importId,kind,competence,event,accountId) VALUES (?,?,?,?,?)",
+        [
+          Number(selectedExisting.id),
+          parsed.kind,
+          parsed.competence,
+          "reactivated",
+          actor.id,
+        ]
+      );
+    }
+    return {
+      importId: Number(selectedExisting.id),
+      alreadyImported: true,
+      total:
+        selectedExisting.total == null ? null : Number(selectedExisting.total),
+      rows: Number(selectedExisting.rowCount),
+      warnings: jsonWarnings(selectedExisting.warningsJson),
+    };
+  }
+
+  const [previousSameFile] = await connection.execute<RowDataPacket[]>(
+    "SELECT id FROM v2_commercial_imports WHERE kind=? AND competence=? AND fileSha256=? LIMIT 1",
+    [parsed.kind, parsed.competence, parsed.fileSha256]
+  );
+
+  const [inserted] = await connection.execute<ResultSetHeader>(
+    "INSERT INTO v2_commercial_imports (kind,competence,asOf,sourceWeek,asOfKey,fileName,fileSha256,mappingSha256,total,rowCount,rowsJson,warningsJson,importedBy,registrationMtd,registrationAsOf) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    [
+      parsed.kind,
+      parsed.competence,
+      parsed.asOf,
+      parsed.sourceWeek ?? null,
+      asOfKey,
+      parsed.fileName,
+      parsed.fileSha256,
+      mappingHash,
+      parsed.total,
+      mapped.rows.length,
+      rowsJson,
+      warningsJson,
+      actor.id,
+      parsed.registrationMtd ?? null,
+      parsed.registrationAsOf ?? null,
+    ]
+  );
+  const importId = Number(inserted.insertId);
+  if (restoredAsNewRevision)
+    await connection.execute(
+      "INSERT INTO v2_commercial_import_audit (importId,kind,competence,event,accountId) VALUES (?,?,?,?,?)",
+      [importId, parsed.kind, parsed.competence, "reactivated", actor.id]
+    );
+
+  if (!registryAvailable)
+    throw new Error(
+      "O registry de dealers não está disponível para confirmar a carga comercial."
+    );
+  await registerNewUploadDealers(
+    registryRowsForCommit(parsed, mapped.rows, mappings),
+    { id: actor.id, username: actor.username },
+    connection as PoolConnection,
+    importId
+  );
+
+  // Do not update v2_lead_goals from a mapping-only operation. A manual goal
+  // remains authoritative; the upload's total is only the initial import
+  // default. Once an imported goal is active, a newer source takes ownership
+  // of that auto-derived value and records its source import id.
+  if (
+    parsed.kind === "lead-goals" &&
+    (!previousSameFile.length || restoredAsNewRevision) &&
+    parsed.total != null &&
+    parsed.total > 0
+  ) {
+    const [goals] = await connection.execute<RowDataPacket[]>(
+      "SELECT goal,sourceKind,sourceImportId FROM v2_lead_goals WHERE competence=? FOR UPDATE",
+      [parsed.competence]
+    );
+    const current = goals[0];
+    const manualGoal = current && storedText(current.sourceKind) !== "import";
+    if (!manualGoal) {
+      await connection.execute(
+        "INSERT INTO v2_lead_goals (competence,goal,updatedBy,sourceKind,sourceImportId) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE goal=VALUES(goal),updatedBy=VALUES(updatedBy),sourceKind=VALUES(sourceKind),sourceImportId=VALUES(sourceImportId),updatedAt=CURRENT_TIMESTAMP",
+        [parsed.competence, parsed.total, actor.id, "import", importId]
+      );
+      await connection.execute(
+        "INSERT INTO v2_goal_audit (competence,oldGoal,newGoal,accountId) VALUES (?,?,?,?)",
+        [
+          parsed.competence,
+          current?.goal == null ? null : Number(current.goal),
+          parsed.total,
+          actor.id,
+        ]
+      );
+    }
+  }
+  return {
+    importId,
+    alreadyImported: false,
+    total: parsed.total,
+    rows: mapped.rows.length,
+    warnings: parsed.warnings,
+  };
+}
+
 export async function commitCommercialUpload(
   input: CommercialCommitInput,
   actor: CommercialActor
@@ -584,161 +967,63 @@ export async function commitCommercialUpload(
     input.base64,
     input.sourceWeek
   );
-  const asOfKey = parsed.asOf ?? "";
-  const connection = await getV2Pool().getConnection();
+  const connection =
+    (await getV2Pool().getConnection()) as CommercialConnection;
   try {
     await connection.beginTransaction();
-    const records = await readDealerRecords(connection);
-    const mapped = withDealerSuggestions(parsed, records, input.mappings);
-    const rowsJson = JSON.stringify(mapped.rows);
-    const warningsJson = JSON.stringify(parsed.warnings);
-    let mappingHash = mappingSha256(
-      mapped.rows,
-      parsed.sourceWeek ?? null,
-      parsed.registrationMtd,
-      parsed.registrationAsOf
+    const registry = await readDealerRecordsWithRegistry(connection);
+    const result = await commitParsedCommercialUpload(
+      parsed,
+      input.mappings,
+      actor,
+      connection,
+      registry.records,
+      registry.registryAvailable
     );
-    let restoredAsNewRevision = false;
-    const [existing] = await connection.execute<RowDataPacket[]>(
-      "SELECT i.id,i.total,i.rowCount,i.warningsJson,s.removedAt FROM v2_commercial_imports i LEFT JOIN v2_commercial_import_state s ON s.importId=i.id WHERE i.kind=? AND i.competence=? AND i.fileSha256=? AND i.asOfKey=? AND i.mappingSha256=? LIMIT 1 FOR UPDATE",
-      [parsed.kind, parsed.competence, parsed.fileSha256, asOfKey, mappingHash]
-    );
-    let selectedExisting: RowDataPacket | undefined = existing[0];
-    if (selectedExisting) {
-      const [newestRows] = await connection.execute<RowDataPacket[]>(
-        "SELECT i.id,i.fileSha256,i.asOfKey,i.sourceWeek,i.registrationMtd,i.registrationAsOf,i.rowsJson,i.total,i.rowCount,i.warningsJson,s.removedAt FROM v2_commercial_imports i LEFT JOIN v2_commercial_import_state s ON s.importId=i.id WHERE i.kind=? AND i.competence=? ORDER BY i.id DESC LIMIT 1 FOR UPDATE",
-        [parsed.kind, parsed.competence]
-      );
-      const newest = newestRows[0];
-      if (newest && Number(newest.id) !== Number(selectedExisting.id)) {
-        const sameCurrentContent =
-          storedText(newest.fileSha256) === parsed.fileSha256 &&
-          storedText(newest.asOfKey) === asOfKey &&
-          mappingSha256(
-            jsonRows(newest.rowsJson),
-            newest.sourceWeek == null ? null : Number(newest.sourceWeek),
-            Object.prototype.hasOwnProperty.call(newest, "registrationMtd")
-              ? newest.registrationMtd == null
-                ? null
-                : Number(newest.registrationMtd)
-              : undefined,
-            Object.prototype.hasOwnProperty.call(newest, "registrationAsOf")
-              ? dateOnly(newest.registrationAsOf)
-              : undefined
-          ) === mappingHash;
-        if (sameCurrentContent) selectedExisting = newest;
-        else {
-          // Re-upload is explicit intent to restore this content. Append a new
-          // immutable revision; changing an old id cannot make it the latest.
-          restoredAsNewRevision = true;
-          mappingHash = createHash("sha256")
-            .update(`${mappingHash}:restored-after:${newest.id}`)
-            .digest("hex");
-          selectedExisting = undefined;
-        }
-      }
-    }
-    if (selectedExisting) {
-      if (selectedExisting.removedAt != null) {
-        await connection.execute(
-          "UPDATE v2_commercial_import_state SET removedAt=NULL,removedBy=NULL WHERE importId=?",
-          [Number(selectedExisting.id)]
-        );
-        await connection.execute(
-          "INSERT INTO v2_commercial_import_audit (importId,kind,competence,event,accountId) VALUES (?,?,?,?,?)",
-          [
-            Number(selectedExisting.id),
-            parsed.kind,
-            parsed.competence,
-            "reactivated",
-            actor.id,
-          ]
-        );
-      }
-      await connection.commit();
-      return {
-        importId: Number(selectedExisting.id),
-        alreadyImported: true,
-        total:
-          selectedExisting.total == null
-            ? null
-            : Number(selectedExisting.total),
-        rows: Number(selectedExisting.rowCount),
-        warnings: jsonWarnings(selectedExisting.warningsJson),
-      };
-    }
+    await connection.commit();
+    return result;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
 
-    const [previousSameFile] = await connection.execute<RowDataPacket[]>(
-      "SELECT id FROM v2_commercial_imports WHERE kind=? AND competence=? AND fileSha256=? LIMIT 1",
-      [parsed.kind, parsed.competence, parsed.fileSha256]
+export async function commitCombinedGoalsUpload(
+  input: CombinedGoalsCommitInput,
+  actor: CommercialActor
+): Promise<CombinedGoalsCommitResult> {
+  const parsed = await parseCombinedGoalsUpload(input);
+  const lead = combinedSource(parsed, "lead-goals");
+  const sales = combinedSource(parsed, "sales-goals");
+  const connection =
+    (await getV2Pool().getConnection()) as CommercialConnection;
+  try {
+    await connection.beginTransaction();
+    const registry = await readDealerRecordsWithRegistry(connection);
+    const leadResult = await commitParsedCommercialUpload(
+      lead,
+      input.mappings,
+      actor,
+      connection,
+      registry.records,
+      registry.registryAvailable
     );
-
-    const [inserted] = await connection.execute<ResultSetHeader>(
-      "INSERT INTO v2_commercial_imports (kind,competence,asOf,sourceWeek,asOfKey,fileName,fileSha256,mappingSha256,total,rowCount,rowsJson,warningsJson,importedBy,registrationMtd,registrationAsOf) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-      [
-        parsed.kind,
-        parsed.competence,
-        parsed.asOf,
-        parsed.sourceWeek ?? null,
-        asOfKey,
-        parsed.fileName,
-        parsed.fileSha256,
-        mappingHash,
-        parsed.total,
-        mapped.rows.length,
-        rowsJson,
-        warningsJson,
-        actor.id,
-        parsed.registrationMtd ?? null,
-        parsed.registrationAsOf ?? null,
-      ]
+    const salesResult = await commitParsedCommercialUpload(
+      sales,
+      input.mappings,
+      actor,
+      connection,
+      registry.records,
+      registry.registryAvailable
     );
-    const importId = Number(inserted.insertId);
-    if (restoredAsNewRevision)
-      await connection.execute(
-        "INSERT INTO v2_commercial_import_audit (importId,kind,competence,event,accountId) VALUES (?,?,?,?,?)",
-        [importId, parsed.kind, parsed.competence, "reactivated", actor.id]
-      );
-
-    // Do not update v2_lead_goals from a mapping-only operation. A manual goal
-    // remains authoritative; the upload's total is only the initial import
-    // default. Once an imported goal is active, a newer source takes ownership
-    // of that auto-derived value and records its source import id.
-    if (
-      parsed.kind === "lead-goals" &&
-      (!previousSameFile.length || restoredAsNewRevision) &&
-      parsed.total != null &&
-      parsed.total > 0
-    ) {
-      const [goals] = await connection.execute<RowDataPacket[]>(
-        "SELECT goal,sourceKind,sourceImportId FROM v2_lead_goals WHERE competence=? FOR UPDATE",
-        [parsed.competence]
-      );
-      const current = goals[0];
-      const manualGoal = current && storedText(current.sourceKind) !== "import";
-      if (!manualGoal) {
-        await connection.execute(
-          "INSERT INTO v2_lead_goals (competence,goal,updatedBy,sourceKind,sourceImportId) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE goal=VALUES(goal),updatedBy=VALUES(updatedBy),sourceKind=VALUES(sourceKind),sourceImportId=VALUES(sourceImportId),updatedAt=CURRENT_TIMESTAMP",
-          [parsed.competence, parsed.total, actor.id, "import", importId]
-        );
-        await connection.execute(
-          "INSERT INTO v2_goal_audit (competence,oldGoal,newGoal,accountId) VALUES (?,?,?,?)",
-          [
-            parsed.competence,
-            current?.goal == null ? null : Number(current.goal),
-            parsed.total,
-            actor.id,
-          ]
-        );
-      }
-    }
     await connection.commit();
     return {
-      importId,
-      alreadyImported: false,
-      total: parsed.total,
-      rows: mapped.rows.length,
-      warnings: parsed.warnings,
+      lead: leadResult,
+      sales: salesResult,
+      alreadyImported:
+        leadResult.alreadyImported && salesResult.alreadyImported,
     };
   } catch (error) {
     await connection.rollback();
@@ -774,7 +1059,8 @@ function emptyWorkRow(
   dealer: string,
   state: string,
   canonical: string | null,
-  leads = 0
+  leads = 0,
+  registryExtra = false
 ): WorkRow {
   const aliases = [...new Set([dealer, ...(canonical ? [canonical] : [])])];
   return {
@@ -788,6 +1074,7 @@ function emptyWorkRow(
     aliases,
     aliasKeys: aliases.map(normalizeCommercialText),
     canonical,
+    ...(registryExtra ? { registryExtra: true } : {}),
   };
 }
 
@@ -808,6 +1095,12 @@ function buildWork(dashboard: V2Dashboard, filters: V2Filters): WorkRow[] {
     : null;
   const includeAllOfficial = !filters.dealer;
   const officialMap = new Map<string, WorkRow>();
+  const extraRegistry = new Map(
+    (dashboard.dealerRegistry ?? [])
+      .filter(dealer => !canonicalDealer(dealer.name))
+      .map(dealer => [normalizeCommercialText(dealer.name), dealer] as const)
+  );
+  const extraMap = new Map<string, WorkRow>();
   const unmatched = new Map<string, WorkRow>();
 
   for (const raw of dashboard.dealerPerformance.rows) {
@@ -826,6 +1119,32 @@ function buildWork(dashboard: V2Dashboard, filters: V2Filters): WorkRow[] {
             registration?.state ?? raw.state ?? "Não informado",
             canonical,
             raw.leads
+          )
+        );
+      continue;
+    }
+    const registeredExtra = extraRegistry.get(
+      normalizeCommercialText(raw.dealer)
+    );
+    if (registeredExtra) {
+      if (
+        filters.dealer &&
+        normalizeCommercialText(registeredExtra.name) !==
+          normalizeCommercialText(filters.dealer)
+      )
+        continue;
+      const key = normalizeCommercialText(registeredExtra.name);
+      const current = extraMap.get(key);
+      if (current) addWorkRow(current, raw);
+      else
+        extraMap.set(
+          key,
+          emptyWorkRow(
+            registeredExtra.name,
+            registeredExtra.state ?? raw.state ?? "Não informado",
+            null,
+            raw.leads,
+            true
           )
         );
       continue;
@@ -850,7 +1169,25 @@ function buildWork(dashboard: V2Dashboard, filters: V2Filters): WorkRow[] {
       officialMap.get(dealer.name) ??
       emptyWorkRow(dealer.name, dealer.state, dealer.name)
   );
-  return [...officialRows, ...unmatched.values()];
+  const extraRows = [...extraRegistry.values()]
+    .filter(
+      dealer =>
+        !filters.dealer ||
+        normalizeCommercialText(dealer.name) ===
+          normalizeCommercialText(filters.dealer)
+    )
+    .map(
+      dealer =>
+        extraMap.get(normalizeCommercialText(dealer.name)) ??
+        emptyWorkRow(
+          dealer.name,
+          dealer.state ?? "Não informado",
+          null,
+          0,
+          true
+        )
+    );
+  return [...officialRows, ...extraRows, ...unmatched.values()];
 }
 
 function hasTarget(row: WorkRow, target: string): boolean {
@@ -887,7 +1224,10 @@ function collectiveMatches(work: WorkRow[], targets: string[]): WorkRow[] {
   });
 }
 
-function sourceTargets(source: CommercialSourceRow): string[] {
+function sourceTargets(
+  source: CommercialSourceRow,
+  registryExtras: readonly { name: string; state: string | null }[] = []
+): string[] {
   if (isExplicitlyUnmappedCommercialLabel(source.sourceLabel)) return [];
   const registered = [
     ...new Set(resolveCommercialDealers(source.sourceLabel, source.state)),
@@ -903,6 +1243,12 @@ function sourceTargets(source: CommercialSourceRow): string[] {
       registered.every(target => explicit.includes(target));
     return sameRegisteredSet ? registered : explicit;
   }
+  const dynamic = registryExtras.find(
+    dealer =>
+      normalizeCommercialText(dealer.name) ===
+      normalizeCommercialText(source.sourceLabel)
+  );
+  if (dynamic) return [dynamic.name];
   return registered;
 }
 
@@ -985,6 +1331,7 @@ function buildCommercialRows(
   ];
   const unmapped: CommercialUnmappedRow[] = [];
   const groupedGoals: V2CommercialGroupRecord[] = [];
+  const registryExtras = dashboard.dealerRegistry ?? [];
   const work = buildWork(dashboard, filters);
   if (
     globalScope &&
@@ -1001,7 +1348,7 @@ function buildCommercialRows(
     source: CommercialSourceRow
   ): void => {
     if (kind === "sales" && source.value === null) return;
-    const targets = sourceTargets(source);
+    const targets = sourceTargets(source, registryExtras);
     if (!targets.length) {
       if (isExplicitlyUnmappedCommercialLabel(source.sourceLabel))
         warnings.push(
@@ -1210,8 +1557,13 @@ export function buildOfficialCommercialPerformance(
         ? row.sales / row.leads
         : null;
   const outputRows = built.work.map(
-    ({ aliases: _aliases, aliasKeys: _keys, canonical: _canonical, ...row }) =>
-      row
+    ({
+      aliases: _aliases,
+      aliasKeys: _keys,
+      canonical: _canonical,
+      registryExtra: _registryExtra,
+      ...row
+    }) => row
   );
   const leadsTotal = built.work.reduce((sum, row) => sum + row.leads, 0);
   const leadGoalTotal =
@@ -1261,7 +1613,7 @@ export function buildOfficialCommercialPerformance(
     unmapped: built.unmapped,
     groupedGoals: built.groupedGoals,
     unreconciledDealers: built.work
-      .filter(row => row.canonical === null)
+      .filter(row => row.canonical === null && !row.registryExtra)
       .map(row => ({ sourceLabel: row.dealer, leads: row.leads })),
     generalRegistrationMTD,
     salesGoalOrigin: globallyComparable

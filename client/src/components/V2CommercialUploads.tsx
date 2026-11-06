@@ -1,5 +1,10 @@
 import { trpc } from "@/lib/trpc";
 import { getDashboardCutoffDate } from "@shared/dashboardDates";
+import type {
+  CommercialStatusFile,
+  CommercialUploadKind,
+} from "@shared/v2Commercial";
+import V2CombinedGoalsUpload from "./V2CombinedGoalsUpload";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -20,20 +25,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-type UploadKind = "lead-goals" | "sales-goals" | "sales";
-
-type StatusFile = {
-  id: number | null;
-  kind: UploadKind;
-  configured: boolean;
-  fileName: string | null;
-  total: number | null;
-  asOf: string | null;
-  sourceWeek?: number | null;
-  importedAt: string | null;
-  rows: number;
-  warnings: string[];
-};
+type UploadKind = CommercialUploadKind;
+type DraftKind = "sales";
 
 type PreviewRow = {
   key: string;
@@ -69,7 +62,7 @@ type Draft = {
 };
 
 type SourceConfig = {
-  kind: UploadKind;
+  kind: DraftKind;
   title: string;
   eyebrow: string;
   previewValueLabel: string;
@@ -77,20 +70,8 @@ type SourceConfig = {
 
 const SOURCE_CONFIGS: SourceConfig[] = [
   {
-    kind: "lead-goals",
-    title: "Meta de Leads",
-    eyebrow: "LeadGoals",
-    previewValueLabel: "Meta",
-  },
-  {
-    kind: "sales-goals",
-    title: "Meta de Vendas",
-    eyebrow: "SalesGoals",
-    previewValueLabel: "Meta",
-  },
-  {
     kind: "sales",
-    title: "Atual Vendas",
+    title: "Atualizar vendas",
     eyebrow: "Vendas por dealer · WEEKLY_REG",
     previewValueLabel: "Vendas",
   },
@@ -197,7 +178,7 @@ function SourceCard({
   onRemove,
 }: {
   config: SourceConfig;
-  status: StatusFile | null;
+  status: CommercialStatusFile | null;
   draft: Draft;
   selectedMonth: string;
   cutoff: string;
@@ -556,7 +537,8 @@ export default function V2CommercialUploads({
     initialDrafts(competence)
   );
   const [readingKind, setReadingKind] = useState<UploadKind | null>(null);
-  const [removalTarget, setRemovalTarget] = useState<StatusFile | null>(null);
+  const [removalTarget, setRemovalTarget] =
+    useState<CommercialStatusFile | null>(null);
   const monthTouched = useRef(false);
   const cutoff = useMemo(() => getDashboardCutoffDate(), []);
   const utils = trpc.useUtils();
@@ -901,14 +883,14 @@ export default function V2CommercialUploads({
           />
         </label>
         <p className="max-w-xl text-[11px] leading-5 text-slate-500">
-          Cada fonte é importada separadamente. O arquivo fica somente em
-          memória até a confirmação; a tela usa exclusivamente o retorno da API
-          autenticada.
+          Metas de Leads e Vendas usam um único arquivo. O arquivo fica somente
+          em memória até a confirmação; a tela usa exclusivamente o retorno da
+          API autenticada.
         </p>
       </div>
       {statusQuery.isLoading ? (
         <p role="status" className="mt-3 text-xs text-slate-500">
-          Carregando status das três fontes…
+          Carregando status das fontes comerciais…
         </p>
       ) : null}
       {statusQuery.error ? (
@@ -930,7 +912,16 @@ export default function V2CommercialUploads({
           </button>
         </div>
       ) : null}
-      <div className="mt-4 grid gap-3 lg:grid-cols-3">
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        <V2CombinedGoalsUpload
+          competence={selectedMonth}
+          canManage={canManage}
+          onUpdated={onUpdated}
+          statusFiles={files}
+          onRemove={status => {
+            if (status.id != null) setRemovalTarget(status);
+          }}
+        />
         {SOURCE_CONFIGS.map(config => (
           <SourceCard
             key={config.kind}
@@ -1001,7 +992,9 @@ export default function V2CommercialUploads({
                 <dl className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs leading-5 text-slate-700">
                   <div className="flex gap-2">
                     <dt className="font-bold">Arquivo:</dt>
-                    <dd className="break-all">{removalTarget?.fileName ?? "—"}</dd>
+                    <dd className="break-all">
+                      {removalTarget?.fileName ?? "—"}
+                    </dd>
                   </div>
                   <div className="flex gap-2">
                     <dt className="font-bold">Competência:</dt>
@@ -1033,7 +1026,9 @@ export default function V2CommercialUploads({
               }}
               className="bg-[#e2212d] text-white hover:bg-[#c91c28]"
             >
-              {removeMutation.isPending ? "Removendo…" : "Remover arquivo ativo"}
+              {removeMutation.isPending
+                ? "Removendo…"
+                : "Remover arquivo ativo"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

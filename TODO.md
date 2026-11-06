@@ -158,3 +158,20 @@ Identidade validada: SVGs com proporção original, favicons íntegros e servido
 - [x] Adicionar Atualizar base de Leads junto a Atualizar metas no pacing. Reexecutar a consulta autenticada do dashboard e do acumulado mensal na base já importada, com estado de carregamento, sucesso/erro e preservação dos filtros e metas. Não afirmar sincronização com planilha externa nem nova importação quando ocorrer somente releitura do banco.
 
 Validação final desta entrega: 186 testes, TypeScript e build aprovados; Prévia HTTP 200. Perfil BBRO disponível sem criação de senha ou conta inexistente. Código aceito no repositório Manus, sem transferência GitHub nem publicação automática.
+
+## Unidades EM BREVE na tabela comercial
+
+- [ ] Não exibir unidades cuja denominação oficial contenha EM BREVE na tabela Vendas e metas por concessionária da Visão Geral, inclusive ao buscar/ordenar. Preservar cadastro completo, origens, metas coletivas, Leads, validações e totais gerais; não alterar a planilha CRM ou outras abas por esta solicitação. Salvar no Manus, mantendo transferência GitHub cancelada e publicação automática desativada.
+
+## Correção dos filtros de datas
+
+- [x] Atalhos 7/14/30/60 dias, Mês e Mês passado atualizam os campos e aplicam imediatamente o período na consulta, sem manter resultados do período antigo sob um atalho novo. Buscar aplica as datas escolhidas manualmente, preservando demais filtros e limite D-1; validar datas inválidas/invertidas com mensagem e preservar a competência mensal do pacing independentemente do período geral.
+
+## Upload único de metas comerciais
+
+- [x] Um único campo XLSX para o novo padrão de metas de Leads e metas de Vendas por concessionária, com competência, prévia dos dois totais/de-para e confirmação única. Gravar as duas fontes atomicamente e auditar, sem duplicar metas coletivas ou repetir arquivo idêntico. Preservar regras existentes de metas manuais e não importar automaticamente o arquivo usado como modelo.
+- [x] Manter Atualizar vendas como upload separado para o FUP mais recente, com WEEKLY_REG por loja e MTD Registration para o geral; preservar arquivos/histórico atuais até confirmar novo upload e manter permissões administrativas (Cliente/BBRO sem upload).
+
+- [x] Na confirmação de metas ou FUP, cadastrar novos dealers identificáveis no arquivo em registro persistente, usando a mesma transação da importação, sem duplicar aliases/unidades existentes. Exibir novos candidatos no preview, sem gravar antecipadamente. Manter grupos/coletivos sem virar loja ou rateio fictício; preservar rótulos, UF válida, origem e auditoria. Contabilizar novas unidades no dashboard/comercial/filtros sem inventar Leads ou status CRM; manter o escopo CRM/BBRO de 40 lojas.
+
+Validação técnica desta entrega: 218 testes em 33 arquivos, TypeScript e build aprovados. Preview do modelo validado sem importação; cadastro extra vazio e metas manuais 16.600/660 preservadas. Confirmação do checkpoint pendente de registro pelo Manus.

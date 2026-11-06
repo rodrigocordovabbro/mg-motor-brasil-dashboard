@@ -135,10 +135,10 @@ describe("general MTD Registration parser", () => {
     );
   });
 
-  it("warns and returns null when a generic sales workbook has no DAILY_FUP", async () => {
+  it("warns and returns null when WEEKLY_REG has no DAILY_FUP", async () => {
     const base64 = await workbookBase64(workbook => {
-      const sales = workbook.addWorksheet("Sales");
-      sales.addRow(["Dealer", "Sales"]);
+      const sales = workbook.addWorksheet("WEEKLY_REG");
+      sales.addRow(["CUSTOMER_NAME", "W1_Reg"]);
       sales.addRow(["Dealer A", 0]);
     });
 
@@ -155,4 +155,24 @@ describe("general MTD Registration parser", () => {
     expect(parsed.total).toBe(0);
     expect(parsed.warnings.join(" ")).toContain("DAILY_FUP");
   });
+});
+
+it("rejects DAILY_FUP plus an unrelated generic dealer-sales sheet without WEEKLY_REG", async () => {
+  const base64 = await workbookBase64(workbook => {
+    const daily = workbook.addWorksheet("DAILY_FUP");
+    daily.addRow(["MTD Registration"]);
+    daily.addRow([43]);
+    const generic = workbook.addWorksheet("Sales");
+    generic.addRow(["Dealer", "Sales"]);
+    generic.addRow(["Dealer A", 999]);
+  });
+  await expect(
+    parseCommercialWorkbook(
+      "sales",
+      "2026-11",
+      "2026-11-04",
+      "261105_FUP.xlsx",
+      base64
+    )
+  ).rejects.toThrow("WEEKLY_REG");
 });

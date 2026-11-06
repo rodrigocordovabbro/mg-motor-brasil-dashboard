@@ -2,6 +2,7 @@ import JSZip from "jszip";
 import { createHash } from "node:crypto";
 import ExcelJS from "exceljs";
 import type {
+  CombinedGoalsUploadInput,
   CommercialSourceRow,
   CommercialUploadKind,
 } from "../shared/v2Commercial";
@@ -29,6 +30,24 @@ export type ParsedCommercialWorkbook = {
   registrationAsOf?: string | null;
   /** Fixed source sheet for the optional registration snapshot. */
   sourceSheet?: string;
+};
+
+export type CombinedGoalsParsedRow = {
+  key: string;
+  sourceLabel: string;
+  state: string | null;
+  leadGoal: number | null;
+  salesGoal: number | null;
+};
+
+export type ParsedCombinedGoalsWorkbook = {
+  competence: string;
+  fileName: string;
+  fileSha256: string;
+  rows: CombinedGoalsParsedRow[];
+  leadTotal: number | null;
+  salesTotal: number | null;
+  warnings: string[];
 };
 
 type HeaderInfo = {
@@ -710,6 +729,98 @@ function parseGenericRows(
   return { rows, total: total ?? (hasValue ? sum : null), warnings: [] };
 }
 
+/**
+ * The combined goals model is deliberately narrower than either legacy
+ * commercial parser. In particular, SALES means the sales-goal column here;
+ * it is never a fallback for the legacy `sales-goals` or `sales` imports.
+ */
+function parseCombinedGoalsRows(workbook: ExcelJS.Workbook): {
+  rows: CombinedGoalsParsedRow[];
+  leadTotal: number | null;
+  salesTotal: number | null;
+  warnings: string[];
+} {
+  const found = findSheetWithHeader(workbook, [
+    ["dealer"],
+    ["total dealer"],
+    ["sales"],
+  ]);
+  if (!found)
+    fail("a tabela combinada precisa conter DEALER, TOTAL DEALER e SALES.");
+
+  const dealerColumn = firstColumn(found.header, ["dealer"]);
+  const leadColumn = firstColumn(found.header, ["total dealer"]);
+  const salesColumn = firstColumn(found.header, ["sales"]);
+  if (!dealerColumn || !leadColumn || !salesColumn)
+    fail("o cabeçalho da tabela combinada está incompleto.");
+
+  const rows: CombinedGoalsParsedRow[] = [];
+  let explicitLeadTotal: number | null = null;
+  let explicitSalesTotal: number | null = null;
+  let hasLeadValue = false;
+  let hasSalesValue = false;
+  let leadSum = 0;
+  let salesSum = 0;
+
+  for (
+    let rowNumber = found.header.rowNumber + 1;
+    rowNumber <= found.worksheet.rowCount;
+    rowNumber++
+  ) {
+    if (
+      !rowHasData(found.worksheet, rowNumber, [
+        dealerColumn,
+        leadColumn,
+        salesColumn,
+      ])
+    )
+      continue;
+    const sourceLabel = textOf(
+      cellValue(found.worksheet.getCell(rowNumber, dealerColumn))
+    );
+    if (!sourceLabel.trim()) continue;
+
+    const leadGoal = parseInteger(
+      cellValue(found.worksheet.getCell(rowNumber, leadColumn)),
+      `TOTAL DEALER na linha ${rowNumber}`
+    );
+    const salesGoal = parseInteger(
+      cellValue(found.worksheet.getCell(rowNumber, salesColumn)),
+      `SALES na linha ${rowNumber}`
+    );
+    if (isTotalLabel(sourceLabel)) {
+      explicitLeadTotal = leadGoal;
+      explicitSalesTotal = salesGoal;
+      break;
+    }
+
+    if (leadGoal != null) {
+      leadSum += leadGoal;
+      hasLeadValue = true;
+    }
+    if (salesGoal != null) {
+      salesSum += salesGoal;
+      hasSalesValue = true;
+    }
+    rows.push({
+      key: `${found.worksheet.name}:${rowNumber}`,
+      sourceLabel,
+      state: sourceState(sourceLabel),
+      leadGoal,
+      salesGoal,
+    });
+  }
+
+  if (!rows.length)
+    fail("nenhuma linha de dealer foi encontrada na tabela combinada.");
+  return {
+    rows,
+    leadTotal: explicitLeadTotal ?? (hasLeadValue ? leadSum : null),
+    salesTotal: explicitSalesTotal ?? (hasSalesValue ? salesSum : null),
+    warnings: [],
+  };
+}
+
 async function compatibleSpreadsheetPackage(buffer: Buffer): Promise<Buffer> {
   const zip = await JSZip.loadAsync(buffer);
   let changed = false;
@@ -742,6 +853,46 @@ async function compatibleSpreadsheetPackage(buffer: Buffer): Promise<Buffer> {
     : buffer;
 }
 
+async function loadCommercialWorkbook(
+  buffer: Buffer
+): Promise<ExcelJS.Workbook> {
+  const workbook = new ExcelJS.Workbook();
+  try {
+    await workbook.xlsx.load(
+      (await compatibleSpreadsheetPackage(buffer)) as unknown as Parameters<
+        typeof workbook.xlsx.load
+      >[0]
+    );
+  } catch {
+    fail("não pôde ser lido como XLSX.");
+  }
+  return workbook;
+}
+
+export async function parseCombinedGoalsUpload(
+  input: CombinedGoalsUploadInput
+): Promise<ParsedCombinedGoalsWorkbook> {
+  parseCompetence(input.competence);
+  if (
+    !input.fileName ||
+    input.fileName.length > 255 ||
+    !/\.xlsx$/i.test(input.fileName)
+  )
+    fail("o nome deve identificar um arquivo .xlsx.");
+  const buffer = decodeCommercialWorkbookBase64(input.base64);
+  const workbook = await loadCommercialWorkbook(buffer);
+  const result = parseCombinedGoalsRows(workbook);
+  return {
+    competence: input.competence,
+    fileName: input.fileName,
+    fileSha256: createHash("sha256").update(buffer).digest("hex"),
+    rows: result.rows,
+    leadTotal: result.leadTotal,
+    salesTotal: result.salesTotal,
+    warnings: result.warnings,
+  };
+}
+
 export async function parseCommercialWorkbook(
   kind: CommercialUploadKind,
   competence: string,
@@ -759,16 +910,7 @@ export async function parseCommercialWorkbook(
   if (!fileName || fileName.length > 255 || !/\.xlsx$/i.test(fileName))
     fail("o nome deve identificar um arquivo .xlsx.");
   const buffer = decodeCommercialWorkbookBase64(base64);
-  const workbook = new ExcelJS.Workbook();
-  try {
-    await workbook.xlsx.load(
-      (await compatibleSpreadsheetPackage(buffer)) as unknown as Parameters<
-        typeof workbook.xlsx.load
-      >[0]
-    );
-  } catch {
-    fail("não pôde ser lido como XLSX.");
-  }
+  const workbook = await loadCommercialWorkbook(buffer);
   let result: {
     rows: CommercialSourceRow[];
     total: number | null;
@@ -776,22 +918,11 @@ export async function parseCommercialWorkbook(
   };
   if (kind === "lead-goals") result = parseLeadGoals(workbook);
   else if (kind === "sales") {
-    const weekly = findWeeklyRegSheet(workbook);
-    if (weekly) {
-      result = parseWeeklyRegSales(workbook, selectedSourceWeek as number);
-    } else {
-      const generic = findSheetWithHeader(workbook, [
-        DEALER_ALIASES,
-        SALES_ALIASES,
-      ]);
-      const daily = findDailyFupSheet(workbook);
-      if (daily && (!generic || generic.worksheet === daily)) {
-        fail(
-          "DAILY_FUP não é uma fonte de vendas por concessionária; envie a aba WEEKLY_REG com CUSTOMER_NAME e W1_Reg até W6_Reg."
-        );
-      }
-      result = parseGenericRows(workbook, kind);
-    }
+    if (!findWeeklyRegSheet(workbook))
+      fail(
+        "Envie a aba WEEKLY_REG com CUSTOMER_NAME e W1_Reg até W6_Reg; outras abas não são fontes de vendas por concessionária."
+      );
+    result = parseWeeklyRegSales(workbook, selectedSourceWeek as number);
   } else result = parseGenericRows(workbook, kind);
   const registration =
     kind === "sales"

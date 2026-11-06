@@ -11,6 +11,7 @@ export type V2Filters = {
   page?: number;
 };
 export type V2Count = { label: string; count: number };
+export type V2DealerRegistryItem = { name: string; state: string | null };
 export type V2CommercialGroupRecord = {
   kind: "lead-goals" | "sales-goals" | "sales";
   key: string;
@@ -64,6 +65,8 @@ export type V2Dashboard = {
     campaigns: string[];
     dealers: string[];
   };
+  /** Official 41 units plus confirmed-upload extras; raw Lead labels stay unchanged. */
+  dealerRegistry?: V2DealerRegistryItem[];
   summary: {
     total: number;
     models: number;

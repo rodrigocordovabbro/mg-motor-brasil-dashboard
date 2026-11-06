@@ -81,6 +81,8 @@ beforeEach(() => {
   const execute = vi.fn(async (sql: string, args: any[] = []) => {
     if (sql.startsWith("SELECT DISTINCT BINARY dealer"))
       return [[{ dealer: "Stefanini Campinas", state: "SP" }], []];
+    if (sql.startsWith("SELECT id,label,normalizedKey,state,sourceImportId"))
+      return [[], []];
     if (sql.includes("WHERE i.kind=? AND i.competence=? AND i.fileSha256=?"))
       return [
         mock.imports.filter(

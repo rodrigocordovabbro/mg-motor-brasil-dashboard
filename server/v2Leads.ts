@@ -9,13 +9,16 @@ import {
   resolveOfficialModel,
 } from "../shared/modelRegistry";
 import {
-  OFFICIAL_DEALERS,
-  resolveOfficialDealer,
-  officialDealer,
-} from "../shared/dealerRegistry";
+  combinedDealerRegistry,
+  dealerRegistryList,
+  findDealerRegistryEntry,
+  resolveRegisteredDealer,
+  type ExtraDealerRegistryEntry,
+} from "../shared/dealerRegistryExtensions";
 import { getCommercialPerformance } from "./v2Commercial";
 import type { RowDataPacket } from "mysql2/promise";
 import { getV2Pool, getV2Goal } from "./v2Db";
+import { readExtraDealerRegistry } from "./v2DealerRegistry";
 import { addIsoDays, resolveDashboardPeriod } from "../shared/dashboardDates";
 import type {
   V2Dashboard,
@@ -25,7 +28,11 @@ import type {
   V2Pacing,
 } from "../shared/v2Types";
 
-export function countBy(rows: V2Lead[], key: keyof V2Lead): V2Count[] {
+export function countBy(
+  rows: V2Lead[],
+  key: keyof V2Lead,
+  extraDealers: readonly ExtraDealerRegistryEntry[] = []
+): V2Count[] {
   const map = new Map<string, number>();
   rows.forEach(row => {
     const value =
@@ -34,7 +41,7 @@ export function countBy(rows: V2Lead[], key: keyof V2Lead): V2Count[] {
           ? "Não informado"
           : `${String(row.hour).padStart(2, "0")}h`
         : key === "dealer"
-          ? (resolveOfficialDealer(row.dealer) ?? row.dealer)
+          ? (resolveRegisteredDealer(row.dealer, extraDealers) ?? row.dealer)
           : key === "model"
             ? groupedModelLabel(row.model)
             : key === "state"
@@ -95,7 +102,8 @@ const known = (values: V2Count[]) =>
 /** The one canonical dimension/search predicate used by dashboard and dispatch. */
 export function matchesV2LeadFilters(
   row: V2Lead,
-  input: Pick<V2Filters, "model" | "channel" | "campaign" | "dealer" | "search">
+  input: Pick<V2Filters, "model" | "channel" | "campaign" | "dealer" | "search">,
+  extraDealers: readonly ExtraDealerRegistryEntry[] = []
 ): boolean {
   const lowerSearch = input.search?.toLocaleLowerCase("pt-BR");
   return (
@@ -106,7 +114,7 @@ export function matchesV2LeadFilters(
     (!input.campaign || row.campaign === input.campaign) &&
     (!input.dealer ||
       row.dealer === input.dealer ||
-      resolveOfficialDealer(row.dealer) === input.dealer) &&
+      resolveRegisteredDealer(row.dealer, extraDealers) === input.dealer) &&
     (!lowerSearch ||
       [
         row.name,
@@ -115,7 +123,7 @@ export function matchesV2LeadFilters(
         row.channel,
         row.campaign,
         row.dealer,
-        resolveOfficialDealer(row.dealer) ?? "",
+        resolveRegisteredDealer(row.dealer, extraDealers) ?? "",
         row.city,
         row.state,
         resolveBrazilianState(row.state)?.name ?? "",
@@ -127,14 +135,15 @@ export function matchesV2LeadFilters(
 export function filterV2LeadRows(
   rows: V2Lead[],
   input: V2Filters,
-  now = new Date()
+  now = new Date(),
+  extraDealers: readonly ExtraDealerRegistryEntry[] = []
 ): V2Lead[] {
   const period = resolveDashboardPeriod(input.dateFrom, input.dateTo, now);
   return rows.filter(
     row =>
       row.date >= period.dateFrom &&
       row.date <= period.dateTo &&
-      matchesV2LeadFilters(row, input)
+      matchesV2LeadFilters(row, input, extraDealers)
   );
 }
 
@@ -184,18 +193,20 @@ export function aggregateV2Leads(
   input: V2Filters,
   goal: number | null,
   source: V2Dashboard["source"],
-  now = new Date()
+  now = new Date(),
+  extraDealers: readonly ExtraDealerRegistryEntry[] = []
 ): V2Dashboard {
   const period = resolveDashboardPeriod(input.dateFrom, input.dateTo, now);
   const baseRows = all.filter(
     row => row.date >= period.dateFrom && row.date <= period.dateTo
   );
-  const rows = filterV2LeadRows(all, input, now);
+  const rows = filterV2LeadRows(all, input, now, extraDealers);
   const monthFrom = `${period.dateTo.slice(0, 7)}-01`;
   const mtdRows = filterV2LeadRows(
     all,
     { ...input, dateFrom: monthFrom, dateTo: period.dateTo },
-    now
+    now,
+    extraDealers
   );
   // A global monthly goal is not compared with a single-channel/model/dealer subset.
   const narrowed = Boolean(
@@ -214,7 +225,7 @@ export function aggregateV2Leads(
     models = countBy(rows, "model"),
     states = countBy(rows, "state"),
     cities = countBy(rows, "city"),
-    dealers = countBy(rows, "dealer"),
+    dealers = countBy(rows, "dealer", extraDealers),
     hours = countBy(rows, "hour");
   const dailyMap = new Map<
     string,
@@ -250,7 +261,7 @@ export function aggregateV2Leads(
   const dealerRows = dealers.map(item => ({
     dealer: item.label,
     state:
-      officialDealer(item.label)?.state ??
+      findDealerRegistryEntry(item.label, extraDealers)?.state ??
       rows.find(row => row.dealer === item.label)?.state ??
       "Não informado",
     leads: item.count,
@@ -274,11 +285,12 @@ export function aggregateV2Leads(
       campaigns: countBy(baseRows, "campaign").map(v => v.label),
       dealers: [
         ...new Set([
-          ...OFFICIAL_DEALERS.map(dealer => dealer.name),
-          ...countBy(baseRows, "dealer").map(v => v.label),
+          ...combinedDealerRegistry(extraDealers).map(dealer => dealer.name),
+          ...countBy(baseRows, "dealer", extraDealers).map(v => v.label),
         ]),
       ],
     },
+    dealerRegistry: dealerRegistryList(extraDealers),
     summary: {
       total: rows.length,
       models: models.filter(
@@ -381,11 +393,14 @@ export async function getV2Dashboard(input: V2Filters) {
     source.invalidDateRows = Number(sourceRows[0].invalidDateRows);
   }
   const rows = await readV2LeadsForPeriod(from, period.dateTo);
+  const extraDealers = await readExtraDealerRegistry();
   const dashboard = aggregateV2Leads(
     rows,
     input,
     await getV2Goal(period.dateTo.slice(0, 7)),
-    source
+    source,
+    new Date(),
+    extraDealers
   );
   return {
     ...dashboard,

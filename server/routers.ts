@@ -6,6 +6,8 @@ import {
 import { getV2SalesTotalGoal, saveV2SalesTotalGoal } from "./v2SalesGoal";
 import {
   previewCommercialUpload,
+  previewCombinedGoalsUpload,
+  commitCombinedGoalsUpload,
   commitCommercialUpload,
   readCommercialStatus,
   removeCommercialSource,
@@ -86,6 +88,11 @@ const commercialUpload = z.object({
   competence,
   asOf: date.optional(),
   sourceWeek: z.number().int().min(1).max(6).optional(),
+  fileName: z.string().min(1).max(255),
+  base64: z.string().min(1).max(1400000),
+});
+const combinedGoalsUpload = z.object({
+  competence,
   fileName: z.string().min(1).max(255),
   base64: z.string().min(1).max(1400000),
 });
@@ -301,6 +308,20 @@ export const appRouter = router({
     status: adminProcedure
       .input(z.object({ competence }))
       .query(({ input }) => readCommercialStatus(input.competence)),
+    previewGoals: adminProcedure
+      .input(combinedGoalsUpload)
+      .mutation(({ input }) => previewCombinedGoalsUpload(input)),
+    commitGoals: adminProcedure
+      .input(
+        combinedGoalsUpload.extend({
+          mappings: z
+            .record(z.string(), z.array(z.string().max(250)).max(500))
+            .optional(),
+        })
+      )
+      .mutation(({ ctx, input }) =>
+        commitCombinedGoalsUpload(input, ctx.v2User)
+      ),
     preview: adminProcedure
       .input(commercialUpload)
       .mutation(({ input }) => previewCommercialUpload(input)),

@@ -1,3 +1,4 @@
+import { showDealerInCommercialTable } from "@shared/dealerPresentation";
 import type { UserRole } from "@shared/accountRoles";
 import {
   LEAD_PERIOD_PRESETS,
@@ -23,7 +24,7 @@ import {
   getDashboardCutoffDate,
   resolveDashboardPeriod,
 } from "@shared/dashboardDates";
-import { officialDealer } from "@shared/dealerRegistry";
+import { normalizeDealerKey, officialDealer } from "@shared/dealerRegistry";
 import type { RegionalModelDistribution } from "@shared/regionalTypes";
 import type { V2Count, V2Dashboard, V2Filters, V2Lead } from "@shared/v2Types";
 import {
@@ -400,6 +401,7 @@ function FilterBar({
   onPreset,
   isFetching,
   clientMode,
+  pendingChanges,
 }: {
   draft: V2DashboardFilters;
   setDraft: (next: V2DashboardFilters) => void;
@@ -411,131 +413,149 @@ function FilterBar({
   onPreset: (preset: string) => void;
   isFetching: boolean;
   clientMode: boolean;
+  pendingChanges: boolean;
 }) {
   const update = (key: keyof V2DashboardFilters, value: string) =>
-    setDraft({ ...draft, [key]: value || undefined, page: 1 });
+    setDraft({
+      ...draft,
+      [key]:
+        key === "dateFrom" || key === "dateTo" ? value : value || undefined,
+      page: 1,
+    });
   return (
     <Card className="overflow-hidden">
-      <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex items-center gap-2">
-          <Filter className="h-4 w-4 text-[#e2212d]" aria-hidden="true" />
-          <h2 className="text-sm font-bold text-slate-900">Filtros de leads</h2>
-          <span className="hidden text-xs text-slate-400 sm:inline">
-            Dados encerrados até D-1
-          </span>
-        </div>
-        <div
-          className="flex flex-wrap gap-1.5"
-          role="group"
-          aria-label="Período rápido"
-        >
-          {LEAD_PERIOD_PRESETS.map(preset => (
-            <button
-              key={preset}
-              type="button"
-              onClick={() => onPreset(preset)}
-              className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${selectedPreset === preset ? "bg-red-50 text-[#e2212d]" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"}`}
-            >
-              {preset}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="grid gap-3 px-5 py-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-        <label className="xl:col-span-1">
-          <span className="v2-label">Início</span>
-          <input
-            aria-label="Data inicial"
-            type="date"
-            max={cutoff}
-            value={draft.dateFrom}
-            onChange={event =>
-              update(
-                "dateFrom",
-                event.target.value
-                  ? capDateAtDashboardCutoff(event.target.value)
-                  : ""
-              )
-            }
-            className="v2-input"
-          />
-        </label>
-        <label className="xl:col-span-1">
-          <span className="v2-label">Fim</span>
-          <input
-            aria-label="Data final"
-            type="date"
-            max={cutoff}
-            value={draft.dateTo}
-            onChange={event =>
-              update(
-                "dateTo",
-                event.target.value
-                  ? capDateAtDashboardCutoff(event.target.value)
-                  : ""
-              )
-            }
-            className="v2-input"
-          />
-        </label>
-        <SelectFilter
-          label="Modelo"
-          value={draft.model ?? ""}
-          options={options.models}
-          onChange={value => update("model", value)}
-        />
-        <SelectFilter
-          label="Canal"
-          value={draft.channel ?? ""}
-          options={options.channels}
-          onChange={value => update("channel", value)}
-        />
-        <SelectFilter
-          label="Concessionária"
-          value={draft.dealer ?? ""}
-          options={options.dealers}
-          onChange={value => update("dealer", value)}
-        />
-        <label className="sm:col-span-2 xl:col-span-2">
-          <span className="v2-label">
-            {clientMode ? "Cidade/UF/concessionária" : "Busca"}
-          </span>
-          <div className="relative">
-            <Search
-              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
-              aria-hidden="true"
-            />
-            <input
-              aria-label={
-                clientMode ? "Cidade/UF/concessionária" : "Buscar lead"
-              }
-              value={draft.search ?? ""}
-              onChange={event => update("search", event.target.value)}
-              placeholder={
-                clientMode
-                  ? "Cidade, UF ou concessionária"
-                  : "Nome, cidade ou estado"
-              }
-              className="v2-input pl-9"
-            />
+      <form
+        noValidate
+        onSubmit={event => {
+          event.preventDefault();
+          onSearch();
+        }}
+      >
+        <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-center gap-2">
+            <Filter className="h-4 w-4 text-[#e2212d]" aria-hidden="true" />
+            <h2 className="text-sm font-bold text-slate-900">
+              Filtros de leads
+            </h2>
+            <span className="hidden text-xs text-slate-400 sm:inline">
+              Dados encerrados até D-1
+            </span>
           </div>
-        </label>
-      </div>
-      <div className="flex flex-col gap-2 border-t border-slate-100 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="min-h-5 text-xs text-[#b41b26]">
-          {dateError ??
-            `Limite operacional: ${fullDate(cutoff)} (America/Sao_Paulo)`}
-        </p>
-        <button
-          type="button"
-          onClick={onSearch}
-          disabled={isFetching}
-          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#e2212d] px-5 text-sm font-bold text-white shadow-sm transition hover:bg-[#c91c28] disabled:cursor-wait disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
-        >
-          <Search className="h-4 w-4" />
-          {isFetching ? "Buscando…" : "Buscar"}
-        </button>
-      </div>
+          <div
+            className="flex flex-wrap gap-1.5"
+            role="group"
+            aria-label="Período rápido"
+          >
+            {LEAD_PERIOD_PRESETS.map(preset => (
+              <button
+                key={preset}
+                type="button"
+                onClick={() => onPreset(preset)}
+                aria-pressed={selectedPreset === preset}
+                className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${selectedPreset === preset ? "bg-red-50 text-[#e2212d]" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"}`}
+              >
+                {preset}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="grid gap-3 px-5 py-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+          <label className="xl:col-span-1">
+            <span className="v2-label">Início</span>
+            <input
+              aria-label="Data inicial"
+              type="date"
+              max={cutoff}
+              value={draft.dateFrom}
+              onChange={event =>
+                update(
+                  "dateFrom",
+                  event.target.value
+                    ? capDateAtDashboardCutoff(event.target.value)
+                    : ""
+                )
+              }
+              className="v2-input"
+            />
+          </label>
+          <label className="xl:col-span-1">
+            <span className="v2-label">Fim</span>
+            <input
+              aria-label="Data final"
+              type="date"
+              max={cutoff}
+              value={draft.dateTo}
+              onChange={event =>
+                update(
+                  "dateTo",
+                  event.target.value
+                    ? capDateAtDashboardCutoff(event.target.value)
+                    : ""
+                )
+              }
+              className="v2-input"
+            />
+          </label>
+          <SelectFilter
+            label="Modelo"
+            value={draft.model ?? ""}
+            options={options.models}
+            onChange={value => update("model", value)}
+          />
+          <SelectFilter
+            label="Canal"
+            value={draft.channel ?? ""}
+            options={options.channels}
+            onChange={value => update("channel", value)}
+          />
+          <SelectFilter
+            label="Concessionária"
+            value={draft.dealer ?? ""}
+            options={options.dealers}
+            onChange={value => update("dealer", value)}
+          />
+          <label className="sm:col-span-2 xl:col-span-2">
+            <span className="v2-label">
+              {clientMode ? "Cidade/UF/concessionária" : "Busca"}
+            </span>
+            <div className="relative">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                aria-hidden="true"
+              />
+              <input
+                aria-label={
+                  clientMode ? "Cidade/UF/concessionária" : "Buscar lead"
+                }
+                value={draft.search ?? ""}
+                onChange={event => update("search", event.target.value)}
+                placeholder={
+                  clientMode
+                    ? "Cidade, UF ou concessionária"
+                    : "Nome, cidade ou estado"
+                }
+                className="v2-input pl-9"
+              />
+            </div>
+          </label>
+        </div>
+        <div className="flex flex-col gap-2 border-t border-slate-100 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="min-h-5 text-xs text-[#b41b26]">
+            {dateError ??
+              (pendingChanges
+                ? "Filtros alterados. Clique em Buscar para aplicar."
+                : `Limite operacional: ${fullDate(cutoff)} (America/Sao_Paulo)`)}
+          </p>
+          <button
+            type="submit"
+            disabled={isFetching}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#e2212d] px-5 text-sm font-bold text-white shadow-sm transition hover:bg-[#c91c28] disabled:cursor-wait disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
+          >
+            <Search className="h-4 w-4" />
+            {isFetching ? "Buscando…" : "Buscar"}
+          </button>
+        </div>
+      </form>
     </Card>
   );
 }
@@ -948,6 +968,14 @@ function DealerPerformanceCard({
   canManage: boolean;
 }) {
   const performance = data.dealerPerformance;
+  const lookupDealer = useMemo(
+    () => (label: string) =>
+      officialDealer(label) ??
+      data.dealerRegistry?.find(
+        dealer => normalizeDealerKey(dealer.name) === normalizeDealerKey(label)
+      ),
+    [data.dealerRegistry]
+  );
   const available = performance.available;
   const totals = performance.totals;
   const [dealerSearch, setDealerSearch] = useState("");
@@ -962,7 +990,7 @@ function DealerPerformanceCard({
     const groups = new Map<string, GroupedGoal[]>();
     for (const group of groupedGoals) {
       for (const dealer of group.dealers) {
-        const official = officialDealer(dealer);
+        const official = lookupDealer(dealer);
         const key = official?.name ?? dealer;
         const current = groups.get(key) ?? [];
         current.push(group);
@@ -972,14 +1000,17 @@ function DealerPerformanceCard({
     return groups;
   }, [groupedGoals]);
   const unmatchedLeadRows = useMemo(
-    () => performance.rows.filter(row => !officialDealer(row.dealer)),
-    [performance.rows]
+    () => performance.rows.filter(row => !lookupDealer(row.dealer)),
+    [performance.rows, lookupDealer]
   );
   const displayRows = useMemo<DealerDisplayRow[]>(() => {
     return performance.rows
-      .filter(row => Boolean(officialDealer(row.dealer)))
+      .filter(row => {
+        const dealer = lookupDealer(row.dealer);
+        return dealer ? showDealerInCommercialTable(dealer.name) : false;
+      })
       .map(row => {
-        const official = officialDealer(row.dealer);
+        const official = lookupDealer(row.dealer);
         const labels = new Set(
           official ? (sourceLabels.get(official.name) ?? []) : []
         );
@@ -989,11 +1020,11 @@ function DealerPerformanceCard({
           ...row,
           dealer: official?.name ?? row.dealer,
           state: row.state || official?.state || row.state,
-          official: true,
+          official: Boolean(officialDealer(row.dealer)),
           sourceLabels: Array.from(labels),
         };
       });
-  }, [performance.rows, sourceLabels]);
+  }, [performance.rows, sourceLabels, lookupDealer]);
   const filteredRows = useMemo(
     () =>
       displayRows
@@ -1021,7 +1052,7 @@ function DealerPerformanceCard({
       <CardHeading
         eyebrow="Acompanhamento comercial"
         title="Vendas e metas por concessionária"
-        description="Cadastro oficial conciliado; Leads da mesma base do dashboard, com nomes originais preservados."
+        description="Concessionárias em acompanhamento. Unidades EM BREVE não são exibidas nesta tabela."
         icon={TrendingUp}
         action={
           <span
@@ -1196,7 +1227,7 @@ function DealerPerformanceCard({
         <table className="min-w-[760px] w-full text-left">
           <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.13em] text-slate-500">
             <tr>
-              <th className="px-5 py-3">Unidade oficial / fonte</th>
+              <th className="px-5 py-3">Concessionária / fonte</th>
               <th className="px-4 py-3">UF</th>
               <th className="px-4 py-3 text-right">Leads</th>
               <th className="px-4 py-3 text-right">Meta leads · unidade</th>
@@ -1224,7 +1255,7 @@ function DealerPerformanceCard({
                     >
                       {row.official
                         ? "Cadastro oficial"
-                        : "Fora do cadastro oficial"}
+                        : "Cadastro por arquivo"}
                     </span>
                     {row.sourceLabels.length ? (
                       <details className="mt-1 text-[11px] font-normal text-slate-500">
@@ -1887,7 +1918,9 @@ export default function V2LeadsDashboard({
 
   const choosePreset = (preset: string) => {
     const period = resolveLeadPeriodPreset(preset, cutoff);
-    setDraft(omitLeadCampaign({ ...draft, ...period, page: 1 }));
+    const next = omitLeadCampaign({ ...draft, ...period, page: 1 });
+    setDraft(next);
+    setApplied(next);
     setSelectedPreset(preset);
     setDateError(null);
   };
@@ -1896,7 +1929,9 @@ export default function V2LeadsDashboard({
     try {
       const period = resolveDashboardPeriod(draft.dateFrom, draft.dateTo);
       setDateError(null);
-      setApplied(omitLeadCampaign({ ...draft, ...period, page: 1 }));
+      const next = omitLeadCampaign({ ...draft, ...period, page: 1 });
+      setDraft(next);
+      setApplied(next);
     } catch (error) {
       setDateError(
         error instanceof Error ? error.message : "Confira o intervalo de datas."
@@ -1935,12 +1970,24 @@ export default function V2LeadsDashboard({
           <>
             <FilterBar
               draft={draft}
-              setDraft={setDraft}
+              setDraft={next => {
+                if (
+                  next.dateFrom !== draft.dateFrom ||
+                  next.dateTo !== draft.dateTo
+                )
+                  setSelectedPreset("");
+                setDateError(null);
+                setDraft(next);
+              }}
               options={data.options}
               cutoff={data.period.cutoffDate || cutoff}
               onSearch={applyFilters}
               dateError={dateError}
               selectedPreset={selectedPreset}
+              pendingChanges={
+                JSON.stringify(omitLeadCampaign({ ...draft, page: 1 })) !==
+                JSON.stringify(omitLeadCampaign({ ...applied, page: 1 }))
+              }
               onPreset={choosePreset}
               isFetching={dashboardQuery.isFetching}
               clientMode={clientMode}
