@@ -10,6 +10,8 @@ build/
 # Environment variables
 .env
 .env.local
+.env.*
+!.env.example
 .env.development.local
 .env.test.local
 .env.production.local
@@ -105,6 +107,10 @@ temp/
 *.db
 *.sqlite
 *.sqlite3
+*.xlsx
+*.csv
+*.sql.gz
+private/
 
 # Webdev artifacts (checkpoint zips, migrations, etc.)
 .webdev/

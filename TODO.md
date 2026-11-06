@@ -175,3 +175,8 @@ Validação final desta entrega: 186 testes, TypeScript e build aprovados; Prév
 - [x] Na confirmação de metas ou FUP, cadastrar novos dealers identificáveis no arquivo em registro persistente, usando a mesma transação da importação, sem duplicar aliases/unidades existentes. Exibir novos candidatos no preview, sem gravar antecipadamente. Manter grupos/coletivos sem virar loja ou rateio fictício; preservar rótulos, UF válida, origem e auditoria. Contabilizar novas unidades no dashboard/comercial/filtros sem inventar Leads ou status CRM; manter o escopo CRM/BBRO de 40 lojas.
 
 Validação técnica desta entrega: 218 testes em 33 arquivos, TypeScript e build aprovados. Preview do modelo validado sem importação; cadastro extra vazio e metas manuais 16.600/660 preservadas. Código aceito no repositório Manus. Não foi disponibilizada confirmação separada do registro no histórico de versões; não houve publicação ou transferência GitHub.
+
+## Cópia GitHub documentada autorizada em 06/11/2026
+
+- [ ] Enviar a versão atual pela integração ao repositório indicado pelo usuário, digocordova83-cyber/v2-mgmotor, exclusivamente em dashboard-v2; manter o repositório canônico Manus e não reabrir a transferência canônica cancelada. Não alterar main do dashboard antigo nem fazer force push. Cópia de código sem histórico interno, banco, senhas, contatos, planilhas ou exports.
+- [x] Documentação completa em português: README, instalação, variáveis de ambiente de exemplo sem segredos, arquitetura, regras e cálculos, perfis, SQL/migrations, operação/deploy, contribuição e registro de entrega. Distinguir código enviado, infraestrutura própria e fontes sem sincronização automática; não criar senha padrão ou seed fictício. Validar links internos e conteúdo antes do envio.
