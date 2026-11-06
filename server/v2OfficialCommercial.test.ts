@@ -195,7 +195,7 @@ describe("official commercial performance", () => {
       ])
     );
 
-    expect(performance.rows).toHaveLength(41); // 40 official units + one unmatched raw unit.
+    expect(performance.rows).toHaveLength(42); // 41 official units + one unmatched raw unit.
     expect(performance.totals.leads).toBe(10);
     expect(performance.totals.leadGoal).toBe(722);
     expect(performance.totals.sales).toBe(0);
@@ -221,7 +221,7 @@ describe("official commercial performance", () => {
       performance.unmapped?.some(
         row => row.sourceLabel === "SINAL AV INDIANOPOLIS"
       )
-    ).toBe(true);
+    ).toBe(false);
     expect(
       performance.rows.find(row => row.dealer === "Sinal Av Indianopolis")
         ?.salesGoal
@@ -473,4 +473,24 @@ it("preserva meta de vendas vazia como null e meta zero como zero real", () => {
   expect(
     result.rows.find(row => row.dealer === "Stefanini Piracicaba")?.salesGoal
   ).toBe(0);
+});
+
+it("vincula a meta autorizada de Indianópolis sem alterar a meta de Europa", () => {
+  const result = buildOfficialCommercialPerformance(
+    dashboard(),
+    filters,
+    new Map([
+      [
+        "sales-goals",
+        stored("sales-goals", [row("new", "SINAL AV INDIANOPOLIS", 7)], 7),
+      ],
+    ])
+  );
+  expect(
+    result.rows.find(row => row.dealer === "Sinal Av. Indianópolis")?.salesGoal
+  ).toBe(7);
+  expect(
+    result.rows.find(row => row.dealer === "Sinal Av. Europa")?.salesGoal
+  ).toBeNull();
+  expect(result.unmapped).toEqual([]);
 });

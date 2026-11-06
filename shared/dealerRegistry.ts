@@ -39,6 +39,7 @@ export const OFFICIAL_DEALERS: readonly OfficialDealer[] = [
   { name: "Savol - Shopping Anália Franco", state: "SP" },
   { name: "Savol São Caetano do Sul", state: "SP" },
   { name: "Sinal Av. Europa", state: "SP" },
+  { name: "Sinal Av. Indianópolis", state: "SP" },
   { name: "Stefanini Campinas", state: "SP" },
   { name: "Stefanini Piracicaba", state: "SP" },
   { name: "Tecar Goiânia", state: "GO" },
@@ -47,7 +48,7 @@ export const OFFICIAL_DEALERS: readonly OfficialDealer[] = [
   { name: "Vega Belém", state: "PA" },
 ];
 
-export const DEALER_MAPPING_VERSION = "mg-official-2026-11-05";
+export const DEALER_MAPPING_VERSION = "mg-official-2026-11-05-indianopolis";
 
 export function normalizeDealerKey(value: string): string {
   return value
@@ -206,6 +207,10 @@ register("Savol São Caetano do Sul", [
 register("Sinal Av. Europa", [
   "Sinal - Av. Europa",
   "Sinal Av Europa - São Paulo",
+]);
+register("Sinal Av. Indianópolis", [
+  "Sinal Av Indianopolis",
+  "Sinal Av Indianópolis - São Paulo",
 ]);
 register("Stefanini Campinas", [
   "Stefanini - Campinas",

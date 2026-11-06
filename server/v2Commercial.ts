@@ -158,7 +158,10 @@ function dealerState(value: string | null): string | null {
 }
 
 function isExplicitlyUnmappedCommercialLabel(value: string): boolean {
-  return normalizeCommercialText(value) === "sinal av indianopolis";
+  return (
+    normalizeCommercialText(value) === "sinal av indianopolis" &&
+    !canonicalDealer(value)
+  );
 }
 
 function legacyAutomaticDealers(

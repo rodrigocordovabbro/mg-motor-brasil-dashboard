@@ -1080,14 +1080,6 @@ function DealerPerformanceCard({
             Linha fora do cadastro ou vínculo ainda não definido; metas mantidas
             na origem, sem alocação por aproximação.
           </p>
-          {performance.unmapped.some(row =>
-            row.sourceLabel.toLocaleLowerCase("pt-BR").includes("indianopolis")
-          ) ? (
-            <p className="mt-2 rounded-lg border border-amber-200 bg-amber-100/60 px-3 py-2 font-semibold text-amber-900">
-              “SINAL AV INDIANOPOLIS” está fora do cadastro oficial e não foi
-              transferida para Sinal Av. Europa.
-            </p>
-          ) : null}
           <div className="mt-2 max-h-64 overflow-auto">
             <table className="w-full text-left">
               <thead>

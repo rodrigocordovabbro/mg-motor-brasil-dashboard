@@ -22,11 +22,15 @@ const lead = (dealer: string, id = 1): V2Lead => ({
 });
 
 describe("Cadastro oficial MG Sales e fonte original preservada", () => {
-  it("tem40unidades distintas e não reclassifica Indianópolis como Europa", () => {
-    expect(OFFICIAL_DEALERS).toHaveLength(40);
-    expect(new Set(OFFICIAL_DEALERS.map(x => x.name)).size).toBe(40);
-    expect(resolveOfficialDealer("SINAL AV INDIANOPOLIS")).toBeNull();
-    expect(resolveCommercialDealers("SINAL AV INDIANOPOLIS")).toEqual([]);
+  it("tem41unidades distintas e mantém Indianópolis separada de Europa", () => {
+    expect(OFFICIAL_DEALERS).toHaveLength(41);
+    expect(new Set(OFFICIAL_DEALERS.map(x => x.name)).size).toBe(41);
+    expect(resolveOfficialDealer("SINAL AV INDIANOPOLIS")).toBe(
+      "Sinal Av. Indianópolis"
+    );
+    expect(resolveCommercialDealers("SINAL AV INDIANOPOLIS")).toEqual([
+      "Sinal Av. Indianópolis",
+    ]);
   });
   it("resolve pontuação, acento, cadastro e apelidos de uma unidade sem usar UF residencial", () => {
     expect(resolveOfficialDealer("barigui mandarim - florianópolis/sc")).toBe(
