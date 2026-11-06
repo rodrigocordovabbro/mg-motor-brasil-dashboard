@@ -27,6 +27,7 @@ vi.mock("./v2Db", () => ({
 
 import {
   createV2Account,
+  grantBbroV2Account,
   listV2Accounts,
   resetV2AccountPassword,
   updateV2Account,
@@ -35,6 +36,7 @@ import { createV2Token, readV2Session, verifyV2Token } from "./v2Auth";
 
 const admin = { id: 1, username: "rodrigo", role: "admin" as const };
 const client = { id: 2, username: "cliente", role: "client" as const };
+const otherAdmin = { id: 3, username: "ana", role: "admin" as const };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -91,6 +93,49 @@ describe("V2 account management", () => {
       },
     ]);
     expect(mock.poolExecute.mock.calls[0][0]).not.toContain("passwordHash");
+  });
+
+  it("preserves the BBRO role in public account listings", async () => {
+    mock.poolExecute.mockResolvedValueOnce([
+      [
+        {
+          id: 8,
+          username: "bbro",
+          role: "bbro",
+          isActive: 1,
+          createdAt: null,
+        },
+      ],
+      [],
+    ]);
+    await expect(listV2Accounts(admin)).resolves.toMatchObject([
+      { id: 8, username: "bbro", role: "bbro", isActive: true },
+    ]);
+  });
+
+  it("accepts BBRO on account creation with server-side role validation", async () => {
+    mock.connection.execute
+      .mockResolvedValueOnce([{ insertId: 8 }, []])
+      .mockResolvedValueOnce([{}, []])
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 8,
+            username: "bbro",
+            role: "bbro",
+            isActive: 1,
+            createdAt: null,
+          },
+        ],
+        [],
+      ]);
+    await expect(
+      createV2Account(
+        { username: "bbro", password: "safe-pass", role: "bbro" },
+        admin
+      )
+    ).resolves.toMatchObject({ username: "bbro", role: "bbro" });
+    expect(mock.connection.execute.mock.calls[0][1][2]).toBe("bbro");
   });
 
   it("creates a salted scrypt account and audits without secret fields", async () => {
@@ -219,6 +264,46 @@ describe("V2 account management", () => {
       "reset_password",
     ]);
   });
+
+  it("assigns BBRO only through Rodrigo, audits it, and revokes sessions", async () => {
+    mock.connection.execute
+      .mockResolvedValueOnce([
+        [{ id: 1, username: "rodrigo", role: "admin" }],
+        [],
+      ])
+      .mockResolvedValueOnce([
+        [{ id: 8, username: "BBRO", role: "client" }],
+        [],
+      ])
+      .mockResolvedValueOnce([{}, []])
+      .mockResolvedValueOnce([{}, []]);
+
+    await expect(grantBbroV2Account(admin)).resolves.toEqual({
+      status: "assigned",
+      id: 8,
+      username: "BBRO",
+      previousRole: "client",
+      role: "bbro",
+    });
+    const updateCall = mock.connection.execute.mock.calls.find(([sql]) =>
+      String(sql).startsWith("UPDATE v2_accounts")
+    );
+    expect(updateCall?.[0]).toContain("role='bbro'");
+    expect(updateCall?.[0]).toContain("sessionVersion=sessionVersion+1");
+    expect(mock.connection.execute.mock.calls[3][1]).toEqual([
+      8,
+      admin.id,
+      "assign_bbro",
+    ]);
+    expect(mock.connection.commit).toHaveBeenCalledOnce();
+  });
+
+  it("rejects BBRO assignment by an administrator other than Rodrigo", async () => {
+    await expect(grantBbroV2Account(otherAdmin)).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    expect(mock.getConnection).not.toHaveBeenCalled();
+  });
 });
 
 describe("V2 JWT session version", () => {
@@ -264,5 +349,25 @@ describe("V2 JWT session version", () => {
     await expect(
       readV2Session({ headers: { cookie: `mg_v2_session=${token}` } } as any)
     ).resolves.toMatchObject({ role: "admin", sessionVersion: 0 });
+  });
+
+  it("returns BBRO from the current database role instead of falling back to client", async () => {
+    const token = await createV2Token({ id: 8, username: "bbro" });
+    mock.getV2Account.mockResolvedValueOnce({
+      id: 8,
+      username: "bbro",
+      isActive: 1,
+      role: "bbro",
+      sessionVersion: 0,
+      passwordHash: "fixture-only",
+    });
+    await expect(
+      readV2Session({ headers: { cookie: `mg_v2_session=${token}` } } as any)
+    ).resolves.toMatchObject({
+      id: 8,
+      username: "bbro",
+      role: "bbro",
+      sessionVersion: 0,
+    });
   });
 });

@@ -1,4 +1,4 @@
-import { resolveOfficialDealer } from "../shared/dealerRegistry";
+import { CRM_DEALERS, resolveOfficialDealer } from "../shared/dealerRegistry";
 import { TRPCError } from "@trpc/server";
 import type { RowDataPacket } from "mysql2/promise";
 import {
@@ -453,7 +453,8 @@ function resultInsertId(result: unknown): number {
 export async function prepareLeadControl(
   reportId: number,
   filters: V2Filters,
-  now = new Date()
+  now = new Date(),
+  crmOnly = false
 ): Promise<PrepareLeadControlResult> {
   const period = resolveDashboardPeriod(filters.dateFrom, filters.dateTo, now);
   const cutoffDate = getDashboardCutoffDate(now);
@@ -512,7 +513,7 @@ export async function prepareLeadControl(
     );
     let newRows = 0;
     for (const rawDealer of mapped.rawDealers) {
-      if (mapped.assignment.has(rawDealer)) continue;
+      if (crmOnly || mapped.assignment.has(rawDealer)) continue;
       const qualification = isQualificationDealer(rawDealer);
       const existing = qualification
         ? reportRows.find(row => row.storeName === QUALIFICATION_ROW)
@@ -569,7 +570,18 @@ export async function prepareLeadControl(
     const allDays = [...metadata.days, ...addedDays].sort((a, b) =>
       a.date.localeCompare(b.date)
     );
-    const allRows = [...new Map(reportRows.map(row => [row.id, row])).values()];
+    const allRows = crmOnly
+      ? CRM_DEALERS.flatMap(dealer => {
+          const candidates = reportRows.filter(
+            row => resolveOfficialDealer(row.storeName) === dealer.name
+          );
+          const row =
+            candidates.find(row => row.storeName === dealer.name) ??
+            candidates.sort((a, b) => a.rowNumber - b.rowNumber)[0];
+          return row ? [row] : [];
+        })
+      : [...new Map(reportRows.map(row => [row.id, row])).values()];
+    const allowedRowIds = new Set(allRows.map(row => row.id));
     let addedCells = false;
     let batch: unknown[][] = [];
     const flush = async () => {
@@ -586,6 +598,7 @@ export async function prepareLeadControl(
     };
     for (const row of allRows)
       for (const day of allDays) {
+        if (crmOnly && day.date > cutoffDate) continue;
         batch.push([row.id, day.date, "", "", null, true]);
         if (batch.length >= 250) await flush();
       }
@@ -593,7 +606,11 @@ export async function prepareLeadControl(
     const nextMap = { ...metadata.leadDealerMap };
     const nextMapMeta = { ...metadata.leadDealerMapMeta };
     for (const [rawDealer, assignment] of mapped.assignment) {
-      if (assignment.rowId < 1) continue;
+      if (
+        assignment.rowId < 1 ||
+        (crmOnly && !allowedRowIds.has(assignment.rowId))
+      )
+        continue;
       nextMap[rawDealer] = assignment.rowId;
       nextMapMeta[rawDealer] = {
         rowId: assignment.rowId,

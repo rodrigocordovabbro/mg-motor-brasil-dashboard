@@ -1,3 +1,4 @@
+import { canValidateCRM } from "../shared/accountRoles";
 import { TRPCError } from "@trpc/server";
 import type { UserRole } from "../shared/accountRoles";
 import { OFFICIAL_MODELS, resolveOfficialModel } from "../shared/modelRegistry";
@@ -13,6 +14,15 @@ export function requireAdministrator(
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "Permissão de administrador necessária.",
+    });
+}
+export function requireManualValidator(
+  user: { role?: UserRole } | null | undefined
+): void {
+  if (!canValidateCRM(user?.role))
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Seu perfil permite somente leitura do Manual.",
     });
 }
 export function dashboardForClient(data: V2Dashboard): V2Dashboard {
@@ -31,8 +41,6 @@ export function dashboardForClient(data: V2Dashboard): V2Dashboard {
       ...data.recent,
       rows: data.recent.rows.map(row => ({
         ...row,
-        name: "Contato protegido",
-        crm: "Informação restrita",
         model: resolveOfficialModel(row.model) ?? "Modelo não identificado",
         state: groupedStateLabel(row.state),
       })),
@@ -61,7 +69,6 @@ export function dispatchForClient<T extends DispatchReport>(data: T): T {
     notes: [],
     rows: data.rows.map(row => ({
       ...row,
-      crmResponsible: row.crmResponsible ? "Contato protegido" : "",
       cells: row.cells.map(cell => ({
         ...cell,
         validation: cell.validation

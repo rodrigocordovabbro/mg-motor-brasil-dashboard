@@ -1,3 +1,10 @@
+import type { UserRole } from "@shared/accountRoles";
+import {
+  LEAD_PERIOD_PRESETS,
+  omitLeadCampaign,
+  resolveLeadPeriodPreset,
+} from "@shared/leadPeriodPresets";
+import { V2LeadsReloadButton } from "./V2LeadsReloadButton";
 import V2SalesGoalEditor from "./V2SalesGoalEditor";
 import {
   LeadsSectionNavigation,
@@ -16,13 +23,12 @@ import {
   getDashboardCutoffDate,
   resolveDashboardPeriod,
 } from "@shared/dashboardDates";
-import { OFFICIAL_DEALERS, officialDealer } from "@shared/dealerRegistry";
+import { officialDealer } from "@shared/dealerRegistry";
 import type { RegionalModelDistribution } from "@shared/regionalTypes";
 import type { V2Count, V2Dashboard, V2Filters, V2Lead } from "@shared/v2Types";
 import {
   AlertCircle,
   BarChart3,
-  Check,
   ChevronLeft,
   ChevronRight,
   CircleHelp,
@@ -55,7 +61,7 @@ import { useMemo, useRef, useState, type ReactNode } from "react";
 export type V2AuthUser = {
   id: number;
   username: string;
-  role?: "admin" | "client";
+  role?: UserRole;
 };
 export type V2DashboardFilters = V2Filters;
 export type V2DistributionItem = V2Count;
@@ -279,46 +285,6 @@ function DistributionList({
   );
 }
 
-function KpiCard({
-  label,
-  value,
-  hint,
-  icon: Icon,
-  accent = false,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-  icon: typeof Users;
-  accent?: boolean;
-}) {
-  return (
-    <Card className="min-w-0 p-4">
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">
-          {label}
-        </span>
-        <span
-          className={`rounded-lg p-2 ${accent ? "bg-red-50 text-[#e2212d]" : "bg-slate-100 text-slate-500"}`}
-        >
-          <Icon className="h-4 w-4" aria-hidden="true" />
-        </span>
-      </div>
-      <div
-        className="mt-4 truncate text-2xl font-bold tracking-tight text-slate-950"
-        title={value}
-      >
-        {value}
-      </div>
-      {hint ? (
-        <p className="mt-1 truncate text-xs text-slate-500" title={hint}>
-          {hint}
-        </p>
-      ) : null}
-    </Card>
-  );
-}
-
 function LoadingPanel() {
   return (
     <div className="grid gap-4">
@@ -463,7 +429,7 @@ function FilterBar({
           role="group"
           aria-label="Período rápido"
         >
-          {["7 dias", "14 dias", "30 dias", "60 dias", "Mês"].map(preset => (
+          {LEAD_PERIOD_PRESETS.map(preset => (
             <button
               key={preset}
               type="button"
@@ -475,7 +441,7 @@ function FilterBar({
           ))}
         </div>
       </div>
-      <div className="grid gap-3 px-5 py-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+      <div className="grid gap-3 px-5 py-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
         <label className="xl:col-span-1">
           <span className="v2-label">Início</span>
           <input
@@ -523,12 +489,6 @@ function FilterBar({
           value={draft.channel ?? ""}
           options={options.channels}
           onChange={value => update("channel", value)}
-        />
-        <SelectFilter
-          label="Campanha"
-          value={draft.campaign ?? ""}
-          options={options.campaigns}
-          onChange={value => update("campaign", value)}
         />
         <SelectFilter
           label="Concessionária"
@@ -614,10 +574,12 @@ function SelectFilter({
 function PacingCard({
   data,
   onUpdated,
+  onReloadMonth,
   canManage,
 }: {
   data: V2LeadsResponse;
   onUpdated: () => void;
+  onReloadMonth: () => Promise<void>;
   canManage: boolean;
 }) {
   const pacing = data.pacing;
@@ -644,6 +606,10 @@ function PacingCard({
             >
               {statusText(pacing.status)}
             </span>
+            <V2LeadsReloadButton
+              competence={pacing.competence}
+              onReload={onReloadMonth}
+            />
             {canManage ? (
               <V2MonthlyGoalEditor
                 competence={pacing.competence}
@@ -986,7 +952,7 @@ function DealerPerformanceCard({
   const totals = performance.totals;
   const [dealerSearch, setDealerSearch] = useState("");
   const [dealerSort, setDealerSort] = useState("leads");
-  const [page, setPage] = useState(1);
+  const tableScrollRef = useRef<HTMLDivElement>(null);
   const groupedGoals = performance.groupedGoals ?? [];
   const sourceLabels = useMemo(
     () => sourcesByOfficialDealer(groupedGoals),
@@ -1047,13 +1013,9 @@ function DealerPerformanceCard({
         ),
     [displayRows, dealerSearch, dealerSort]
   );
-  const pageSize = 12;
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
-  const currentPage = Math.min(page, totalPages);
-  const pageRows = filteredRows.slice(
-    (currentPage - 1) * pageSize,
-    currentPage * pageSize
-  );
+  useEffect(() => {
+    if (tableScrollRef.current) tableScrollRef.current.scrollTop = 0;
+  }, [dealerSearch, dealerSort, data.period.dateFrom, data.period.dateTo]);
   return (
     <Card className="overflow-hidden">
       <CardHeading
@@ -1206,7 +1168,6 @@ function DealerPerformanceCard({
             value={dealerSearch}
             onChange={event => {
               setDealerSearch(event.target.value);
-              setPage(1);
             }}
             placeholder="Buscar na tabela"
           />
@@ -1218,7 +1179,6 @@ function DealerPerformanceCard({
             value={dealerSort}
             onChange={event => {
               setDealerSort(event.target.value);
-              setPage(1);
             }}
           >
             <option value="leads">Mais Leads primeiro</option>
@@ -1226,7 +1186,13 @@ function DealerPerformanceCard({
           </select>
         </label>
       </div>
-      <div className="overflow-x-auto">
+      <div
+        ref={tableScrollRef}
+        className="mg-dealer-scroll"
+        tabIndex={0}
+        role="region"
+        aria-label="Tabela de vendas e metas por concessionária — role para consultar todas as lojas"
+      >
         <table className="min-w-[760px] w-full text-left">
           <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.13em] text-slate-500">
             <tr>
@@ -1240,8 +1206,8 @@ function DealerPerformanceCard({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-xs">
-            {pageRows.length ? (
-              pageRows.map(row => (
+            {filteredRows.length ? (
+              filteredRows.map(row => (
                 <tr
                   key={`${row.dealer}-${row.state}`}
                   className="transition hover:bg-slate-50"
@@ -1321,29 +1287,12 @@ function DealerPerformanceCard({
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
         <span>
-          {filteredRows.length} linhas · página {currentPage} de {totalPages}.
-          Os totais acima permanecem os do período.
+          {filteredRows.length} concessionárias · Os totais acima permanecem os
+          do período.
         </span>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            aria-label="Página anterior de concessionárias"
-            disabled={currentPage <= 1}
-            onClick={() => setPage(currentPage - 1)}
-            className="rounded-lg border border-slate-200 p-2 disabled:opacity-35"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            aria-label="Próxima página de concessionárias"
-            disabled={currentPage >= totalPages}
-            onClick={() => setPage(currentPage + 1)}
-            className="rounded-lg border border-slate-200 p-2 disabled:opacity-35"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        </div>
+        <span className="text-[11px] text-slate-400">
+          Role para consultar todas as lojas
+        </span>
       </div>
       <div className="border-t border-slate-100 px-5 py-4 text-xs leading-5 text-slate-500">
         {available ? (
@@ -1490,55 +1439,22 @@ function DailyChart({ daily }: { daily: V2DailyPoint[] }) {
 function OverviewTab({
   data,
   onGoalUpdated,
+  onReloadMonth,
   canManage,
 }: {
   data: V2LeadsResponse;
   onGoalUpdated: () => void;
+  onReloadMonth: () => Promise<void>;
   canManage: boolean;
 }) {
-  const { summary } = data;
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard
-          label="Leads"
-          value={numberFormat(summary.total)}
-          hint="Total no período selecionado"
-          icon={Users}
-          accent
-        />
-        <KpiCard
-          label="Modelos"
-          value={numberFormat(summary.models)}
-          hint={
-            summary.topModel
-              ? `Líder: ${summary.topModel.label}`
-              : "Sem liderança disponível"
-          }
-          icon={BarChart3}
-        />
-        <KpiCard
-          label="Dealers com Leads"
-          value={numberFormat(summary.dealers)}
-          hint={`Cadastro oficial: ${OFFICIAL_DEALERS.length} unidades`}
-          icon={MapPin}
-        />
-        <KpiCard
-          label="CRM"
-          value={
-            summary.crmRate == null
-              ? "Indisponível"
-              : percentFormat(summary.crmRate)
-          }
-          hint={
-            summary.crmDelivered == null
-              ? "Metadados insuficientes"
-              : `${numberFormat(summary.crmDelivered)} entregues`
-          }
-          icon={Check}
-        />
-      </div>
-      <PacingCard data={data} onUpdated={onGoalUpdated} canManage={canManage} />
+      <PacingCard
+        data={data}
+        onUpdated={onGoalUpdated}
+        onReloadMonth={onReloadMonth}
+        canManage={canManage}
+      />
       <Card className="overflow-hidden">
         <CardHeading
           eyebrow="Evolução diária"
@@ -1959,19 +1875,19 @@ export default function V2LeadsDashboard({
       });
     });
   };
-  const dashboardQuery = v2Trpc.leads.dashboard.useQuery(applied, {
-    enabled: authenticated && activeTab !== "Lojas & CRM",
-    retry: false,
-    refetchOnWindowFocus: false,
-  });
+  const dashboardQuery = v2Trpc.leads.dashboard.useQuery(
+    omitLeadCampaign(applied),
+    {
+      enabled: authenticated && activeTab !== "Lojas & CRM",
+      retry: false,
+      refetchOnWindowFocus: false,
+    }
+  );
   const data = dashboardQuery.data;
 
   const choosePreset = (preset: string) => {
-    const from =
-      preset === "Mês"
-        ? firstMonthDay
-        : addIsoDays(cutoff, -(Number.parseInt(preset, 10) - 1));
-    setDraft({ ...draft, dateFrom: from, dateTo: cutoff, page: 1 });
+    const period = resolveLeadPeriodPreset(preset, cutoff);
+    setDraft(omitLeadCampaign({ ...draft, ...period, page: 1 }));
     setSelectedPreset(preset);
     setDateError(null);
   };
@@ -1980,7 +1896,7 @@ export default function V2LeadsDashboard({
     try {
       const period = resolveDashboardPeriod(draft.dateFrom, draft.dateTo);
       setDateError(null);
-      setApplied({ ...draft, ...period, page: 1 });
+      setApplied(omitLeadCampaign({ ...draft, ...period, page: 1 }));
     } catch (error) {
       setDateError(
         error instanceof Error ? error.message : "Confira o intervalo de datas."
@@ -1991,6 +1907,10 @@ export default function V2LeadsDashboard({
   const changePage = (page: number) =>
     setApplied(current => ({ ...current, page }));
   const refresh = () => void dashboardQuery.refetch();
+  const reloadMonthlyBase = async () => {
+    const result = await dashboardQuery.refetch();
+    if (result.error) throw result.error;
+  };
 
   if (!authenticated) return null;
   return (
@@ -2051,6 +1971,7 @@ export default function V2LeadsDashboard({
                   <OverviewTab
                     data={data}
                     onGoalUpdated={refresh}
+                    onReloadMonth={reloadMonthlyBase}
                     canManage={canManage}
                   />
                 ) : null}

@@ -3,12 +3,13 @@ import { CRM_DEALERS, OFFICIAL_DEALERS } from "../shared/dealerRegistry";
 import {
   controlForCRM,
   dashboardForClient,
+  dispatchForClient,
   requireAdministrator,
 } from "./v2Permissions";
 import type { V2Dashboard } from "../shared/v2Types";
 import type { DispatchReport } from "../shared/v2Dispatch";
 const state = vi.hoisted(() => ({
-  role: "client" as "admin" | "client" | null,
+  role: "client" as "admin" | "client" | "bbro" | null,
 }));
 vi.mock("./v2Auth", () => ({
   readV2Session: vi.fn(async () =>
@@ -57,8 +58,9 @@ vi.mock("./v2DispatchXlsx", () => ({ importDispatchWorkbook: vi.fn() }));
 import { appRouter } from "./routers";
 import { getV2Dashboard } from "./v2Leads";
 import { listV2Accounts, createV2Account } from "./v2Accounts";
-import { setDispatchManual } from "./v2Dispatch";
+import { getDispatchHistory, setDispatchManual } from "./v2Dispatch";
 import { removeCommercialSource } from "./v2Commercial";
+import { prepareLeadControl } from "./v2DispatchLeads";
 const filters = { dateFrom: "2026-11-01", dateTo: "2026-11-04" };
 function caller() {
   return appRouter.createCaller({
@@ -167,6 +169,53 @@ function dashboard(): V2Dashboard {
     notes: ["Nota técnica privada"],
   };
 }
+function dispatchReport(): DispatchReport {
+  return {
+    id: 1,
+    title: "Envios fixture",
+    fileName: "fixture.xlsx",
+    dateFrom: "2026-11-04",
+    dateTo: "2026-11-04",
+    generatedLabel: "04/11/2026",
+    importedAt: "2026-11-05T12:00:00Z",
+    information: [
+      { label: "Informação técnica privada", value: "valor privado" },
+    ],
+    notes: ["Nota técnica privada"],
+    days: [
+      { date: "2026-11-04", label: "04/nov", sourceTotal: 2, computedTotal: 2 },
+    ],
+    rows: [
+      {
+        id: 1,
+        rowNumber: 5,
+        storeName: "Autobrand Recife",
+        crmResponsible: "Responsável CRM fixture",
+        syonetIntegration: "OK",
+        bbroIntegration: "NÃO",
+        cells: [
+          {
+            id: 1,
+            rowNumber: 5,
+            date: "2026-11-04",
+            syonet: "OK",
+            sourceManual: "",
+            volume: 2,
+            validation: null,
+          },
+        ],
+      },
+    ],
+    totals: {
+      computed: 2,
+      sourceDailySum: 2,
+      declaredInInstructions: null,
+      sourceManualOk: 0,
+      auditedOk: 0,
+      manualOverridden: 0,
+    },
+  };
+}
 beforeEach(() => {
   vi.clearAllMocks();
   state.role = "client";
@@ -208,6 +257,31 @@ describe("permissões na API", () => {
     expect(setDispatchManual).not.toHaveBeenCalled();
     expect(removeCommercialSource).not.toHaveBeenCalled();
   });
+  it("BBRO pode marcar Manual, consultar histórico e preparar o controle", async () => {
+    state.role = "bbro";
+    const api = caller();
+
+    await api.dispatch.setManual({ cellId: 1, isOk: true, expectedVersion: 0 });
+    await api.dispatch.history({ cellId: 1 });
+    await api.dispatch.prepareLeadControl({ reportId: 1, filters });
+
+    expect(setDispatchManual).toHaveBeenCalledWith(
+      1,
+      true,
+      0,
+      expect.objectContaining({ id: 77, role: "bbro" })
+    );
+    expect(getDispatchHistory).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ role: "bbro", id: 77 })
+    );
+    expect(prepareLeadControl).toHaveBeenCalledWith(
+      1,
+      filters,
+      undefined,
+      true
+    );
+  });
   it("administrador encaminha sua identidade à gestão e preserva acesso completo", async () => {
     state.role = "admin";
     await caller().accounts.list();
@@ -218,7 +292,7 @@ describe("permissões na API", () => {
     vi.mocked(getV2Dashboard).mockResolvedValue(d as any);
     expect((await caller().leads.dashboard(filters)).notes).toEqual(d.notes);
   });
-  it("cliente recebe leitura sem contatos ou avisos técnicos, com totais preservados", async () => {
+  it("cliente recebe nomes e totais, mas não recebe avisos técnicos", async () => {
     const d = dashboard();
     vi.mocked(getV2Dashboard).mockResolvedValue(d as any);
     const result = await caller().leads.dashboard(filters);
@@ -227,10 +301,22 @@ describe("permissões na API", () => {
     expect(result.notes).toEqual([]);
     expect(result.dealerPerformance.warnings).toEqual([]);
     expect(result.dealerPerformance.unmapped).toEqual([]);
-    expect(JSON.stringify(result)).not.toContain("Pessoa privada de fixture");
+    expect(JSON.stringify(result)).toContain("Pessoa privada de fixture");
+    expect(JSON.stringify(result)).toContain("Contato privado");
     expect(result.recent.rows[0].dealer).toBe("Dealer original");
     expect(result.recent.rows[0].state).toBe("São Paulo");
   });
+  it.each(["client", "bbro"] as const)(
+    "%s recebe nomes de loja e responsáveis CRM no controle",
+    role => {
+      const result = dispatchForClient(dispatchReport());
+      expect(result.rows[0].storeName).toBe("Autobrand Recife");
+      expect(result.rows[0].crmResponsible).toBe("Responsável CRM fixture");
+      expect(result.information).toEqual([]);
+      expect(result.notes).toEqual([]);
+      expect(role).toMatch(/client|bbro/);
+    }
+  );
   it("erros técnicos do backend não chegam ao cliente", async () => {
     vi.mocked(getV2Dashboard).mockRejectedValue(
       new Error("SQL segredo-private")
@@ -316,27 +402,80 @@ describe("projeções sem alteração da fonte", () => {
 });
 
 describe("Edições exclusivas da conta Rodrigo", () => {
-  it.each(["client", "admin"] as const)(
-    "bloqueia meta total e projeções para perfil %s de outra conta",
+  it.each(["client", "bbro"] as const)(
+    "bloqueia CRUD de usuários e todas as mutações admin/owner para perfil %s",
     async role => {
       state.role = role;
       const api = caller();
-      await expect(
-        api.leads.salesGoal({ competence: "2026-11" })
-      ).rejects.toMatchObject({ code: "FORBIDDEN" });
-      await expect(
-        api.leads.updateSalesGoal({ competence: "2026-11", goal: 900 })
-      ).rejects.toMatchObject({ code: "FORBIDDEN" });
-      await expect(
-        api.mediaPlan.projections({ monthId: "2026-10" })
-      ).rejects.toMatchObject({ code: "FORBIDDEN" });
-      await expect(
-        api.mediaPlan.updateProjections({
-          monthId: "2026-10",
-          expectedVersion: 0,
-          values: { globalLeads: 12000 },
-        })
-      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      const actions = [
+        () => api.accounts.list(),
+        () =>
+          api.accounts.create({
+            username: "fixture-new",
+            password: "senha-fixture-apenas",
+            role: "admin",
+          }),
+        () => api.accounts.update({ id: 78, role: "client" }),
+        () =>
+          api.accounts.resetPassword({
+            id: 78,
+            password: "senha-fixture-atualizada",
+          }),
+        () => api.leads.goal({ competence: "2026-11" }),
+        () => api.leads.updateGoal({ competence: "2026-11", goal: 100 }),
+        () => api.leads.salesGoal({ competence: "2026-11" }),
+        () => api.leads.updateSalesGoal({ competence: "2026-11", goal: 900 }),
+        () => api.mediaPlan.projections({ monthId: "2026-10" }),
+        () =>
+          api.mediaPlan.updateProjections({
+            monthId: "2026-10",
+            expectedVersion: 0,
+            values: { globalLeads: 12000 },
+          }),
+        () => api.dispatch.report({ reportId: 1 }),
+        () => api.dispatch.prepareDay({ reportId: 1 }),
+        () =>
+          api.dispatch.importWorkbook({
+            reportId: 1,
+            fileName: "fixture.xlsx",
+            base64: "AA==",
+          }),
+        () => api.commercial.status({ competence: "2026-11" }),
+        () =>
+          api.commercial.preview({
+            kind: "lead-goals",
+            competence: "2026-11",
+            fileName: "fixture.xlsx",
+            base64: "AA==",
+          }),
+        () =>
+          api.commercial.commit({
+            kind: "lead-goals",
+            competence: "2026-11",
+            fileName: "fixture.xlsx",
+            base64: "AA==",
+          }),
+        () =>
+          api.commercial.remove({
+            kind: "sales",
+            competence: "2026-11",
+            expectedImportId: 1,
+          }),
+      ];
+      for (const action of actions)
+        await expect(action()).rejects.toMatchObject({ code: "FORBIDDEN" });
     }
   );
+
+  it("cliente não pode marcar Manual, consultar histórico ou preparar controle", async () => {
+    state.role = "client";
+    const api = caller();
+    for (const action of [
+      () =>
+        api.dispatch.setManual({ cellId: 1, isOk: true, expectedVersion: 0 }),
+      () => api.dispatch.history({ cellId: 1 }),
+      () => api.dispatch.prepareLeadControl({ reportId: 1, filters }),
+    ])
+      await expect(action()).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
 });

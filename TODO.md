@@ -141,3 +141,18 @@ Verificação desta correção: 164 testes, TypeScript e build aprovados; consul
 - [x] Favicon MG gerado da imagem fornecida, com versões ICO/PNG e ícone Apple; logo branco no login escuro, vermelho no cabeçalho claro e variante preta disponível. Preservar proporção e desenho do símbolo original. Não reabrir a transferência GitHub cancelada.
 
 Identidade validada: SVGs com proporção original, favicons íntegros e servidos com HTTP 200, título atualizado; 164 testes, TypeScript e build aprovados. Nenhuma nova transferência GitHub após cancelamento.
+
+## Remoção da faixa de cartões indicada
+
+- [ ] Remover da Visão Geral a faixa Leads, Modelos, Dealers com Leads e CRM. Preservar pacing mensal, KPIs comerciais, conversão, gráficos, filtros e menu fixo; não alterar dados, metas ou projeções. Manter a conexão GitHub cancelada e salvar somente no repositório Manus.
+
+- [x] Tabela de unidades/dealers na Visão Geral com rolagem interna de altura limitada, barra fina e discreta, cabeçalho fixo e acesso por teclado. Preservar busca, ordenação, valores e totais; não introduzir scrollbar customizado pesado ou desenho chamativo.
+
+## Perfil BBRO e visibilidade autorizada
+
+- [x] Criar perfil BBRO igual Cliente para leitura, com exceção de poder marcar/desmarcar e salvar Manual em Lojas & CRM, com autoria, data/hora e controle de concorrência existentes. Não liberar metas, uploads, exclusão de arquivos, projeções ou usuários. Validar permissões também no servidor.
+- [x] Mostrar nome do responsável por CRM na tabela de lojas para Cliente e BBRO. Liberar nomes e informações de CRM na lista de Leads para ambos, conforme pedido expresso, preservando restrições administrativas e autenticação. Perfil BBRO disponível para seleção na gestão de usuários; não criar senha arbitrária.
+
+- [x] Adicionar atalho Mês passado aos filtros, cobrindo primeiro e último dia do mês anterior no calendário de São Paulo, inclusive virada de ano. Remover campo de seleção Campanha e limpar campanha dos filtros aplicados para não existir filtro oculto; manter demais campos e o limite D-1.
+
+- [x] Adicionar Atualizar base de Leads junto a Atualizar metas no pacing. Reexecutar a consulta autenticada do dashboard e do acumulado mensal na base já importada, com estado de carregamento, sucesso/erro e preservação dos filtros e metas. Não afirmar sincronização com planilha externa nem nova importação quando ocorrer somente releitura do banco.

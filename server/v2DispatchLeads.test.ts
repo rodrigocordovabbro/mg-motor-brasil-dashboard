@@ -398,3 +398,58 @@ it("não transfere nome fora do cadastro para loja oficial por mapping históric
     mock.state.leads = previousLeads;
   }
 });
+
+it("limita o preparo BBRO às lojas CRM sem criar novas unidades ou dias futuros", async () => {
+  mock.state.rows = [
+    {
+      id: 10,
+      rowNumber: 5,
+      storeName: "Autobrand Recife",
+      crmResponsible: "Responsável",
+      syonetIntegration: "OK",
+      bbroIntegration: "OK",
+    },
+    {
+      id: 11,
+      rowNumber: 6,
+      storeName: "Sinal Av. Indianópolis",
+      crmResponsible: "",
+      syonetIntegration: "",
+      bbroIntegration: "",
+    },
+    {
+      id: 12,
+      rowNumber: 7,
+      storeName: "Unidade fora do CRM",
+      crmResponsible: "",
+      syonetIntegration: "",
+      bbroIntegration: "",
+    },
+  ];
+  mock.state.metadata = {
+    days: [
+      { date: "2026-11-05", label: "05/nov", sourceTotal: 0, computedTotal: 0 },
+    ],
+  };
+  await prepareLeadControl(
+    1,
+    { dateFrom: "2026-11-01", dateTo: "2026-11-04" },
+    new Date("2026-11-05T15:00:00Z"),
+    true
+  );
+  expect(
+    mock.state.connection.execute.mock.calls.some(([sql]: [string]) =>
+      sql.startsWith("INSERT INTO v2_dispatch_rows")
+    )
+  ).toBe(false);
+  const writes = mock.state.connection.execute.mock.calls.filter(
+    ([sql]: [string]) => sql.includes("INSERT IGNORE INTO v2_dispatch_cells")
+  );
+  expect(writes.length).toBeGreaterThan(0);
+  for (const [, values] of writes) {
+    for (let offset = 0; offset < values.length; offset += 6) {
+      expect(values[offset]).toBe(10);
+      expect(values[offset + 1] <= "2026-11-04").toBe(true);
+    }
+  }
+});

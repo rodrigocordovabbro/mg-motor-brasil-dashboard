@@ -1,4 +1,4 @@
-# MG Sales
+# MG Motor Brasil
 
 Novo recurso WebDev de homologação, separado do dashboard V1. Origem do código: GitHub autorizado `digocordova83-cyber/mg-motors-dashboard-clone`, branch `dashboard-v2`, commit-base `dfad96cb1d015384d0425ce0f91ac308da0c8eb5`.
 
@@ -97,3 +97,15 @@ Apenas rodrigo Administrador pode editar a meta mensal total de vendas, separada
 O FUP recebido foi registrado em nova versão imutável de novembro: MTD Registration 43 em DAILY_FUP/Current Month/E3, referência do nome do arquivo 05/11. WEEKLY_REG/W1 mantém total zero e valores originais por loja, sem ratear 43. O agregado geral usa MTD Registration e o cartão o identifica como geral do FUP. Leituras futuras usam o campo do arquivo, sem fixar 43 no código, sem Retail ou tabela por modelo como fallback. Referência geral 05/11 não é convertida em corte 04/11 dos Leads; conversão permanece indisponível em recortes incompatíveis. Reenvio idêntico no-op. Todos os snapshots anteriores, 1.353 Leads de novembro, meta 16.600, meta de vendas importada 722, checks, auditorias, contas e planos aprovados foram preservados.
 
 Por nova orientação, o KPI Conversão geral passa a exibir a razão Vendas MTD do FUP ÷ Leads do período, mesmo com referências de data diferentes, identificada como comparativo geral (não coorte individual). No recorte atual: 43/1.353 = 3,18%; a meta manual de vendas 660 permanece intacta. Zero Leads/MTD ausente não gera taxa; filtros dimensionais sem vendas atribuídas não recebem conversão calculada por estimativa. A aba Lojas & CRM não mostra Filtros de Leads e usa somente seu período/filtros próprios, sem herdar modelo/canal/campanha de outras abas.
+
+## Ajustes atuais — leitura, BBRO e filtros
+
+Perfil BBRO tem a leitura do Cliente e pode preparar/validar Manual do controle CRM, com guardas no servidor para as 40 lojas e dias fechados até D-1. Cliente continua somente leitura; metas, usuários, uploads, exclusão de fontes e projeções não foram liberados ao BBRO. Enum de contas suporta admin/client/bbro com migration idempotente, sem criar senha ou alterar contas existentes; nenhum login bbro existia durante esta entrega. O perfil está disponível nos seletores de criar/editar usuários.
+
+Por autorização expressa, Cliente e BBRO passam a ver os nomes dos responsáveis CRM e os nomes/informações CRM da lista de Leads, exclusivamente em sessão autenticada. Isso substitui a ocultação automática desses campos nas versões anteriores; controles administrativos, erros técnicos e informações de conciliação continuam restritos. Não foram importados e-mails, telefones ou CPF adicionais.
+
+Removida a faixa dos quatro cartões superiores de Leads, Modelos, Dealers com Leads e CRM, sem alterar suas contagens nas demais seções. A tabela comercial oferece todas as lojas filtradas na mesma rolagem nativa, fina e neutra, com cabeçalho fixo, busca/ordenação preservadas e totais do período independentes da rolagem. A paginação da lista de Leads permanece.
+
+Filtros de Leads incluem Mês passado, relativo ao mês civil anterior a hoje em São Paulo, inclusive virada de ano e fevereiro. Campo Campanha foi removido e não é enviado como filtro oculto. Atualizar base de Leads, ao lado de Atualizar metas, repete a consulta do banco para o período e pacing mensal com feedback; é releitura dos dados já importados, não uma nova importação ou sincronização automática com a planilha externa. Nenhuma meta, projeção, Lead ou validação real foi gravada durante os testes.
+
+A preparação e o histórico BBRO também são restritos: não são criadas unidades fora da planilha CRM, nem células futuras; consulta de histórico verifica a mesma loja/data. O filtro de campanha da consulta visual é omitido por completo, preservando apenas a coluna informativa e compatibilidade dos serviços internos.

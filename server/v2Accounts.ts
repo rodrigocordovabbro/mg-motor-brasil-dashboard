@@ -1,6 +1,10 @@
 import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import { TRPCError } from "@trpc/server";
-import type { PublicAccount, UserRole } from "../shared/accountRoles";
+import {
+  normalizeUserRole,
+  type PublicAccount,
+  type UserRole,
+} from "../shared/accountRoles";
 import { hashV2Password, type V2Identity } from "./v2Auth";
 import { getV2Pool } from "./v2Db";
 
@@ -39,6 +43,17 @@ export type ResetV2AccountPasswordInput = {
 };
 
 type V2AdminIdentity = V2Identity & { role: "admin" };
+
+export type BbroGrantResult =
+  | { status: "not_found"; username: "bbro" }
+  | { status: "already_bbro"; id: number; username: string; role: "bbro" }
+  | {
+      status: "assigned";
+      id: number;
+      username: string;
+      previousRole: UserRole;
+      role: "bbro";
+    };
 
 type SqlExecutor = {
   execute: (...args: any[]) => Promise<[any, any]>;
@@ -101,7 +116,7 @@ function normalizeRole(
   fallback: UserRole = "client"
 ): UserRole {
   if (value === undefined) return fallback;
-  if (value !== "admin" && value !== "client")
+  if (value !== "admin" && value !== "client" && value !== "bbro")
     invalidInput("Perfil de usuário inválido.");
   return value;
 }
@@ -129,7 +144,7 @@ function publicAccount(
     id: Number(row.id),
     username: String(row.username),
     // Unknown/missing roles fail closed to the read-only client profile.
-    role: row.role === "admin" ? "admin" : "client",
+    role: normalizeUserRole(row.role),
     isActive: isActive(row.isActive),
     createdAt: isoCreatedAt(row.createdAt),
   };
@@ -148,7 +163,7 @@ async function writeAudit(
   executor: SqlExecutor,
   accountId: number,
   actorId: number,
-  action: "create" | "update" | "reset_password"
+  action: "create" | "update" | "reset_password" | "assign_bbro"
 ) {
   // Deliberately store no password, password hash, token, or request payload.
   await executor.execute(
@@ -237,7 +252,7 @@ export async function updateV2Account(
     );
     if (!rows.length) notFound();
     const current = rows[0];
-    const currentRole: UserRole = current.role === "admin" ? "admin" : "client";
+    const currentRole = normalizeUserRole(current.role);
     const currentActive = isActive(current.isActive);
     const finalRole = role ?? currentRole;
     const finalActive = nextActive ?? currentActive;
@@ -259,6 +274,86 @@ export async function updateV2Account(
     const account = await readPublicAccount(connection, id);
     await connection.commit();
     return account;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+/**
+ * Grants the BBRO profile only to the existing, exact username `bbro`.
+ * The operation is deliberately separate from generic account editing so a
+ * finite migration can use the same audited, Rodrigo-only authorization path.
+ */
+export async function grantBbroV2Account(
+  actor: V2Identity
+): Promise<BbroGrantResult> {
+  if (
+    !actor ||
+    actor.role !== "admin" ||
+    actor.username.trim().toLowerCase() !== "rodrigo"
+  )
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Somente a conta Rodrigo pode atribuir o perfil BBRO.",
+    });
+
+  const connection = await getV2Pool().getConnection();
+  try {
+    await connection.beginTransaction();
+    const [actorRows] = await connection.execute<AccountRow[]>(
+      "SELECT id,username,role FROM v2_accounts WHERE id=? LIMIT 1 FOR UPDATE",
+      [actor.id]
+    );
+    const currentActor = actorRows[0];
+    if (
+      !currentActor ||
+      currentActor.username.trim().toLowerCase() !== "rodrigo" ||
+      normalizeUserRole(currentActor.role) !== "admin"
+    )
+      forbidden();
+
+    const [targetRows] = await connection.execute<AccountRow[]>(
+      "SELECT id,username,role FROM v2_accounts WHERE LOWER(username)=LOWER(?) LIMIT 1 FOR UPDATE",
+      ["bbro"]
+    );
+    const target = targetRows[0];
+    if (!target) {
+      await connection.commit();
+      return { status: "not_found", username: "bbro" };
+    }
+
+    const previousRole = normalizeUserRole(target.role);
+    if (previousRole === "bbro") {
+      await connection.commit();
+      return {
+        status: "already_bbro",
+        id: Number(target.id),
+        username: String(target.username),
+        role: "bbro",
+      };
+    }
+
+    await connection.execute(
+      "UPDATE v2_accounts SET role='bbro',sessionVersion=sessionVersion+1 WHERE id=?",
+      [target.id]
+    );
+    await writeAudit(
+      connection,
+      Number(target.id),
+      Number(currentActor.id),
+      "assign_bbro"
+    );
+    await connection.commit();
+    return {
+      status: "assigned",
+      id: Number(target.id),
+      username: String(target.username),
+      previousRole,
+      role: "bbro",
+    };
   } catch (error) {
     await connection.rollback();
     throw error;

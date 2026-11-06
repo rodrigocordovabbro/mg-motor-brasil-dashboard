@@ -1,4 +1,5 @@
 import mysql from "mysql2/promise";
+import type { UserRole } from "../shared/accountRoles";
 let pool: mysql.Pool | undefined;
 export function getV2Pool() {
   if (!process.env.DATABASE_URL)
@@ -13,7 +14,14 @@ export async function getV2Account(username: string) {
     [username]
   );
   return rows[0] as
-    | { id: number; username: string; passwordHash: string; isActive: number; role: "admin" | "client"; sessionVersion: number }
+    | {
+        id: number;
+        username: string;
+        passwordHash: string;
+        isActive: number;
+        role: UserRole;
+        sessionVersion: number;
+      }
     | undefined;
 }
 

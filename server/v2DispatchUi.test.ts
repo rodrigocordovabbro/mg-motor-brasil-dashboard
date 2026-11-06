@@ -6,6 +6,7 @@ const state = vi.hoisted(() => ({
   report: null as unknown,
   list: [] as unknown[],
   error: null as unknown,
+  role: "admin" as "admin" | "client" | "bbro",
 }));
 vi.mock("@shared/dashboardDates", () => ({
   getDashboardCutoffDate: () => "2026-11-04",
@@ -33,7 +34,7 @@ vi.mock("@/lib/trpc", () => ({
           query({
             id: 1,
             username: "rodrigo",
-            role: "admin",
+            role: state.role,
             sessionVersion: 0,
           }),
       },
@@ -129,6 +130,7 @@ beforeEach(() => {
   state.report = fixture();
   state.list = [state.report];
   state.error = null;
+  state.role = "admin";
 });
 describe("Lojas & CRM operational clone", () => {
   it("renders exact column groups and names, only through D-1", () => {
@@ -155,16 +157,40 @@ describe("Lojas & CRM operational clone", () => {
     ).not.toContain('checked=""');
     expect(html).not.toContain("OKs do arquivo");
     expect(html).toContain("Expandir planilha");
+    const checkbox = html.match(
+      /<input[^>]+aria-label="Manual Pendente[^>]+>/
+    )?.[0];
+    expect(checkbox).not.toContain('disabled=""');
   });
-  it("hides CRM contacts in client presentation unless explicitly shown", () => {
+  it("cliente vê nomes de CRM, mas o checkbox Manual fica somente leitura", () => {
+    state.role = "client";
     const html = renderToStaticMarkup(
       React.createElement(TestControl, {
         authenticated: true,
         clientMode: true,
       })
     );
-    expect(html).toContain("Restrito");
-    expect(html).not.toContain("Contato de teste restrito");
+    expect(html).toContain("Autobrand Recife");
+    expect(html).toContain("Contato de teste restrito");
+    const checkbox = html.match(
+      /<input[^>]+aria-label="Manual Pendente[^>]+>/
+    )?.[0];
+    expect(checkbox).toContain('disabled=""');
+  });
+  it("BBRO vê nomes de CRM e pode editar o checkbox Manual", () => {
+    state.role = "bbro";
+    const html = renderToStaticMarkup(
+      React.createElement(TestControl, {
+        authenticated: true,
+        clientMode: true,
+      })
+    );
+    expect(html).toContain("Autobrand Recife");
+    expect(html).toContain("Contato de teste restrito");
+    const checkbox = html.match(
+      /<input[^>]+aria-label="Manual Pendente[^>]+>/
+    )?.[0];
+    expect(checkbox).not.toContain('disabled=""');
   });
   it("does not invent zero volume or OK for a day awaiting source", () => {
     const report = fixture();

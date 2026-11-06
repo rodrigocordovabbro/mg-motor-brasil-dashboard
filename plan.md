@@ -111,3 +111,15 @@ O Plano de Mídia usa a largura integral do contêiner principal, sem max-width 
 ## Identidade MG Motor Brasil
 
 A marca visível passa a MG Motor Brasil — Acompanhamento de resultados. Usar o SVG horizontal enviado pelo usuário, branco no login de fundo escuro e vermelho no cabeçalho claro, com variante preta disponível e proporção preservada. Favicon/ícone Apple e ícone do projeto usam o símbolo MG vermelho enviado; nenhuma forma do símbolo é reconstruída. Login mantém autenticação e campos inicialmente vazios, apenas com texto institucional revisado. A transição canônica GitHub foi cancelada pelo usuário: repositório gerenciado pelo Manus permanece ativo e nenhum novo destino será aberto/receberá código sem nova solicitação.
+
+## Visão Geral sem faixa de cartões redundantes
+
+Remover a faixa superior de quatro cartões Leads, Modelos, Dealers com Leads e CRM indicada pelo usuário. O pacing mensal, os KPIs comerciais de Leads/metas/vendas/conversão, os gráficos e o cadastro/contagem no backend permanecem intactos. Ajuste somente de apresentação, sem alteração de metas, projeções ou dados reais.
+
+A tabela comercial de concessionárias passa a ter rolagem nativa interna com altura entre 320 e 520px ajustada à janela, barra cinza fina e cabeçalho fixo. Todas as unidades filtradas ficam disponíveis na mesma rolagem, substituindo a paginação de 12 linhas; busca e ordenação são preservadas e reposicionam a rolagem no topo. Totais comerciais permanecem os do período e não são recalculados pelo estado visual da tabela.
+
+## BBRO e dados autorizados
+
+Adicionar perfil BBRO, com a leitura do Cliente e permissão específica para preparar os checks necessários e validar Manual do controle CRM, mantendo auditoria e concorrência. Somente Administrador segue autorizado a metas, fontes, projeções e usuários. Cliente e BBRO passam a visualizar nomes dos responsáveis por CRM e nomes/informações de CRM dos Leads, por solicitação expressa; a exceção de leitura não autoriza alterações nesses registros. Não criar credenciais arbitrárias; permitir escolher BBRO na gestão de usuários e atribuir ao login bbro existente, se houver.
+
+Os filtros de Leads incluem Mês passado (mês civil anterior a hoje em São Paulo, com viradas de ano e fevereiro preservadas) e deixam de incluir Campanha; a consulta remove qualquer campanha antiga do estado aplicado. Atualizar base de Leads no pacing repete a consulta autenticada do período e do acumulado mensal à base já importada, sem alterar filtros/metas e sem prometer sincronização externa. O perfil BBRO só valida Manual de lojas do controle CRM em datas encerradas até D-1; não recebe capacidades administrativas.

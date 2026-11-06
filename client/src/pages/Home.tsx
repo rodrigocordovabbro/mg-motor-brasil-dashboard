@@ -1,3 +1,4 @@
+import { ROLE_LABELS } from "@shared/accountRoles";
 import { trpc as v2Trpc } from "@/lib/trpc";
 import type { V2AuthUser } from "@/components/V2LeadsDashboard";
 import { useQueryClient } from "@tanstack/react-query";
@@ -296,7 +297,7 @@ function Topbar({
         </nav>
         <div className="order-2 flex items-center gap-2 sm:order-3">
           <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] text-amber-700 sm:px-2.5 sm:tracking-[0.12em]">
-            {canManage ? "Administrador" : "Cliente"}
+            {ROLE_LABELS[user.role ?? "client"]}
           </span>
           {canManage ? (
             <button
@@ -422,7 +423,7 @@ function AuthenticatedDashboard({
         user={user}
         module={activeModule}
         onModuleChange={changeModule}
-        clientMode={canManage ? clientMode : true}
+        clientMode={canManage ? clientMode : false}
         canManage={canManage}
         onClientModeChange={setClientMode}
         onLogout={() => void logout()}
@@ -444,7 +445,7 @@ function AuthenticatedDashboard({
           {activeModule === "leads" ? (
             <V2LeadsDashboard
               authenticated
-              clientMode={canManage ? clientMode : true}
+              clientMode={canManage ? clientMode : false}
               canManage={canManage}
             />
           ) : activeModule === "media" ? (
@@ -454,7 +455,7 @@ function AuthenticatedDashboard({
           ) : (
             <V2DispatchControl
               authenticated
-              clientMode={canManage ? clientMode : true}
+              clientMode={canManage ? clientMode : false}
               canManage={canManage}
             />
           )}

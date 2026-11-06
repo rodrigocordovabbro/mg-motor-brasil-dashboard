@@ -1,8 +1,10 @@
 import { readFile } from "node:fs/promises";
 import type { RowDataPacket } from "mysql2/promise";
+import { grantBbroV2Account } from "./v2Accounts";
 import { getV2Pool } from "./v2Db";
 
 const MIGRATION_ID = "v2-accounts-role-session-v1";
+const BBRO_MIGRATION_ID = "v2-accounts-bbro-role-v1";
 
 // Run explicitly after review against the already provisioned V2 database.
 // This module is intentionally not imported by the application startup path.
@@ -28,16 +30,19 @@ async function migrate() {
       columns.find(item => String(item.Field) === name);
 
     const roleColumn = column("role");
+    const desiredRoleType = "enum('admin','client','bbro')";
     if (!roleColumn)
       await connection.query(
-        "ALTER TABLE v2_accounts ADD COLUMN role ENUM('admin','client') NOT NULL DEFAULT 'client' AFTER isActive"
+        "ALTER TABLE v2_accounts ADD COLUMN role ENUM('admin','client','bbro') NOT NULL DEFAULT 'client' AFTER isActive"
       );
     else if (
       roleColumn.Null === "YES" ||
-      String(roleColumn.Default) !== "client"
+      String(roleColumn.Default) !== "client" ||
+      String(roleColumn.Type).replace(/\s/g, "").toLowerCase() !==
+        desiredRoleType
     )
       await connection.query(
-        "ALTER TABLE v2_accounts MODIFY COLUMN role ENUM('admin','client') NOT NULL DEFAULT 'client'"
+        "ALTER TABLE v2_accounts MODIFY COLUMN role ENUM('admin','client','bbro') NOT NULL DEFAULT 'client'"
       );
 
     const sessionVersionColumn = column("sessionVersion");
@@ -82,6 +87,39 @@ async function migrate() {
       );
     }
     await connection.commit();
+
+    const [bbroMarkers] = await db.execute<RowDataPacket[]>(
+      "SELECT migrationId FROM v2_user_migrations WHERE migrationId=? LIMIT 1",
+      [BBRO_MIGRATION_ID]
+    );
+    if (!bbroMarkers.length) {
+      // Read only identity fields. No password or password hash is consulted.
+      const [rodrigoRows] = await db.execute<RowDataPacket[]>(
+        "SELECT id,username,role FROM v2_accounts WHERE LOWER(username)=LOWER(?) AND role='admin' LIMIT 1",
+        ["rodrigo"]
+      );
+      const rodrigo = rodrigoRows[0];
+      let grantStatus =
+        "bbro não encontrada; perfil disponível para criação/atribuição por um administrador";
+      if (rodrigo) {
+        const result = await grantBbroV2Account({
+          id: Number(rodrigo.id),
+          username: String(rodrigo.username),
+          role: "admin",
+        });
+        grantStatus =
+          result.status === "assigned"
+            ? `perfil BBRO atribuído à conta ${result.username}; sessão revogada`
+            : result.status === "already_bbro"
+              ? `conta ${result.username} já possuía o perfil BBRO`
+              : grantStatus;
+      }
+      await db.execute(
+        "INSERT IGNORE INTO v2_user_migrations (migrationId) VALUES (?)",
+        [BBRO_MIGRATION_ID]
+      );
+      console.log(`Migration de contas V2: ${grantStatus}.`);
+    }
     console.log(
       "Migration de contas V2 concluída; contas existentes preservadas."
     );

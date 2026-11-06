@@ -231,6 +231,7 @@ export default function V2UserManagement({
               disabled={busy}
             >
               <option value="client">Cliente</option>
+              <option value="bbro">BBRO</option>
               <option value="admin">Administrador</option>
             </select>
           </label>
@@ -314,6 +315,7 @@ export default function V2UserManagement({
                         aria-label={`Perfil de ${account.username}`}
                       >
                         <option value="client">Cliente</option>
+                        <option value="bbro">BBRO</option>
                         <option value="admin">Administrador</option>
                       </select>
                     </td>

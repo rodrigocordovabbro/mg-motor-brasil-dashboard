@@ -18,6 +18,7 @@ import { getV2Dashboard } from "./v2Leads";
 import { getV2Goal, saveV2Goal } from "./v2Db";
 import {
   requireAdministrator,
+  requireManualValidator,
   dashboardForClient,
   dispatchForClient,
   controlForCRM,
@@ -100,7 +101,7 @@ const password = z
   .string()
   .min(8, "A senha deve ter ao menos 8 caracteres.")
   .max(200);
-const role = z.enum(["admin", "client"]);
+const role = z.enum(["admin", "client", "bbro"]);
 const v2Procedure = publicProcedure.use(async ({ ctx, next }) => {
   const identity = await readV2Session(ctx.req);
   if (!identity)
@@ -113,6 +114,10 @@ const v2Procedure = publicProcedure.use(async ({ ctx, next }) => {
 });
 const adminProcedure = v2Procedure.use(({ ctx, next }) => {
   requireAdministrator(ctx.v2User);
+  return next({ ctx });
+});
+const manualProcedure = v2Procedure.use(({ ctx, next }) => {
+  requireManualValidator(ctx.v2User);
   return next({ ctx });
 });
 const ownerProcedure = adminProcedure.use(({ ctx, next }) => {
@@ -246,7 +251,7 @@ export const appRouter = router({
           throw error;
         }
       }),
-    setManual: adminProcedure
+    setManual: manualProcedure
       .input(
         z.object({
           cellId: z.number().int().positive(),
@@ -262,16 +267,18 @@ export const appRouter = router({
           ctx.v2User
         )
       ),
-    history: adminProcedure
+    history: manualProcedure
       .input(z.object({ cellId: z.number().int().positive() }))
-      .query(({ input }) => getDispatchHistory(input.cellId)),
+      .query(({ ctx, input }) => getDispatchHistory(input.cellId, ctx.v2User)),
     prepareDay: adminProcedure
       .input(z.object({ reportId: z.number().int().positive() }))
       .mutation(({ input }) => prepareDispatchDay(input.reportId)),
-    prepareLeadControl: adminProcedure
+    prepareLeadControl: manualProcedure
       .input(z.object({ reportId: z.number().int().positive(), filters }))
-      .mutation(({ input }) =>
-        prepareLeadControl(input.reportId, input.filters)
+      .mutation(({ ctx, input }) =>
+        ctx.v2User.role === "bbro"
+          ? prepareLeadControl(input.reportId, input.filters, undefined, true)
+          : prepareLeadControl(input.reportId, input.filters)
       ),
     importWorkbook: adminProcedure
       .input(

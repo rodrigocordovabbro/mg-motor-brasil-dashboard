@@ -5,7 +5,7 @@ import type { Request, Response } from "express";
 import { TRPCError } from "@trpc/server";
 import { getV2Account } from "./v2Db";
 import { getSessionCookieOptions } from "./_core/cookies";
-import type { UserRole } from "../shared/accountRoles";
+import { normalizeUserRole, type UserRole } from "../shared/accountRoles";
 
 export const V2_COOKIE = "mg_v2_session";
 export const V2_SESSION_SCOPE = "mg-dashboard-v2";
@@ -94,7 +94,7 @@ export async function readV2Session(req: Request): Promise<V2Identity | null> {
   return {
     ...identity,
     username: account.username,
-    role: account.role === "admin" ? "admin" : "client",
+    role: normalizeUserRole(account.role),
     sessionVersion: currentSessionVersion,
   };
 }
@@ -134,7 +134,7 @@ export async function loginV2(
   const identity = {
     id: account.id,
     username: account.username,
-    role: account.role === "admin" ? ("admin" as const) : ("client" as const),
+    role: normalizeUserRole(account.role),
     sessionVersion: Number(account.sessionVersion ?? 0),
   };
   res.cookie(V2_COOKIE, await createV2Token(identity), {

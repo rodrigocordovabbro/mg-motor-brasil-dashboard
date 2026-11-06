@@ -1,3 +1,8 @@
+import { CRM_DEALERS, resolveOfficialDealer } from "../shared/dealerRegistry";
+import {
+  getDashboardCutoffDate,
+  isIsoCalendarDate,
+} from "../shared/dashboardDates";
 import { TRPCError } from "@trpc/server";
 import type { RowDataPacket } from "mysql2/promise";
 import { getV2Pool } from "./v2Db";
@@ -193,6 +198,26 @@ export function assertDispatchVersion(actual: number, expected: number) {
     });
 }
 
+export function assertBbroDispatchScope(
+  storeName: string,
+  date: string,
+  cutoff = getDashboardCutoffDate()
+): void {
+  const official = resolveOfficialDealer(storeName);
+  if (
+    !official ||
+    !CRM_DEALERS.some(dealer => dealer.name === official) ||
+    !isIsoCalendarDate(date) ||
+    date > cutoff
+  ) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message:
+        "BBRO pode validar somente lojas do controle CRM e dias encerrados até D-1.",
+    });
+  }
+}
+
 export async function setDispatchManual(
   cellId: number,
   isOk: boolean,
@@ -211,6 +236,16 @@ export async function setDispatchManual(
         code: "NOT_FOUND",
         message: "Célula de conferência não encontrada",
       });
+    if (actor.role === "bbro") {
+      const [scope] = await connection.execute<RowDataPacket[]>(
+        "SELECT r.storeName,c.dispatchDate FROM v2_dispatch_cells c INNER JOIN v2_dispatch_rows r ON r.id=c.rowId WHERE c.id=?",
+        [cellId]
+      );
+      assertBbroDispatchScope(
+        String(scope[0]?.storeName ?? ""),
+        String(scope[0]?.dispatchDate ?? "")
+      );
+    }
     const [current] = await connection.execute<RowDataPacket[]>(
       "SELECT isOk,version FROM v2_dispatch_checks WHERE cellId=?",
       [cellId]
@@ -254,7 +289,8 @@ export async function setDispatchManual(
 }
 
 export async function getDispatchHistory(
-  cellId: number
+  cellId: number,
+  actor?: V2Identity
 ): Promise<DispatchAuditEntry[]> {
   const db = getV2Pool();
   const [cell] = await db.execute<RowDataPacket[]>(
@@ -266,6 +302,16 @@ export async function getDispatchHistory(
       code: "NOT_FOUND",
       message: "Célula de conferência não encontrada",
     });
+  if (actor?.role === "bbro") {
+    const [scope] = await db.execute<RowDataPacket[]>(
+      "SELECT r.storeName,c.dispatchDate FROM v2_dispatch_cells c INNER JOIN v2_dispatch_rows r ON r.id=c.rowId WHERE c.id=?",
+      [cellId]
+    );
+    assertBbroDispatchScope(
+      String(scope[0]?.storeName ?? ""),
+      String(scope[0]?.dispatchDate ?? "")
+    );
+  }
   const [rows] = await db.execute<RowDataPacket[]>(
     "SELECT h.id,h.isOk,h.previousIsOk,h.reviewerLabel,h.version,h.createdAt,a.username AS changedBy FROM v2_dispatch_check_audit h INNER JOIN v2_accounts a ON a.id=h.changedBy WHERE h.cellId=? ORDER BY h.id DESC",
     [cellId]

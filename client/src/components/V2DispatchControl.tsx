@@ -1,3 +1,4 @@
+import { canValidateCRM } from "@shared/accountRoles";
 import { trpc } from "@/lib/trpc";
 import { getDashboardCutoffDate } from "@shared/dashboardDates";
 import type { V2Filters } from "@shared/v2Types";
@@ -71,7 +72,8 @@ function timestampFormat(value: string) {
 }
 
 function errorMessage(error: unknown, exposeDetails = true) {
-  if (!exposeDetails) return "Não foi possível carregar os dados. Tente novamente.";
+  if (!exposeDetails)
+    return "Não foi possível carregar os dados. Tente novamente.";
   if (error instanceof Error && error.message) return error.message;
   if (
     typeof error === "object" &&
@@ -271,6 +273,7 @@ function ManualCell({
   saved,
   onToggle,
   canManage,
+  canEditManual,
   historyOpen,
   onHistoryOpenChange,
   historyQuery,
@@ -281,6 +284,7 @@ function ManualCell({
   saved: boolean;
   onToggle: (cell: DispatchCell, isOk: boolean) => void;
   canManage: boolean;
+  canEditManual: boolean;
   historyOpen: boolean;
   onHistoryOpenChange: (open: boolean) => void;
   historyQuery: {
@@ -304,7 +308,7 @@ function ManualCell({
           type="checkbox"
           checked={isOk}
           onChange={event => onToggle(cell, event.target.checked)}
-          disabled={!canManage || saving || cell.id < 1}
+          disabled={!canEditManual || saving || cell.id < 1}
           aria-label={`Manual ${statusLabel} · ${storeName} · ${cell.date}`}
           className="h-5 w-5 shrink-0 accent-[#1F3864] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
         />
@@ -318,7 +322,7 @@ function ManualCell({
             <button
               type="button"
               className="rounded p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
-              disabled={cell.id < 1}
+              disabled={!canEditManual || cell.id < 1}
               title={
                 cell.id < 1
                   ? "Use Atualizar para preparar esta célula"
@@ -368,6 +372,7 @@ function DispatchTable({
   rows,
   clientMode,
   canManage,
+  canEditManual,
   savingCellIds,
   savedCellId,
   onToggle,
@@ -379,6 +384,7 @@ function DispatchTable({
   rows: DispatchRow[];
   clientMode: boolean;
   canManage: boolean;
+  canEditManual: boolean;
   savingCellIds: ReadonlySet<number>;
   savedCellId: number | null;
   onToggle: (cell: DispatchCell, isOk: boolean) => void;
@@ -432,7 +438,9 @@ function DispatchTable({
       ref={expanded ? dialogRef : undefined}
       role={expanded ? "dialog" : undefined}
       aria-modal={expanded ? true : undefined}
-      aria-label={expanded ? "Planilha expandida de controle de envios" : undefined}
+      aria-label={
+        expanded ? "Planilha expandida de controle de envios" : undefined
+      }
       tabIndex={expanded ? -1 : undefined}
       className={
         expanded
@@ -447,330 +455,340 @@ function DispatchTable({
             : "contents"
         }
       >
-      <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-xs text-slate-500">
-        <span>
-          Deslize a tabela para consultar os dias. Os checks ficam em Manual.
-        </span>
-        <div className="flex shrink-0 items-center gap-2">
-          <button
-            type="button"
-            className="rounded-lg border border-slate-200 px-3 py-2 font-semibold text-slate-700"
-            onClick={() => {
-              if (scrollRef.current)
-                scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
+        <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-xs text-slate-500">
+          <span>
+            Deslize a tabela para consultar os dias. Os checks ficam em Manual.
+          </span>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              className="rounded-lg border border-slate-200 px-3 py-2 font-semibold text-slate-700"
+              onClick={() => {
+                if (scrollRef.current)
+                  scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
+              }}
+            >
+              Ir ao último dia
+            </button>
+            <button
+              ref={expandButtonRef}
+              type="button"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 font-semibold text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
+              onClick={() => setExpanded(current => !current)}
+              aria-label={
+                expanded ? "Fechar planilha expandida" : "Expandir planilha"
+              }
+              title={expanded ? "Fechar planilha" : "Expandir planilha"}
+            >
+              {expanded ? (
+                <X className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                <Maximize2 className="h-4 w-4" aria-hidden="true" />
+              )}
+              <span className="hidden sm:inline">
+                {expanded ? "Fechar" : "Expandir planilha"}
+              </span>
+            </button>
+          </div>
+        </div>
+        <div
+          ref={scrollRef}
+          className={
+            expanded
+              ? "min-h-0 flex-1 overflow-auto"
+              : "max-h-[70vh] overflow-auto"
+          }
+          tabIndex={0}
+          role="region"
+          aria-label="Tabela de controle por loja e dia"
+        >
+          <table
+            className="dispatch-table border-separate border-spacing-0 text-left text-xs"
+            style={{
+              minWidth: tableMinWidth,
+              width: tableMinWidth,
+              tableLayout: "fixed",
             }}
           >
-            Ir ao último dia
-          </button>
-          <button
-            ref={expandButtonRef}
-            type="button"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 font-semibold text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
-            onClick={() => setExpanded(current => !current)}
-            aria-label={expanded ? "Fechar planilha expandida" : "Expandir planilha"}
-            title={expanded ? "Fechar planilha" : "Expandir planilha"}
-          >
-            {expanded ? (
-              <X className="h-4 w-4" aria-hidden="true" />
-            ) : (
-              <Maximize2 className="h-4 w-4" aria-hidden="true" />
-            )}
-            <span className="hidden sm:inline">
-              {expanded ? "Fechar" : "Expandir planilha"}
-            </span>
-          </button>
-        </div>
-      </div>
-      <div
-        ref={scrollRef}
-        className={expanded ? "min-h-0 flex-1 overflow-auto" : "max-h-[70vh] overflow-auto"}
-        tabIndex={0}
-        role="region"
-        aria-label="Tabela de controle por loja e dia"
-      >
-        <table
-          className="dispatch-table border-separate border-spacing-0 text-left text-xs"
-          style={{
-            minWidth: tableMinWidth,
-            width: tableMinWidth,
-            tableLayout: "fixed",
-          }}
-        >
-          <caption className="sr-only">
-            LEADs Status por loja, responsável CRM, integrações e dia de
-            despacho.
-          </caption>
-          <colgroup>
-            {STICKY_COLUMNS.map((column, index) => (
-              <col key={`fixed-${index}`} style={{ width: column.width }} />
-            ))}
-            {report.days.flatMap(day =>
-              DAILY_COLUMNS.map(column => (
-                <col
-                  key={`${day.date}-${column.key}`}
-                  style={{ width: column.width }}
-                />
-              ))
-            )}
-          </colgroup>
-          <thead className="sticky top-0 z-40">
-            <tr>
-              <th
-                data-freeze="meta"
-                colSpan={4}
-                rowSpan={2}
-                aria-hidden="true"
-                className="sticky left-0 z-50 border-b border-r border-slate-300 bg-white"
-                style={{ left: 0, width: 840, minWidth: 840 }}
-              />
-              {report.days.map(day => (
-                <th
-                  key={`group-${day.date}`}
-                  colSpan={3}
-                  scope="colgroup"
-                  className="border-b border-r border-slate-300 px-2 py-2 text-center text-xs font-bold text-slate-800"
-                  style={{ backgroundColor: GROUP_GRAY }}
-                >
-                  LEADs Status
-                </th>
-              ))}
-            </tr>
-            <tr>
-              {report.days.map(day => (
-                <th
-                  key={day.date}
-                  colSpan={3}
-                  scope="colgroup"
-                  className="border-b border-r border-slate-300 px-2 py-2 text-center text-xs font-bold text-slate-800"
-                  style={{ backgroundColor: DATE_GRAY }}
-                  title={`Data de despacho ${day.date}`}
-                >
-                  {day.label}
-                </th>
-              ))}
-            </tr>
-            <tr>
-              {[
-                "NOME DA LOJA",
-                "Responsável por CRM",
-                "Integração Syonet",
-                "Integração API BBRO",
-              ].map((label, index) => (
-                <th
-                  key={label}
-                  scope="col"
-                  data-freeze={index === 0 ? "store" : "meta"}
-                  className="sticky z-50 border-b border-r border-white/20 px-3 py-2 text-left text-xs font-bold leading-4 text-white"
-                  style={{ ...stickyStyle(index), backgroundColor: EXCEL_BLUE }}
-                >
-                  {label}
-                </th>
+            <caption className="sr-only">
+              LEADs Status por loja, responsável CRM, integrações e dia de
+              despacho.
+            </caption>
+            <colgroup>
+              {STICKY_COLUMNS.map((column, index) => (
+                <col key={`fixed-${index}`} style={{ width: column.width }} />
               ))}
               {report.days.flatMap(day =>
                 DAILY_COLUMNS.map(column => (
-                  <th
+                  <col
                     key={`${day.date}-${column.key}`}
+                    style={{ width: column.width }}
+                  />
+                ))
+              )}
+            </colgroup>
+            <thead className="sticky top-0 z-40">
+              <tr>
+                <th
+                  data-freeze="meta"
+                  colSpan={4}
+                  rowSpan={2}
+                  aria-hidden="true"
+                  className="sticky left-0 z-50 border-b border-r border-slate-300 bg-white"
+                  style={{ left: 0, width: 840, minWidth: 840 }}
+                />
+                {report.days.map(day => (
+                  <th
+                    key={`group-${day.date}`}
+                    colSpan={3}
+                    scope="colgroup"
+                    className="border-b border-r border-slate-300 px-2 py-2 text-center text-xs font-bold text-slate-800"
+                    style={{ backgroundColor: GROUP_GRAY }}
+                  >
+                    LEADs Status
+                  </th>
+                ))}
+              </tr>
+              <tr>
+                {report.days.map(day => (
+                  <th
+                    key={day.date}
+                    colSpan={3}
+                    scope="colgroup"
+                    className="border-b border-r border-slate-300 px-2 py-2 text-center text-xs font-bold text-slate-800"
+                    style={{ backgroundColor: DATE_GRAY }}
+                    title={`Data de despacho ${day.date}`}
+                  >
+                    {day.label}
+                  </th>
+                ))}
+              </tr>
+              <tr>
+                {[
+                  "NOME DA LOJA",
+                  "Responsável por CRM",
+                  "Integração Syonet",
+                  "Integração API BBRO",
+                ].map((label, index) => (
+                  <th
+                    key={label}
                     scope="col"
-                    className="border-b border-r border-white/20 px-1 py-2 text-center text-xs font-bold leading-4 text-white"
+                    data-freeze={index === 0 ? "store" : "meta"}
+                    className="sticky z-50 border-b border-r border-white/20 px-3 py-2 text-left text-xs font-bold leading-4 text-white"
                     style={{
-                      minWidth: column.width,
-                      width: column.width,
+                      ...stickyStyle(index),
                       backgroundColor: EXCEL_BLUE,
                     }}
                   >
-                    {column.label}
+                    {label}
                   </th>
-                ))
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length ? (
-              rows.map(row => (
-                <tr key={row.id} className="group">
-                  <td
-                    data-freeze="store"
-                    className="sticky left-0 z-20 border-b border-r border-slate-200 px-3 py-2.5 align-top text-[13px] font-semibold text-slate-800 group-hover:bg-slate-50"
-                    style={{ ...stickyStyle(0), backgroundColor: "#ffffff" }}
-                    title={row.storeName}
-                  >
-                    <span className="whitespace-pre-wrap break-words">
-                      {row.storeName}
-                    </span>
-                    {row.rawDealers?.length ? (
-                      <span
-                        className="mt-1 block text-[11px] font-normal text-slate-500"
-                        title={row.rawDealers.join(" · ")}
-                      >
-                        {row.rawDealers.length > 1
-                          ? `${row.rawDealers.length} nomes originais vinculados`
-                          : row.rawDealers[0] !== row.storeName
-                            ? `Base: ${row.rawDealers[0]}`
-                            : ""}
+                ))}
+                {report.days.flatMap(day =>
+                  DAILY_COLUMNS.map(column => (
+                    <th
+                      key={`${day.date}-${column.key}`}
+                      scope="col"
+                      className="border-b border-r border-white/20 px-1 py-2 text-center text-xs font-bold leading-4 text-white"
+                      style={{
+                        minWidth: column.width,
+                        width: column.width,
+                        backgroundColor: EXCEL_BLUE,
+                      }}
+                    >
+                      {column.label}
+                    </th>
+                  ))
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length ? (
+                rows.map(row => (
+                  <tr key={row.id} className="group">
+                    <td
+                      data-freeze="store"
+                      className="sticky left-0 z-20 border-b border-r border-slate-200 px-3 py-2.5 align-top text-[13px] font-semibold text-slate-800 group-hover:bg-slate-50"
+                      style={{ ...stickyStyle(0), backgroundColor: "#ffffff" }}
+                      title={row.storeName}
+                    >
+                      <span className="whitespace-pre-wrap break-words">
+                        {row.storeName}
                       </span>
-                    ) : null}
-                  </td>
-                  <td
-                    data-freeze="meta"
-                    className="sticky z-20 border-b border-r border-slate-200 px-3 py-2.5 align-top text-xs text-slate-600 group-hover:bg-slate-50"
-                    style={{ ...stickyStyle(1), backgroundColor: "#ffffff" }}
-                    title={
-                      clientMode
-                        ? "Responsável por CRM oculto no modo cliente"
-                        : row.crmResponsible
-                    }
-                  >
-                    <span className="whitespace-pre-wrap break-words">
-                      {crmResponsibleLabel(row)}
-                    </span>
-                  </td>
-                  <td
-                    data-freeze="meta"
-                    className="sticky z-20 border-b border-r border-slate-200 px-2 py-2.5 align-top text-center text-[10px] text-slate-600 group-hover:bg-slate-50"
-                    style={{ ...stickyStyle(2), backgroundColor: "#ffffff" }}
-                    title={row.syonetIntegration || "N/D"}
-                  >
-                    <span className="whitespace-pre-wrap break-words">
-                      {row.syonetIntegration || "N/D"}
-                    </span>
-                  </td>
-                  <td
-                    data-freeze="meta"
-                    className="sticky z-20 border-b border-r border-slate-200 px-2 py-2.5 align-top text-center text-[10px] text-slate-600 group-hover:bg-slate-50"
-                    style={{ ...stickyStyle(3), backgroundColor: "#ffffff" }}
-                    title={row.bbroIntegration || "N/D"}
-                  >
-                    <span className="whitespace-pre-wrap break-words">
-                      {row.bbroIntegration || "N/D"}
-                    </span>
-                  </td>
-                  {report.days.flatMap(day => {
-                    const cell = sourceCellForDate(row, day.date);
-                    if (!cell) {
+                      {row.rawDealers?.length ? (
+                        <span
+                          className="mt-1 block text-[11px] font-normal text-slate-500"
+                          title={row.rawDealers.join(" · ")}
+                        >
+                          {row.rawDealers.length > 1
+                            ? `${row.rawDealers.length} nomes originais vinculados`
+                            : row.rawDealers[0] !== row.storeName
+                              ? `Base: ${row.rawDealers[0]}`
+                              : ""}
+                        </span>
+                      ) : null}
+                    </td>
+                    <td
+                      data-freeze="meta"
+                      className="sticky z-20 border-b border-r border-slate-200 px-3 py-2.5 align-top text-xs text-slate-600 group-hover:bg-slate-50"
+                      style={{ ...stickyStyle(1), backgroundColor: "#ffffff" }}
+                      title={
+                        clientMode
+                          ? "Responsável por CRM oculto no modo cliente"
+                          : row.crmResponsible
+                      }
+                    >
+                      <span className="whitespace-pre-wrap break-words">
+                        {crmResponsibleLabel(row)}
+                      </span>
+                    </td>
+                    <td
+                      data-freeze="meta"
+                      className="sticky z-20 border-b border-r border-slate-200 px-2 py-2.5 align-top text-center text-[10px] text-slate-600 group-hover:bg-slate-50"
+                      style={{ ...stickyStyle(2), backgroundColor: "#ffffff" }}
+                      title={row.syonetIntegration || "N/D"}
+                    >
+                      <span className="whitespace-pre-wrap break-words">
+                        {row.syonetIntegration || "N/D"}
+                      </span>
+                    </td>
+                    <td
+                      data-freeze="meta"
+                      className="sticky z-20 border-b border-r border-slate-200 px-2 py-2.5 align-top text-center text-[10px] text-slate-600 group-hover:bg-slate-50"
+                      style={{ ...stickyStyle(3), backgroundColor: "#ffffff" }}
+                      title={row.bbroIntegration || "N/D"}
+                    >
+                      <span className="whitespace-pre-wrap break-words">
+                        {row.bbroIntegration || "N/D"}
+                      </span>
+                    </td>
+                    {report.days.flatMap(day => {
+                      const cell = sourceCellForDate(row, day.date);
+                      if (!cell) {
+                        return [
+                          <td
+                            key={`${row.id}-${day.date}-syonet-missing`}
+                            className="border-b border-r border-slate-200 px-2 py-2.5 text-center text-slate-300"
+                          >
+                            —
+                          </td>,
+                          <td
+                            key={`${row.id}-${day.date}-manual-missing`}
+                            className="border-b border-r border-slate-200 px-2 py-2.5 text-center text-slate-300"
+                          >
+                            —
+                          </td>,
+                          <td
+                            key={`${row.id}-${day.date}-volume-missing`}
+                            className="border-b border-r border-slate-200 px-2 py-2.5 text-center text-slate-300"
+                          >
+                            —
+                          </td>,
+                        ];
+                      }
                       return [
                         <td
-                          key={`${row.id}-${day.date}-syonet-missing`}
-                          className="border-b border-r border-slate-200 px-2 py-2.5 text-center text-slate-300"
+                          key={`${cell.id}-syonet`}
+                          className="border-b border-r border-slate-200 px-2 py-2.5 text-center text-xs text-slate-600"
+                          title={`SYONET · ${cell.syonet || (cell.volume === null ? "Aguardando" : "—")}`}
                         >
-                          —
+                          {cell.syonet ||
+                            (cell.volume === null ? "Aguardando" : "—")}
                         </td>,
                         <td
-                          key={`${row.id}-${day.date}-manual-missing`}
-                          className="border-b border-r border-slate-200 px-2 py-2.5 text-center text-slate-300"
+                          key={`${cell.id}-manual`}
+                          className="border-b border-r border-slate-200 px-2 py-2.5 text-slate-700"
                         >
-                          —
+                          <ManualCell
+                            cell={cell}
+                            storeName={row.storeName}
+                            saving={savingCellIds.has(cell.id)}
+                            saved={savedCellId === cell.id}
+                            onToggle={onToggle}
+                            canManage={canManage}
+                            canEditManual={canEditManual}
+                            historyOpen={historyCellId === cell.id}
+                            onHistoryOpenChange={open =>
+                              onHistoryCellChange(cell.id, open)
+                            }
+                            historyQuery={historyQuery}
+                          />
                         </td>,
                         <td
-                          key={`${row.id}-${day.date}-volume-missing`}
-                          className="border-b border-r border-slate-200 px-2 py-2.5 text-center text-slate-300"
+                          key={`${cell.id}-volume`}
+                          className="border-b border-r border-slate-200 px-2 py-2.5 text-center text-[11px] font-semibold text-slate-700"
+                          title={
+                            cell.volume === null
+                              ? "Volume indisponível na base de Leads"
+                              : `Vol. Lead · ${cell.volume}`
+                          }
                         >
-                          —
+                          {numberFormat(cell.volume)}
                         </td>,
                       ];
-                    }
-                    return [
-                      <td
-                        key={`${cell.id}-syonet`}
-                        className="border-b border-r border-slate-200 px-2 py-2.5 text-center text-xs text-slate-600"
-                        title={`SYONET · ${cell.syonet || (cell.volume === null ? "Aguardando" : "—")}`}
-                      >
-                        {cell.syonet ||
-                          (cell.volume === null ? "Aguardando" : "—")}
-                      </td>,
-                      <td
-                        key={`${cell.id}-manual`}
-                        className="border-b border-r border-slate-200 px-2 py-2.5 text-slate-700"
-                      >
-                        <ManualCell
-                          cell={cell}
-                          storeName={row.storeName}
-                          saving={savingCellIds.has(cell.id)}
-                          saved={savedCellId === cell.id}
-                          onToggle={onToggle}
-                          canManage={canManage}
-                          historyOpen={historyCellId === cell.id}
-                          onHistoryOpenChange={open =>
-                            onHistoryCellChange(cell.id, open)
-                          }
-                          historyQuery={historyQuery}
-                        />
-                      </td>,
-                      <td
-                        key={`${cell.id}-volume`}
-                        className="border-b border-r border-slate-200 px-2 py-2.5 text-center text-[11px] font-semibold text-slate-700"
-                        title={
-                          cell.volume === null
-                            ? "Volume indisponível na base de Leads"
-                            : `Vol. Lead · ${cell.volume}`
-                        }
-                      >
-                        {numberFormat(cell.volume)}
-                      </td>,
-                    ];
-                  })}
+                    })}
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td
+                    colSpan={4 + report.days.length * 3}
+                    className="border-b border-slate-200 px-4 py-10 text-center text-xs text-slate-500"
+                  >
+                    Nenhuma das linhas da fonte corresponde aos filtros atuais.
+                  </td>
                 </tr>
-              ))
-            ) : (
+              )}
+            </tbody>
+            <tfoot>
               <tr>
-                <td
-                  colSpan={4 + report.days.length * 3}
-                  className="border-b border-slate-200 px-4 py-10 text-center text-xs text-slate-500"
+                <th
+                  data-freeze="meta"
+                  colSpan={4}
+                  scope="row"
+                  className="sticky left-0 z-20 border-r border-t border-slate-300 px-3 py-3 text-left text-[10px] font-bold uppercase leading-4 text-slate-800"
+                  style={{
+                    left: 0,
+                    width: 840,
+                    minWidth: 840,
+                    backgroundColor: GROUP_GRAY,
+                  }}
                 >
-                  Nenhuma das linhas da fonte corresponde aos filtros atuais.
-                </td>
+                  Total das lojas exibidas
+                </th>
+                {report.days.flatMap((day, index) => [
+                  <td
+                    key={`${day.date}-source-syonet`}
+                    className="border-r border-t border-slate-300 px-1 py-3 text-center text-[10px] text-slate-400"
+                    style={{ backgroundColor: "#fafafa" }}
+                  >
+                    —
+                  </td>,
+                  <td
+                    key={`${day.date}-source-manual`}
+                    className="border-r border-t border-slate-300 px-1 py-3 text-center text-[10px] text-slate-400"
+                    style={{ backgroundColor: "#fafafa" }}
+                  >
+                    —
+                  </td>,
+                  <td
+                    key={`${day.date}-source-volume`}
+                    className="border-r border-t border-slate-300 px-1 py-3 text-center text-[11px] font-bold text-slate-800"
+                    style={{ backgroundColor: "#fafafa" }}
+                    title={`Total de Vol. Lead nas lojas exibidas em ${day.date}`}
+                  >
+                    {numberFormat(visibleVolumeByDate[index])}
+                  </td>,
+                ])}
               </tr>
-            )}
-          </tbody>
-          <tfoot>
-            <tr>
-              <th
-                data-freeze="meta"
-                colSpan={4}
-                scope="row"
-                className="sticky left-0 z-20 border-r border-t border-slate-300 px-3 py-3 text-left text-[10px] font-bold uppercase leading-4 text-slate-800"
-                style={{
-                  left: 0,
-                  width: 840,
-                  minWidth: 840,
-                  backgroundColor: GROUP_GRAY,
-                }}
-              >
-                Total das lojas exibidas
-              </th>
-              {report.days.flatMap((day, index) => [
-                <td
-                  key={`${day.date}-source-syonet`}
-                  className="border-r border-t border-slate-300 px-1 py-3 text-center text-[10px] text-slate-400"
-                  style={{ backgroundColor: "#fafafa" }}
-                >
-                  —
-                </td>,
-                <td
-                  key={`${day.date}-source-manual`}
-                  className="border-r border-t border-slate-300 px-1 py-3 text-center text-[10px] text-slate-400"
-                  style={{ backgroundColor: "#fafafa" }}
-                >
-                  —
-                </td>,
-                <td
-                  key={`${day.date}-source-volume`}
-                  className="border-r border-t border-slate-300 px-1 py-3 text-center text-[11px] font-bold text-slate-800"
-                  style={{ backgroundColor: "#fafafa" }}
-                  title={`Total de Vol. Lead nas lojas exibidas em ${day.date}`}
-                >
-                  {numberFormat(visibleVolumeByDate[index])}
-                </td>,
-              ])}
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-      <div className="border-t border-slate-100 px-4 py-3 text-[11px] leading-5 text-slate-500">
-        Totais no rodapé representam somente as lojas exibidas. Vol. Lead é
-        quantidade de registros criados no dia, não volume de envio ao CRM.
-        SYONET e Vol. Lead são somente leitura; apenas o check Manual grava uma
-        validação.
-      </div>
+            </tfoot>
+          </table>
+        </div>
+        <div className="border-t border-slate-100 px-4 py-3 text-[11px] leading-5 text-slate-500">
+          Totais no rodapé representam somente as lojas exibidas. Vol. Lead é
+          quantidade de registros criados no dia, não volume de envio ao CRM.
+          SYONET e Vol. Lead são somente leitura; apenas o check Manual grava
+          uma validação.
+        </div>
       </div>
     </div>
   );
@@ -854,9 +872,7 @@ export default function V2DispatchControl({
   const activeRequests = useRef(new Set<number>());
   const utils = trpc.useUtils();
   const [cutoff, setCutoff] = useState(() => getDashboardCutoffDate());
-  const [showCrm, setShowCrm] = useState(
-    () => canManage && !effectiveClientMode
-  );
+  const [showCrm, setShowCrm] = useState(true);
   const [integrationFilter, setIntegrationFilter] = useState("all");
   const [dateFrom, setDateFrom] = useState(
     () => `${getDashboardCutoffDate().slice(0, 7)}-01`
@@ -904,7 +920,7 @@ export default function V2DispatchControl({
     );
   }, [cutoff]);
   useEffect(() => {
-    setShowCrm(canManage && !effectiveClientMode);
+    setShowCrm(true);
   }, [canManage, effectiveClientMode]);
 
   const reportsQuery = trpc.dispatch.reports.useQuery(undefined, {
@@ -918,6 +934,7 @@ export default function V2DispatchControl({
     refetchOnWindowFocus: true,
     refetchInterval: 30_000,
   });
+  const canEditManual = canValidateCRM(authMeQuery.data?.role);
   const summaries = reportsQuery.data ?? [];
   const showAdvancedControls =
     canManage && authMeQuery.data?.username?.trim().toLowerCase() === "rodrigo";
@@ -941,7 +958,7 @@ export default function V2DispatchControl({
       enabled:
         authenticated &&
         selectedReportId !== null &&
-        (!canManage || preparedInputKey === inputKey),
+        (!canEditManual || preparedInputKey === inputKey),
       retry: false,
       refetchOnWindowFocus: false,
     }
@@ -949,7 +966,7 @@ export default function V2DispatchControl({
   const historyQuery = trpc.dispatch.history.useQuery(
     { cellId: historyCellId ?? 0 },
     {
-      enabled: authenticated && historyCellId !== null,
+      enabled: authenticated && canEditManual && historyCellId !== null,
       retry: false,
       refetchOnWindowFocus: false,
     }
@@ -958,7 +975,7 @@ export default function V2DispatchControl({
 
   const report = reportQuery.data;
   const preparePreviousDay = async () => {
-    if (!canManage || selectedReportId === null) return null;
+    if (!canEditManual || selectedReportId === null) return null;
     const requestKey = inputKey;
     setPreparing(true);
     setUpdateError(null);
@@ -990,7 +1007,7 @@ export default function V2DispatchControl({
     }
   };
   useEffect(() => {
-    if (!canManage || !authenticated || selectedReportId === null) return;
+    if (!canEditManual || !authenticated || selectedReportId === null) return;
     const key = inputKey;
     if (preparedKey.current === key) return;
     preparedKey.current = key;
@@ -1004,7 +1021,14 @@ export default function V2DispatchControl({
       active = false;
       window.clearTimeout(retryTimer);
     };
-  }, [canManage, authenticated, selectedReportId, cutoff, prepareRetry, inputKey]);
+  }, [
+    canEditManual,
+    authenticated,
+    selectedReportId,
+    cutoff,
+    prepareRetry,
+    inputKey,
+  ]);
   const visibleReport = useMemo<DispatchReport | undefined>(() => {
     if (!report) return undefined;
     const days = report.days.filter(
@@ -1040,7 +1064,7 @@ export default function V2DispatchControl({
     };
   }, [report, appliedFilters, cutoff]);
   const refreshDaily = async () => {
-    if (!canManage) {
+    if (!canEditManual) {
       const results = await Promise.all([
         reportsQuery.refetch(),
         reportQuery.refetch(),
@@ -1093,7 +1117,7 @@ export default function V2DispatchControl({
   }, [showCrm, manualFilter, visibleReport, search, integrationFilter]);
 
   const onToggle = async (cell: DispatchCell, isOk: boolean) => {
-    if (!canManage) return;
+    if (!canEditManual) return;
     if (
       activeRequests.current.has(cell.id) ||
       preparing ||
@@ -1189,7 +1213,8 @@ export default function V2DispatchControl({
       </div>
     );
   if (
-    (reportQuery.isLoading || (canManage && preparedInputKey !== inputKey)) &&
+    (reportQuery.isLoading ||
+      (canEditManual && preparedInputKey !== inputKey)) &&
     !report
   ) {
     return (
@@ -1252,7 +1277,9 @@ export default function V2DispatchControl({
           </div>
           <div className="shrink-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs text-slate-600 lg:text-right">
             <p className="font-bold text-slate-800">Período D-1</p>
-            <p className="mt-0.5">Até {cutoff.split("-").reverse().join("/")}</p>
+            <p className="mt-0.5">
+              Até {cutoff.split("-").reverse().join("/")}
+            </p>
           </div>
         </div>
         {showAdvancedControls ? (
@@ -1275,7 +1302,9 @@ export default function V2DispatchControl({
                   selectedReportId={selectedReportId}
                   onChange={setSelectedReportId}
                   isFetching={
-                    reportsQuery.isFetching || reportQuery.isFetching || preparing
+                    reportsQuery.isFetching ||
+                    reportQuery.isFetching ||
+                    preparing
                   }
                   onRefresh={() => void refreshDaily()}
                 />
@@ -1290,7 +1319,10 @@ export default function V2DispatchControl({
                       disabled={Boolean(filters && !onPeriodChange)}
                       onChange={event =>
                         onPeriodChange
-                          ? onPeriodChange(event.target.value, appliedFilters.dateTo)
+                          ? onPeriodChange(
+                              event.target.value,
+                              appliedFilters.dateTo
+                            )
                           : setDateFrom(event.target.value)
                       }
                     />
@@ -1305,7 +1337,9 @@ export default function V2DispatchControl({
                       max={cutoff}
                       onChange={event => {
                         const end =
-                          event.target.value > cutoff ? cutoff : event.target.value;
+                          event.target.value > cutoff
+                            ? cutoff
+                            : event.target.value;
                         if (onPeriodChange)
                           onPeriodChange(appliedFilters.dateFrom, end);
                         else setDateTo(end);
@@ -1317,7 +1351,9 @@ export default function V2DispatchControl({
                     <select
                       className="v2-input"
                       value={integrationFilter}
-                      onChange={event => setIntegrationFilter(event.target.value)}
+                      onChange={event =>
+                        setIntegrationFilter(event.target.value)
+                      }
                     >
                       <option value="all">Todas as lojas</option>
                       <option value="syonet-ok">Syonet integrado (OK)</option>
@@ -1344,8 +1380,9 @@ export default function V2DispatchControl({
                   clientMode={!showCrm}
                 />
                 <p className="text-xs leading-5 text-slate-500">
-                  Atualizar recalcula Vol. Lead diretamente da base do dashboard.
-                  A planilha não alimenta o volume; Manual é uma conferência separada.
+                  Atualizar recalcula Vol. Lead diretamente da base do
+                  dashboard. A planilha não alimenta o volume; Manual é uma
+                  conferência separada.
                 </p>
               </div>
             ) : null}
@@ -1488,6 +1525,7 @@ export default function V2DispatchControl({
           rows={filteredRows}
           clientMode={!showCrm}
           canManage={canManage}
+          canEditManual={canEditManual}
           savingCellIds={savingCellIds}
           savedCellId={savedCellId}
           onToggle={onToggle}
