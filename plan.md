@@ -161,3 +161,9 @@ Remover somente a distribuição por modelo da Visão Geral e ajustar o contêin
 ## Detalhamento de modelos e total das barras
 
 Adicionar Modelos ao menu persistente e agregar na base completa filtrada (não na página de Leads recentes). Reutilizar o de-para dos cinco modelos e identificar lacunas de modelo e versão com categorias explícitas. Detalhar origem sem reescrever a planilha ou inventar especificações. Dados reais desconhecidos permanecem contabilizados. No gráfico diário, rotular o topo de cada pilha com o total de Leads daquela data, preservando canais e linhas acumuladas.
+
+## Plano de Mídia em largura total e Modelos oculto — 06/11/2026
+
+O Plano de Mídia passa a usar toda a largura do contêiner da aplicação, sem max-width centralizador ou segunda camada de margens laterais. Manter identidade MG; harmonizar tipografia, espaçamentos, contraste e proporção do gráfico em zoom 100%, com tabela rolável apenas no próprio bloco em telas menores. Alocação e produtos usam colunas equilibradas; conciliação financeira fica em faixa própria para evitar vazio excessivo. Preservar cálculos, fontes e edição de projeções.
+
+Ocultar a aba Modelos do menu e da renderização ativa; URLs antigas tab=models caem em Visão Geral sem tela vazia. Preservar o componente, o de-para, a agregação de backend, filtros de modelo e matriz regional. Atualizar manifesto de rotas e regressões. Nenhuma importação, escrita administrativa, mudança de D-1 ou publicação nesta entrega.

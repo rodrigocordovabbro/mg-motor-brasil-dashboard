@@ -208,3 +208,10 @@ Conexão concluída em 06/11/2026: teste real do mesmo serviço usado pelo botã
 - [x] Mostrar um total acima de cada barra empilhada do gráfico Leads por dia e canal, uma vez por dia e não por segmento; refletir exatamente o total do servidor e manter linhas de acumulado/pace, legenda e responsividade.
 
 Evidência: TypeScript/build e suíte de 258 testes aprovados antes da revisão; após corrigir origem, navegação e período vazio, 52 regressões afetadas passaram. Leitura real de novembro soma 1.851 registros em cinco modelos e mantém as somas por versão. Nenhuma escrita em dados reais ou nova importação nesta entrega.
+
+## Largura integral do Plano de Mídia e ocultação de Modelos — 06/11/2026
+
+- [x] Plano de Mídia ocupa toda a largura disponível como os outros módulos, sem limite centralizador e sem duplicação de margens; fontes, KPIs, gráficos, tabela e espaçamentos harmônicos em zoom 100%, com adaptação para telas menores e rolagem da tabela contida. Preservar valores, fontes e edição de projeções manuais.
+- [x] Ocultar a aba Modelos no menu e na renderização; normalizar acesso antigo tab=models para Visão Geral e remover a rota declarada. Preservar componente, dados, categorização, filtros de modelo, matriz regional, contagens e totais diários. D-1 São Paulo e permissões intactos; sem importação, publicação ou alteração do dashboard antigo.
+
+Evidência: TypeScript, 43 regressões focadas, suíte completa de 268 testes em 39 arquivos e build aprovados; health e manifesto HTTP 200. Testes usam mocks/fixtures, sem escrita real. Diferença com a V1 investigada somente leitura: V2 atual 1.851 contra 1.843 da imagem; regras de data/identidade do código legado diferem, mas ainda sem prova da origem exata dos oito registros. Nenhum total foi artificialmente ajustado nem houve nova sincronização.

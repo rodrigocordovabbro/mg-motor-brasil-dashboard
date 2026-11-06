@@ -98,6 +98,39 @@ afterEach(() => {
 });
 
 describe("aplicação dos filtros do painel", () => {
+  it("normaliza a URL legada de Modelos para Visão Geral e preserva parâmetros", () => {
+    const replaceState = vi.fn();
+    vi.stubGlobal("window", {
+      location: {
+        href: "https://mgmotors.test/?module=leads&tab=models&foo=bar",
+        search: "?module=leads&tab=models&foo=bar",
+      },
+      history: { replaceState },
+      requestAnimationFrame: vi.fn(),
+    });
+    mock.index = 0;
+
+    const tree = Dashboard({
+      authenticated: true,
+      clientMode: false,
+      canManage: false,
+    });
+    const navigation = findElement(
+      tree,
+      element => element.type?.name === "LeadsSectionNavigation"
+    );
+
+    expect(navigation.props.activeTab).toBe("Visão Geral");
+    expect(replaceState).toHaveBeenCalledOnce();
+    const normalized = new URL(
+      replaceState.mock.calls[0][2],
+      "https://mgmotors.test"
+    );
+    expect(normalized.searchParams.get("module")).toBe("leads");
+    expect(normalized.searchParams.get("foo")).toBe("bar");
+    expect(normalized.searchParams.has("tab")).toBe(false);
+  });
+
   it.each(LEAD_PERIOD_PRESETS)(
     "%s aplica os campos e a consulta no mesmo clique",
     preset => {

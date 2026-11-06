@@ -99,6 +99,39 @@ function statusLabel(
   return locale === "en-US" ? labels.en[key] : labels.pt[key];
 }
 
+export function MediaChannelTick({
+  x = 0,
+  y = 0,
+  payload,
+}: {
+  x?: number;
+  y?: number;
+  payload?: { value: string };
+}) {
+  const label = String(payload?.value ?? "");
+  const lines = label.split(/\s+/).reduce<string[]>((result, word) => {
+    const last = result[result.length - 1];
+    if (last && `${last} ${word}`.length <= 18)
+      result[result.length - 1] = `${last} ${word}`;
+    else result.push(word);
+    return result;
+  }, []);
+  return (
+    <text x={x - 10} y={y} textAnchor="end" fill="#475569" fontSize={12}>
+      <title>{label}</title>
+      {lines.map((line, index) => (
+        <tspan
+          key={index}
+          x={x - 10}
+          dy={index === 0 ? 4 - ((lines.length - 1) * 14) / 2 : 14}
+        >
+          {line}
+        </tspan>
+      ))}
+    </text>
+  );
+}
+
 export function MediaPlanEmptyState({
   locale = "pt-BR",
 }: {
@@ -295,9 +328,9 @@ export function MediaPlanDashboard({
     );
   if (!plan) {
     return (
-      <main className="w-full min-h-[calc(100vh-88px)]">
+      <div className="w-full min-w-0">
         <MediaPlanEmptyState locale={locale} />
-      </main>
+      </div>
     );
   }
 
@@ -429,28 +462,31 @@ export function MediaPlanDashboard({
     : false;
 
   return (
-    <main className="mx-auto min-h-[calc(100vh-88px)] max-w-[1680px] px-4 pb-12 pt-6 lg:px-6">
-      <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.06)] sm:p-7">
-        <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
-          <div className="max-w-3xl">
-            <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#f0525c]">
+    <div
+      data-testid="media-plan-dashboard"
+      className="w-full min-w-0 space-y-5 pb-6 text-sm"
+    >
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#b41b26]">
               <FileSpreadsheet className="h-4 w-4" />
               {copy.eyebrow}
             </div>
-            <h1 className="mt-3 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+            <h1 className="mt-2 text-2xl font-bold leading-tight tracking-tight text-slate-900 sm:text-[28px]">
               {isEnglish ? plan.titleEn : plan.titlePt}
             </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+            <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
               {copy.financialDescription}
             </p>
           </div>
-          <div className="flex min-w-[240px] flex-col items-stretch gap-2">
-            <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+          <div className="flex w-full shrink-0 flex-col items-stretch gap-2 sm:w-[280px]">
+            <label className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600">
               {copy.month}
               <select
                 value={selectedMonth}
                 onChange={event => setSelectedMonth(event.target.value)}
-                className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-900 outline-none focus:border-[#e2212d]/60"
+                className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium normal-case tracking-normal text-slate-900 outline-none focus:border-[#e2212d]/60 focus:ring-2 focus:ring-red-100"
               >
                 {MEDIA_PLANS.map(item => (
                   <option key={item.month} value={item.month}>
@@ -467,7 +503,7 @@ export function MediaPlanDashboard({
               <button
                 type="button"
                 onClick={() => openProjectionEditor({ scope: "global" })}
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#e2212d] px-3 text-xs font-bold text-white shadow-sm transition hover:bg-[#c91c28] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#e2212d] px-4 text-sm font-bold text-white shadow-sm transition hover:bg-[#c91c28] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
               >
                 <Edit3 className="h-3.5 w-3.5" aria-hidden="true" />
                 {isEnglish ? "Edit projections" : "Editar projeções"}
@@ -476,26 +512,26 @@ export function MediaPlanDashboard({
           </div>
         </div>
 
-        <div className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {kpis.map(({ id, label, value, icon: Icon }) => (
             <div
               key={id}
               data-testid={`media-plan-kpi-${id}`}
-              className="rounded-2xl border border-slate-100 bg-slate-50 p-4"
+              className="min-w-0 rounded-xl border border-slate-200/70 bg-slate-50 p-5"
             >
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-semibold uppercase tracking-[0.13em] text-slate-500">
+              <div className="flex items-start justify-between gap-3">
+                <span className="text-xs font-semibold leading-5 text-slate-600">
                   {label}
                 </span>
-                <Icon className="h-4 w-4 text-[#e2212d]" />
+                <Icon className="h-5 w-5 shrink-0 text-[#e2212d]" />
               </div>
-              <div className="mt-3 text-xl font-semibold text-slate-900">
+              <div className="mt-2 text-[28px] font-bold leading-tight tracking-tight text-slate-900 tabular-nums 2xl:text-[32px]">
                 {value}
               </div>
             </div>
           ))}
         </div>
-        <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-xs text-slate-500">
+        <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-[13px] leading-5 text-slate-600">
           {plan.total.impressions != null && (
             <span>
               {copy.impressions}:{" "}
@@ -539,7 +575,7 @@ export function MediaPlanDashboard({
           )}
         </div>
         {plan.projectionOverrides?.globalManual ? (
-          <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-800">
+          <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-[13px] leading-5 text-amber-800">
             {isEnglish
               ? "Total manual; detailed projections remain unchanged."
               : "Total manual; projeções detalhadas mantidas."}
@@ -548,51 +584,60 @@ export function MediaPlanDashboard({
         {savedNotice ? (
           <p
             role="status"
-            className="mt-3 text-[11px] font-semibold text-emerald-700"
+            className="mt-3 text-sm font-semibold text-emerald-700"
           >
             {savedNotice}
           </p>
         ) : null}
       </section>
 
-      <section className="mt-5 grid gap-5 xl:grid-cols-[1.45fr_0.8fr]">
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
+      <section
+        data-testid="media-plan-allocation"
+        className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]"
+      >
+        <div className="flex min-w-0 flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="text-base font-semibold text-slate-900">
+              <h2 className="text-lg font-semibold text-slate-900">
                 {copy.grossAllocation}
               </h2>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-sm leading-5 text-slate-600">
                 {copy.allocationDesc}
               </p>
             </div>
             <BarChart3 className="h-5 w-5 text-[#e2212d]" />
           </div>
-          <div className="mt-5 h-[310px]">
+          <div
+            className="mt-5 w-full flex-1"
+            style={{
+              minHeight: Math.max(300, channelData.length * 40 + 32),
+              height: Math.max(300, channelData.length * 40 + 32),
+            }}
+          >
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={channelData}
                 layout="vertical"
-                margin={{ top: 2, right: 10, bottom: 2, left: 22 }}
+                accessibilityLayer
+                margin={{ top: 4, right: 12, bottom: 4, left: 0 }}
               >
-                <CartesianGrid
-                  stroke="rgba(148,163,184,0.08)"
-                  horizontal={false}
-                />
+                <CartesianGrid stroke="#e2e8f0" horizontal={false} />
                 <XAxis
                   type="number"
                   tickFormatter={value =>
                     `${Math.round(Number(value) / 1000)}k`
                   }
-                  tick={{ fill: "#64748b", fontSize: 10 }}
+                  tick={{ fill: "#64748b", fontSize: 12 }}
+                  minTickGap={30}
                   axisLine={false}
                   tickLine={false}
                 />
                 <YAxis
                   type="category"
                   dataKey="channel"
-                  width={130}
-                  tick={{ fill: "#94a3b8", fontSize: 10 }}
+                  width={144}
+                  tick={<MediaChannelTick />}
+                  interval={0}
                   axisLine={false}
                   tickLine={false}
                 />
@@ -602,8 +647,8 @@ export function MediaPlanDashboard({
                     background: "#ffffff",
                     border: "1px solid rgba(148,163,184,.16)",
                     borderRadius: 12,
-                    color: "#e2e8f0",
-                    fontSize: 12,
+                    color: "#0f172a",
+                    fontSize: 14,
                   }}
                   formatter={(value: number) =>
                     formatCurrency(Number(value), locale)
@@ -613,188 +658,195 @@ export function MediaPlanDashboard({
                   dataKey="investment"
                   fill="#e2212d"
                   radius={[0, 6, 6, 0]}
+                  maxBarSize={24}
                 />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        <div className="space-y-5">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-slate-900">
-                {copy.product}
-              </h2>
-              <Layers3 className="h-5 w-5 text-[#e2212d]" />
-            </div>
-            <div className="mt-4 space-y-3">
-              {plan.totals.map(total => (
-                <article
-                  key={total.label}
-                  className="rounded-xl border border-slate-100 bg-slate-50 p-4"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <strong className="text-sm text-slate-900">
-                      {total.label}
-                    </strong>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold text-[#f0525c]">
-                        {formatPercent(
-                          total.investment / plan.total.investment,
-                          locale
-                        )}
-                      </span>
-                      {owner && total.product ? (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            openProjectionEditor({
-                              scope: "product",
-                              key: total.product as string,
-                              label: total.label,
-                            })
-                          }
-                          className="inline-flex items-center gap-1 rounded-lg border border-red-100 bg-white px-2 py-1 text-[10px] font-bold text-[#e2212d] hover:bg-red-50"
-                        >
-                          <Edit3 className="h-3 w-3" />
-                          {isEnglish ? "Edit" : "Editar"}
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="mt-3 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
-                    <div>
-                      <span className="block text-[9px] uppercase tracking-wider text-slate-600">
-                        {copy.gross}
-                      </span>
-                      <strong className="mt-1 block text-slate-800">
-                        {formatCurrency(total.investment, locale)}
-                      </strong>
-                    </div>
-                    <div>
-                      <span className="block text-[9px] uppercase tracking-wider text-slate-600">
-                        {copy.commission}
-                      </span>
-                      <strong className="mt-1 block text-slate-800">
-                        {total.commission == null
-                          ? unavailableValue
-                          : formatCurrency(total.commission, locale)}
-                      </strong>
-                    </div>
-                    <div>
-                      <span className="block text-[9px] uppercase tracking-wider text-slate-600">
-                        {copy.net}
-                      </span>
-                      <strong className="mt-1 block text-slate-800">
-                        {total.netInvestment == null
-                          ? unavailableValue
-                          : formatCurrency(total.netInvestment, locale)}
-                      </strong>
-                    </div>
-                    <div>
-                      <span className="block text-[9px] uppercase tracking-wider text-slate-600">
-                        {copy.actual}
-                      </span>
-                      <strong className="mt-1 block text-slate-800">
-                        {total.actualInvestment == null
-                          ? unavailableValue
-                          : formatCurrency(total.actualInvestment, locale)}
-                      </strong>
-                    </div>
-                  </div>
-                  {(total.leads != null ||
-                    total.cpl != null ||
-                    (owner && total.product)) && (
-                    <div className="mt-3 flex gap-5 border-t border-slate-200 pt-3 text-[10px] text-slate-500">
-                      {(total.leads != null || (owner && total.product)) && (
-                        <span>
-                          {copy.leads}:{" "}
-                          {owner && total.product ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                openProjectionEditor({
-                                  scope: "product",
-                                  key: total.product as string,
-                                  label: total.label,
-                                })
-                              }
-                              className="font-bold text-slate-800 underline decoration-red-200 underline-offset-2"
-                            >
-                              {total.leads == null
-                                ? unavailableValue
-                                : formatNumber(total.leads, locale)}
-                            </button>
-                          ) : (
-                            <strong className="text-slate-800">
-                              {formatNumber(total.leads as number, locale)}
-                            </strong>
-                          )}
-                        </span>
-                      )}
-                      {total.cpl != null && (
-                        <span>
-                          CPL:{" "}
-                          <strong className="text-slate-800">
-                            {formatCurrency(total.cpl, locale, 2)}
-                          </strong>
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </article>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
-            <h2 className="text-base font-semibold text-slate-900">
-              {copy.reconciliation}
+        <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-slate-900">
+              {copy.product}
             </h2>
-            <div className="mt-4 space-y-4">
-              {financialReconciliation.map(item => (
-                <div key={item.label}>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium text-slate-700">
-                      {item.label}
+            <Layers3 className="h-5 w-5 text-[#e2212d]" />
+          </div>
+          <div className="mt-5 space-y-4">
+            {plan.totals.map(total => (
+              <article
+                key={total.label}
+                className="rounded-xl border border-slate-200/70 bg-slate-50 p-4 sm:p-5"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <strong className="min-w-0 text-sm leading-5 text-slate-900">
+                    {total.label}
+                  </strong>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span className="text-sm font-semibold text-[#b41b26] tabular-nums">
+                      {formatPercent(
+                        total.investment / plan.total.investment,
+                        locale
+                      )}
                     </span>
-                    <span className="text-slate-500">
-                      {item.value == null
-                        ? unavailableValue
-                        : formatCurrency(item.value, locale)}
-                    </span>
-                  </div>
-                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-[#9f1520] to-[#ef3340]"
-                      style={{
-                        width: `${item.value == null || item.value === 0 ? 0 : Math.max(3, (item.value / plan.total.investment) * 100)}%`,
-                      }}
-                    />
+                    {owner && total.product ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          openProjectionEditor({
+                            scope: "product",
+                            key: total.product as string,
+                            label: total.label,
+                          })
+                        }
+                        className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-red-100 bg-white px-2 py-1 text-xs font-bold text-[#e2212d] hover:bg-red-50"
+                      >
+                        <Edit3 className="h-3 w-3" />
+                        {isEnglish ? "Edit" : "Editar"}
+                      </button>
+                    ) : null}
                   </div>
                 </div>
-              ))}
-            </div>
+                <div className="mt-4 grid grid-cols-2 gap-x-5 gap-y-4 text-sm tabular-nums">
+                  <div>
+                    <span className="block text-xs leading-5 text-slate-600">
+                      {copy.gross}
+                    </span>
+                    <strong className="mt-1 block text-slate-800">
+                      {formatCurrency(total.investment, locale)}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="block text-xs leading-5 text-slate-600">
+                      {copy.commission}
+                    </span>
+                    <strong className="mt-1 block text-slate-800">
+                      {total.commission == null
+                        ? unavailableValue
+                        : formatCurrency(total.commission, locale)}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="block text-xs leading-5 text-slate-600">
+                      {copy.net}
+                    </span>
+                    <strong className="mt-1 block text-slate-800">
+                      {total.netInvestment == null
+                        ? unavailableValue
+                        : formatCurrency(total.netInvestment, locale)}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="block text-xs leading-5 text-slate-600">
+                      {copy.actual}
+                    </span>
+                    <strong className="mt-1 block text-slate-800">
+                      {total.actualInvestment == null
+                        ? unavailableValue
+                        : formatCurrency(total.actualInvestment, locale)}
+                    </strong>
+                  </div>
+                </div>
+                {(total.leads != null ||
+                  total.cpl != null ||
+                  (owner && total.product)) && (
+                  <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-t border-slate-200 pt-3 text-[13px] leading-5 text-slate-600 tabular-nums">
+                    {(total.leads != null || (owner && total.product)) && (
+                      <span>
+                        {copy.leads}:{" "}
+                        {owner && total.product ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openProjectionEditor({
+                                scope: "product",
+                                key: total.product as string,
+                                label: total.label,
+                              })
+                            }
+                            className="font-bold text-slate-800 underline decoration-red-200 underline-offset-2"
+                          >
+                            {total.leads == null
+                              ? unavailableValue
+                              : formatNumber(total.leads, locale)}
+                          </button>
+                        ) : (
+                          <strong className="text-slate-800">
+                            {formatNumber(total.leads as number, locale)}
+                          </strong>
+                        )}
+                      </span>
+                    )}
+                    {total.cpl != null && (
+                      <span>
+                        CPL:{" "}
+                        <strong className="text-slate-800">
+                          {formatCurrency(total.cpl, locale, 2)}
+                        </strong>
+                      </span>
+                    )}
+                  </div>
+                )}
+              </article>
+            ))}
           </div>
         </div>
       </section>
 
-      <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
+      <section
+        data-testid="media-plan-reconciliation"
+        className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"
+      >
+        <h2 className="text-lg font-semibold text-slate-900">
+          {copy.reconciliation}
+        </h2>
+        <div className="mt-5 grid gap-x-6 gap-y-5 sm:grid-cols-2 xl:grid-cols-4">
+          {financialReconciliation.map(item => (
+            <div key={item.label} className="min-w-0">
+              <div className="flex flex-col gap-1 text-sm">
+                <span className="text-xs font-medium text-slate-600">
+                  {item.label}
+                </span>
+                <span className="text-lg font-semibold text-slate-900 tabular-nums">
+                  {item.value == null
+                    ? unavailableValue
+                    : formatCurrency(item.value, locale)}
+                </span>
+              </div>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-[#9f1520] to-[#ef3340]"
+                  style={{
+                    width: `${item.value == null || item.value === 0 ? 0 : Math.max(3, (item.value / plan.total.investment) * 100)}%`,
+                  }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
           <div>
-            <h2 className="text-base font-semibold text-slate-900">
+            <h2 className="text-lg font-semibold text-slate-900">
               {copy.details}
             </h2>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-sm text-slate-600">
               {plan.rows.length}{" "}
               {isEnglish ? "planned placements" : "inserções planejadas"}
             </p>
           </div>
           <CircleDollarSign className="h-5 w-5 text-[#e2212d]" />
         </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-[1380px] w-full text-left">
-            <thead className="bg-white text-[9px] uppercase tracking-[0.13em] text-slate-600">
+        <div
+          className="mg-media-table-scroll"
+          role="region"
+          aria-label={copy.details}
+          tabIndex={0}
+        >
+          <table className="min-w-[1380px] w-full text-left tabular-nums">
+            <thead className="bg-slate-50 text-xs font-semibold text-slate-600">
               <tr>
                 <th className="px-4 py-3">{copy.channel}</th>
                 <th className="px-4 py-3">{copy.publisher}</th>
@@ -809,7 +861,7 @@ export function MediaPlanDashboard({
                 <th className="px-4 py-3 text-right">CPL</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 text-xs">
+            <tbody className="divide-y divide-slate-100 text-[13px] leading-5">
               {plan.rows.map(row => (
                 <tr
                   key={row.id}
@@ -876,11 +928,11 @@ export function MediaPlanDashboard({
             </tbody>
           </table>
         </div>
-        <div className="border-t border-slate-100 px-5 py-3 text-[11px] text-slate-600">
+        <div className="border-t border-slate-100 px-5 py-3 text-[13px] leading-5 text-slate-600">
           {copy.unavailable}: os campos permanecem como N/D ou —, sem
           preenchimento artificial.
         </div>
-        <div className="flex items-start gap-2 border-t border-slate-100 px-5 py-4 text-[11px] leading-5 text-slate-600">
+        <div className="flex items-start gap-2 border-t border-slate-100 px-5 py-4 text-[13px] leading-5 text-slate-600">
           <MousePointerClick className="mt-0.5 h-4 w-4 shrink-0" />
           <span>{isEnglish ? plan.sourceNoteEn : plan.sourceNotePt}</span>
         </div>
@@ -1047,6 +1099,6 @@ export function MediaPlanDashboard({
           </div>
         </div>
       ) : null}
-    </main>
+    </div>
   );
 }

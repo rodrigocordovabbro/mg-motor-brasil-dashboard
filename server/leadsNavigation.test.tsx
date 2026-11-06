@@ -7,6 +7,22 @@ import {
 import { readFileSync } from "node:fs";
 
 describe("Menu persistente de Leads", () => {
+  it("oculta Modelos da navegação e do dashboard ativo", () => {
+    const source = readFileSync(
+      new URL("../client/src/components/V2LeadsDashboard.tsx", import.meta.url),
+      "utf8"
+    );
+    const manifest = readFileSync(
+      new URL("../client/public/manus-routes.json", import.meta.url),
+      "utf8"
+    );
+
+    expect(LEADS_SECTION_TABS).not.toContain("Modelos");
+    expect(source).not.toContain('activeTab === "Modelos"');
+    expect(source).not.toContain("V2ModelsDashboard");
+    expect(manifest).not.toContain("tab=models");
+  });
+
   it.each(LEADS_SECTION_TABS)(
     "mantém todas as opções e seleção correta em %s",
     activeTab => {

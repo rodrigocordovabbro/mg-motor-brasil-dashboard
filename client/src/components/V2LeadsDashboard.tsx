@@ -21,7 +21,6 @@ import V2MonthlyGoalEditor from "./V2MonthlyGoalEditor";
 import { useEffect } from "react";
 import V2DispatchControl from "./V2DispatchControl";
 import V2RegionalModelMatrix from "./newcomponentV2RegionalModelMatrix";
-import V2ModelsDashboard from "./V2ModelsDashboard";
 import { trpc } from "@/lib/trpc";
 import {
   addIsoDays,
@@ -1889,6 +1888,16 @@ function SummaryFact({
   );
 }
 
+function resolveInitialLeadsTab(): V2Tab {
+  const tab = new URLSearchParams(window.location.search).get("tab");
+  if (tab === "models") {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("tab");
+    window.history.replaceState({}, "", url);
+  }
+  return tab === "stores" ? "Lojas & CRM" : "Visão Geral";
+}
+
 export default function V2LeadsDashboard({
   authenticated,
   clientMode = true,
@@ -1935,19 +1944,12 @@ export default function V2LeadsDashboard({
     setApplied(advance);
   }, [cutoff]);
   const [dateError, setDateError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<V2Tab>(() =>
-    new URLSearchParams(window.location.search).get("tab") === "stores"
-      ? "Lojas & CRM"
-      : new URLSearchParams(window.location.search).get("tab") === "models"
-        ? "Modelos"
-        : "Visão Geral"
-  );
+  const [activeTab, setActiveTab] = useState<V2Tab>(resolveInitialLeadsTab);
   const dashboardTopRef = useRef<HTMLDivElement>(null);
   const selectTab = (tab: V2Tab) => {
     setActiveTab(tab);
     const url = new URL(window.location.href);
     if (tab === "Lojas & CRM") url.searchParams.set("tab", "stores");
-    else if (tab === "Modelos") url.searchParams.set("tab", "models");
     else url.searchParams.delete("tab");
     window.history.replaceState({}, "", url);
     window.requestAnimationFrame(() => {
@@ -2169,12 +2171,6 @@ export default function V2LeadsDashboard({
                     data={data}
                     onGoalUpdated={refresh}
                     onReloadMonth={reloadMonthlyBase}
-                    canManage={canManage}
-                  />
-                ) : null}
-                {activeTab === "Modelos" ? (
-                  <V2ModelsDashboard
-                    analysis={data.modelAnalysis}
                     canManage={canManage}
                   />
                 ) : null}

@@ -398,3 +398,22 @@
   background: #f8fafc;
   box-shadow: 0 1px 0 #e2e8f0;
 }
+
+/* A tabela de mídia rola somente no próprio bloco, nunca alarga a página. */
+.mg-media-table-scroll {
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.mg-media-table-scroll:focus-visible {
+  outline: 2px solid #e2212d;
+  outline-offset: -2px;
+}
+
+.mg-media-table-scroll td:nth-child(n + 5) {
+  white-space: nowrap;
+}
