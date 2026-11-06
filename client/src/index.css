@@ -251,3 +251,15 @@
     }
   }
 }
+
+/* A única barra de abas fica sempre abaixo do cabeçalho medido em tempo real. */
+.mg-leads-menu {
+  position: sticky;
+  top: var(--mg-app-header-height, 68px);
+  z-index: 20;
+  padding: 0.5rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  background: rgb(255 255 255 / 98%);
+  box-shadow: 0 6px 18px rgb(15 23 42 / 6%);
+}

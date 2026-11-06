@@ -11,6 +11,7 @@ import type {
   CommercialActor,
   CommercialCommitInput,
   CommercialCommitResult,
+  CommercialGeneralRegistration,
   CommercialPerformance,
   CommercialPreview,
   CommercialReconciliationResult,
@@ -31,6 +32,7 @@ import type {
   V2Filters,
 } from "../shared/v2Types";
 import { getV2Pool } from "./v2Db";
+import { getV2SalesTotalGoal } from "./v2SalesGoal";
 import {
   normalizeCommercialText,
   parseCommercialWorkbook,
@@ -46,6 +48,12 @@ export type CommercialStoredImport = {
   competence: string;
   asOf: string | null;
   sourceWeek: number | null;
+  /** General DAILY_FUP snapshot; optional for legacy rows. */
+  registrationMtd?: number | null;
+  /** File-label date of the general snapshot; optional for legacy rows. */
+  registrationAsOf?: string | null;
+  /** Fixed source label when registration metadata is available. */
+  sourceSheet?: string;
   fileName: string;
   fileSha256: string;
   total: number | null;
@@ -291,6 +299,9 @@ export async function previewCommercialUpload(
     total: parsed.total,
     warnings: parsed.warnings,
     availableDealers: suggested.availableDealers,
+    registrationMtd: parsed.registrationMtd,
+    registrationAsOf: parsed.registrationAsOf,
+    sourceSheet: parsed.sourceSheet,
   };
 }
 
@@ -351,12 +362,32 @@ function mapStoredImport(row: RowDataPacket): CommercialStoredImport {
   const kind = storedText(row.kind) as CommercialUploadKind;
   if (!KINDS.includes(kind))
     throw new Error(`Tipo de importação armazenado inválido: ${kind}.`);
+  const hasRegistrationMetadata =
+    Object.prototype.hasOwnProperty.call(row, "registrationMtd") ||
+    Object.prototype.hasOwnProperty.call(row, "registrationAsOf");
+  const registrationMtd = hasRegistrationMetadata
+    ? row.registrationMtd == null
+      ? null
+      : Number(row.registrationMtd)
+    : undefined;
+  const registrationAsOf = hasRegistrationMetadata
+    ? dateOnly(row.registrationAsOf)
+    : undefined;
   return {
     id: Number(row.id),
     kind,
     competence: storedText(row.competence),
     asOf: dateOnly(row.asOf),
     sourceWeek: row.sourceWeek == null ? null : Number(row.sourceWeek),
+    ...(hasRegistrationMetadata
+      ? {
+          registrationMtd,
+          registrationAsOf,
+          ...(registrationMtd != null || registrationAsOf != null
+            ? { sourceSheet: "DAILY_FUP" }
+            : {}),
+        }
+      : {}),
     fileName: storedText(row.fileName),
     fileSha256: storedText(row.fileSha256),
     total: row.total == null ? null : Number(row.total),
@@ -369,7 +400,7 @@ function mapStoredImport(row: RowDataPacket): CommercialStoredImport {
 }
 
 const importSelect =
-  "SELECT i.id,i.kind,i.competence,i.asOf,i.sourceWeek,i.fileName,i.fileSha256,i.total,i.rowCount,i.rowsJson,i.warningsJson,i.importedAt,s.removedAt FROM v2_commercial_imports i LEFT JOIN v2_commercial_import_state s ON s.importId=i.id WHERE i.competence=?";
+  "SELECT i.id,i.kind,i.competence,i.asOf,i.sourceWeek,i.registrationMtd,i.registrationAsOf,i.fileName,i.fileSha256,i.total,i.rowCount,i.rowsJson,i.warningsJson,i.importedAt,s.removedAt FROM v2_commercial_imports i LEFT JOIN v2_commercial_import_state s ON s.importId=i.id WHERE i.competence=?";
 
 async function readLatestImportsFrom(
   executor: QueryExecutor,
@@ -415,6 +446,15 @@ function statusFile(
         importedAt: stored.importedAt,
         rows: stored.rowCount,
         warnings: stored.warnings,
+        ...(stored.registrationMtd !== undefined
+          ? {
+              registrationMtd: stored.registrationMtd,
+              registrationAsOf: stored.registrationAsOf ?? null,
+              ...(stored.sourceSheet
+                ? { sourceSheet: stored.sourceSheet }
+                : {}),
+            }
+          : {}),
       }
     : {
         kind,
@@ -504,9 +544,11 @@ export async function removeCommercialSource(
 
 function mappingSha256(
   rows: CommercialSourceRow[],
-  sourceWeek: number | null
+  sourceWeek: number | null,
+  registrationMtd?: number | null,
+  registrationAsOf?: string | null
 ): string {
-  return createHash("sha256")
+  const hash = createHash("sha256")
     .update(
       JSON.stringify(
         rows
@@ -514,8 +556,19 @@ function mappingSha256(
           .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
       )
     )
-    .update(String(sourceWeek ?? ""))
-    .digest("hex");
+    .update(String(sourceWeek ?? ""));
+  // Keep the pre-registration identity for old callers and non-sales fixture
+  // imports. Once the parser supplies either metadata field, changes in the
+  // general snapshot create a new immutable revision.
+  if (registrationMtd !== undefined || registrationAsOf !== undefined)
+    hash.update(
+      JSON.stringify([
+        "registration",
+        registrationMtd ?? null,
+        registrationAsOf ?? null,
+      ])
+    );
+  return hash.digest("hex");
 }
 
 export async function commitCommercialUpload(
@@ -539,7 +592,12 @@ export async function commitCommercialUpload(
     const mapped = withDealerSuggestions(parsed, records, input.mappings);
     const rowsJson = JSON.stringify(mapped.rows);
     const warningsJson = JSON.stringify(parsed.warnings);
-    let mappingHash = mappingSha256(mapped.rows, parsed.sourceWeek ?? null);
+    let mappingHash = mappingSha256(
+      mapped.rows,
+      parsed.sourceWeek ?? null,
+      parsed.registrationMtd,
+      parsed.registrationAsOf
+    );
     let restoredAsNewRevision = false;
     const [existing] = await connection.execute<RowDataPacket[]>(
       "SELECT i.id,i.total,i.rowCount,i.warningsJson,s.removedAt FROM v2_commercial_imports i LEFT JOIN v2_commercial_import_state s ON s.importId=i.id WHERE i.kind=? AND i.competence=? AND i.fileSha256=? AND i.asOfKey=? AND i.mappingSha256=? LIMIT 1 FOR UPDATE",
@@ -548,7 +606,7 @@ export async function commitCommercialUpload(
     let selectedExisting: RowDataPacket | undefined = existing[0];
     if (selectedExisting) {
       const [newestRows] = await connection.execute<RowDataPacket[]>(
-        "SELECT i.id,i.fileSha256,i.asOfKey,i.sourceWeek,i.rowsJson,i.total,i.rowCount,i.warningsJson,s.removedAt FROM v2_commercial_imports i LEFT JOIN v2_commercial_import_state s ON s.importId=i.id WHERE i.kind=? AND i.competence=? ORDER BY i.id DESC LIMIT 1 FOR UPDATE",
+        "SELECT i.id,i.fileSha256,i.asOfKey,i.sourceWeek,i.registrationMtd,i.registrationAsOf,i.rowsJson,i.total,i.rowCount,i.warningsJson,s.removedAt FROM v2_commercial_imports i LEFT JOIN v2_commercial_import_state s ON s.importId=i.id WHERE i.kind=? AND i.competence=? ORDER BY i.id DESC LIMIT 1 FOR UPDATE",
         [parsed.kind, parsed.competence]
       );
       const newest = newestRows[0];
@@ -558,7 +616,15 @@ export async function commitCommercialUpload(
           storedText(newest.asOfKey) === asOfKey &&
           mappingSha256(
             jsonRows(newest.rowsJson),
-            newest.sourceWeek == null ? null : Number(newest.sourceWeek)
+            newest.sourceWeek == null ? null : Number(newest.sourceWeek),
+            Object.prototype.hasOwnProperty.call(newest, "registrationMtd")
+              ? newest.registrationMtd == null
+                ? null
+                : Number(newest.registrationMtd)
+              : undefined,
+            Object.prototype.hasOwnProperty.call(newest, "registrationAsOf")
+              ? dateOnly(newest.registrationAsOf)
+              : undefined
           ) === mappingHash;
         if (sameCurrentContent) selectedExisting = newest;
         else {
@@ -608,7 +674,7 @@ export async function commitCommercialUpload(
     );
 
     const [inserted] = await connection.execute<ResultSetHeader>(
-      "INSERT INTO v2_commercial_imports (kind,competence,asOf,sourceWeek,asOfKey,fileName,fileSha256,mappingSha256,total,rowCount,rowsJson,warningsJson,importedBy) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+      "INSERT INTO v2_commercial_imports (kind,competence,asOf,sourceWeek,asOfKey,fileName,fileSha256,mappingSha256,total,rowCount,rowsJson,warningsJson,importedBy,registrationMtd,registrationAsOf) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
       [
         parsed.kind,
         parsed.competence,
@@ -623,6 +689,8 @@ export async function commitCommercialUpload(
         rowsJson,
         warningsJson,
         actor.id,
+        parsed.registrationMtd ?? null,
+        parsed.registrationAsOf ?? null,
       ]
     );
     const importId = Number(inserted.insertId);
@@ -1058,14 +1126,17 @@ function buildCommercialRows(
 export function buildOfficialCommercialPerformance(
   dashboard: V2Dashboard,
   filters: V2Filters,
-  latest: CommercialLatestImports = new Map()
+  latest: CommercialLatestImports = new Map(),
+  manualSalesGoal?: number
 ): CommercialPerformance {
   const configured = KINDS.filter(kind => Boolean(latestValue(latest, kind)));
   const competence = filters.dateTo.slice(0, 7);
+  const hasManualSalesGoal =
+    manualSalesGoal !== undefined && manualSalesGoal !== null;
   const sources = KINDS.map(kind =>
     sourceInfo(kind, latestValue(latest, kind), competence)
   );
-  if (!configured.length) {
+  if (!configured.length && !hasManualSalesGoal) {
     return {
       ...dashboard.dealerPerformance,
       available: false,
@@ -1076,6 +1147,8 @@ export function buildOfficialCommercialPerformance(
       unmapped: [],
       groupedGoals: [],
       unreconciledDealers: [],
+      generalRegistrationMTD: null,
+      salesGoalOrigin: "unavailable",
     };
   }
 
@@ -1093,8 +1166,49 @@ export function buildOfficialCommercialPerformance(
     ].join(" + ") || null;
   const allWarnings = [...built.warnings];
   for (const kind of KINDS)
-    if (!latestValue(latest, kind))
+    if (
+      !latestValue(latest, kind) &&
+      !(kind === "sales-goals" && hasManualSalesGoal)
+    )
       allWarnings.push(formatMissingSourceWarning(kind));
+  const globallyComparable = built.globalScope && built.singleMonth;
+  if (hasManualSalesGoal && globallyComparable)
+    allWarnings.push(
+      "Meta total manual aplicada; metas das lojas permanecem no arquivo MetaVendas."
+    );
+  const generalRegistrationMTD: CommercialGeneralRegistration | null =
+    typeof built.salesImport?.registrationMtd === "number"
+      ? {
+          value: built.salesImport.registrationMtd,
+          asOf: built.salesImport.registrationAsOf ?? null,
+          sourceSheet: "DAILY_FUP",
+          label: "MTD Registration",
+        }
+      : null;
+  if (generalRegistrationMTD) {
+    const dealerSalesTotal = built.work.reduce(
+      (sum, row) => sum + (row.sales ?? 0),
+      0
+    );
+    if (dealerSalesTotal !== generalRegistrationMTD.value)
+      allWarnings.push("Total geral MTD não distribuído entre lojas.");
+  }
+  const registrationDate = built.salesImport?.registrationAsOf;
+  const registrationDateCompatible =
+    registrationDate === undefined
+      ? built.salesImport?.registrationMtd === undefined
+      : Boolean(
+          registrationDate &&
+            registrationDate >= filters.dateFrom &&
+            registrationDate <= filters.dateTo
+        );
+  const conversionCompatible =
+    built.salesCompatible && registrationDateCompatible;
+  for (const row of built.work)
+    row.conversionRate =
+      conversionCompatible && row.sales != null && row.leads > 0
+        ? row.sales / row.leads
+        : null;
   const outputRows = built.work.map(
     ({ aliases: _aliases, aliasKeys: _keys, canonical: _canonical, ...row }) =>
       row
@@ -1104,13 +1218,16 @@ export function buildOfficialCommercialPerformance(
     built.globalScope && built.singleMonth
       ? (dashboard.pacing.goal ?? built.leadImport?.total ?? null)
       : null;
-  const salesGoalTotal =
-    built.globalScope && built.singleMonth
-      ? (built.salesGoalImport?.total ?? null)
-      : null;
+  const salesGoalTotal = globallyComparable
+    ? hasManualSalesGoal
+      ? manualSalesGoal!
+      : (built.salesGoalImport?.total ?? null)
+    : null;
   const salesTotal =
     built.globalScope && built.salesCompatible
-      ? (built.salesImport?.total ?? null)
+      ? built.salesImport?.registrationMtd !== undefined
+        ? (built.salesImport.registrationMtd ?? null)
+        : (built.salesImport?.total ?? null)
       : null;
   return {
     available: true,
@@ -1125,7 +1242,9 @@ export function buildOfficialCommercialPerformance(
       sales: salesTotal,
       salesGoal: salesGoalTotal,
       conversionRate:
-        salesTotal == null || leadsTotal <= 0 ? null : salesTotal / leadsTotal,
+        !conversionCompatible || salesTotal == null || leadsTotal <= 0
+          ? null
+          : salesTotal / leadsTotal,
     },
     warnings: distinctWarnings(allWarnings),
     sources,
@@ -1134,6 +1253,14 @@ export function buildOfficialCommercialPerformance(
     unreconciledDealers: built.work
       .filter(row => row.canonical === null)
       .map(row => ({ sourceLabel: row.dealer, leads: row.leads })),
+    generalRegistrationMTD,
+    salesGoalOrigin: globallyComparable
+      ? hasManualSalesGoal
+        ? "manual"
+        : built.salesGoalImport?.total != null
+          ? "imported"
+          : "unavailable"
+      : "unavailable",
   };
 }
 
@@ -1141,8 +1268,17 @@ export async function getCommercialPerformance(
   dashboard: V2Dashboard,
   filters: V2Filters
 ): Promise<CommercialPerformance> {
-  const latest = await readLatestImports(filters.dateTo.slice(0, 7));
-  return buildOfficialCommercialPerformance(dashboard, filters, latest);
+  const competence = filters.dateTo.slice(0, 7);
+  const [latest, manualSalesGoal] = await Promise.all([
+    readLatestImports(competence),
+    getV2SalesTotalGoal(competence),
+  ]);
+  return buildOfficialCommercialPerformance(
+    dashboard,
+    filters,
+    latest,
+    manualSalesGoal == null ? undefined : manualSalesGoal
+  );
 }
 
 function reconciledRows(rows: CommercialSourceRow[]): {
@@ -1195,14 +1331,19 @@ export async function reconcileCommercialDealers(
       const reconciled = reconciledRows(stored.rows);
       if (!reconciled.changed) continue;
       const asOfKey = stored.asOf ?? "";
-      const hash = mappingSha256(reconciled.rows, stored.sourceWeek);
+      const hash = mappingSha256(
+        reconciled.rows,
+        stored.sourceWeek,
+        stored.registrationMtd,
+        stored.registrationAsOf
+      );
       const [existing] = await connection.execute<RowDataPacket[]>(
         "SELECT id FROM v2_commercial_imports WHERE kind=? AND competence=? AND fileSha256=? AND asOfKey=? AND mappingSha256=? LIMIT 1 FOR UPDATE",
         [kind, competence, stored.fileSha256, asOfKey, hash]
       );
       if (existing[0]) continue;
       const [inserted] = await connection.execute<ResultSetHeader>(
-        "INSERT INTO v2_commercial_imports (kind,competence,asOf,sourceWeek,asOfKey,fileName,fileSha256,mappingSha256,total,rowCount,rowsJson,warningsJson,importedBy) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO v2_commercial_imports (kind,competence,asOf,sourceWeek,asOfKey,fileName,fileSha256,mappingSha256,total,rowCount,rowsJson,warningsJson,importedBy,registrationMtd,registrationAsOf) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         [
           kind,
           competence,
@@ -1217,6 +1358,8 @@ export async function reconcileCommercialDealers(
           JSON.stringify(reconciled.rows),
           JSON.stringify(stored.warnings),
           actor.id,
+          stored.registrationMtd ?? null,
+          stored.registrationAsOf ?? null,
         ]
       );
       importIds.push(Number(inserted.insertId));

@@ -1,0 +1,9 @@
+-- General MTD Registration metadata for immutable commercial snapshots.
+-- The explicit runner checks each column with SHOW COLUMNS before applying the
+-- corresponding ALTER TABLE, so this file is safe to review and does not run
+-- during application startup.
+--
+-- ALTER TABLE v2_commercial_imports
+--   ADD COLUMN registrationMtd INT NULL AFTER sourceWeek;
+-- ALTER TABLE v2_commercial_imports
+--   ADD COLUMN registrationAsOf DATE NULL AFTER registrationMtd;

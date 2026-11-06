@@ -96,6 +96,13 @@ export type V2Dashboard = {
   crm: V2Count[];
   recent: { rows: V2Lead[]; total: number; page: number; pageSize: number };
   dealerPerformance: {
+    salesGoalOrigin?: "manual" | "imported" | "unavailable";
+    generalRegistrationMTD?: {
+      value: number;
+      asOf: string | null;
+      sourceSheet: "DAILY_FUP";
+      label: "MTD Registration";
+    } | null;
     warnings?: string[];
     unmapped?: Array<{
       kind: "lead-goals" | "sales-goals" | "sales";

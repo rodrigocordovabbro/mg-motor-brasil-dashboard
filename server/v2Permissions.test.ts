@@ -314,3 +314,29 @@ describe("projeções sem alteração da fonte", () => {
     expect(JSON.stringify(d)).toBe(before);
   });
 });
+
+describe("Edições exclusivas da conta Rodrigo", () => {
+  it.each(["client", "admin"] as const)(
+    "bloqueia meta total e projeções para perfil %s de outra conta",
+    async role => {
+      state.role = role;
+      const api = caller();
+      await expect(
+        api.leads.salesGoal({ competence: "2026-11" })
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(
+        api.leads.updateSalesGoal({ competence: "2026-11", goal: 900 })
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(
+        api.mediaPlan.projections({ monthId: "2026-10" })
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(
+        api.mediaPlan.updateProjections({
+          monthId: "2026-10",
+          expectedVersion: 0,
+          values: { globalLeads: 12000 },
+        })
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    }
+  );
+});

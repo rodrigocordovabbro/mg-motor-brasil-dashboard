@@ -33,6 +33,12 @@ export type CommercialPreview = {
   total: number | null;
   warnings: string[];
   availableDealers: string[];
+  /** General DAILY_FUP snapshot; optional for backwards-compatible clients. */
+  registrationMtd?: number | null;
+  /** File-label date of the general registration snapshot, date-only. */
+  registrationAsOf?: string | null;
+  /** Optional fixed source label, normally DAILY_FUP. */
+  sourceSheet?: string;
 };
 
 export type CommercialUploadInput = {
@@ -93,6 +99,12 @@ export type CommercialStatusFile = {
   importedAt: string | null;
   rows: number;
   warnings: string[];
+  /** General DAILY_FUP snapshot; absent on legacy rows and non-sales kinds. */
+  registrationMtd?: number | null;
+  /** File-label date of the general registration snapshot, date-only. */
+  registrationAsOf?: string | null;
+  /** Optional fixed source label, normally DAILY_FUP. */
+  sourceSheet?: string;
 };
 
 export type CommercialStatus = {
@@ -112,10 +124,18 @@ export type CommercialUnmappedRow = {
   value: number | null;
 };
 
+export type CommercialGeneralRegistration = {
+  value: number;
+  asOf: string | null;
+  sourceSheet: "DAILY_FUP";
+  label: "MTD Registration";
+};
+
 export type CommercialPerformance = V2Dashboard["dealerPerformance"] & {
   warnings: string[];
   sources: CommercialSourceSnapshot[];
   unmapped?: CommercialUnmappedRow[];
+  generalRegistrationMTD?: CommercialGeneralRegistration | null;
 };
 
 export type CommercialPerformanceRequest = {

@@ -2,12 +2,17 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
   CalendarRange,
+  Check,
   CircleDollarSign,
+  Edit3,
   FileSpreadsheet,
   Layers3,
+  LoaderCircle,
   MousePointerClick,
+  RefreshCw,
   Target,
   WalletCards,
+  X,
 } from "lucide-react";
 import {
   Bar,
@@ -20,6 +25,17 @@ import {
 } from "recharts";
 import { trpc } from "@/lib/trpc";
 import type { MediaPlanStatus } from "@shared/v2MediaPlan";
+import {
+  applyMediaPlanProjectionOverrides,
+  type MediaPlanProjectionPatch,
+  type MediaPlanProjectionValues,
+  type MediaPlanWithProjectionOverrides,
+} from "@shared/v2MediaPlanProjections";
+
+type ProjectionEditorTarget =
+  | { scope: "global" }
+  | { scope: "product"; key: string; label: string }
+  | { scope: "row"; key: string; label: string; product: string };
 
 function formatCurrency(
   value: number,
@@ -46,6 +62,29 @@ function formatPercent(value: number, locale: "pt-BR" | "en-US") {
     minimumFractionDigits: 1,
     maximumFractionDigits: 2,
   }).format(value);
+}
+
+function targetValue(
+  target: ProjectionEditorTarget,
+  plan: MediaPlanWithProjectionOverrides
+): number | null {
+  if (target.scope === "global") return plan.total.leads ?? null;
+  if (target.scope === "product")
+    return (
+      plan.totals.find(total => total.product === target.key)?.leads ?? null
+    );
+  return plan.rows.find(row => row.id === target.key)?.leads ?? null;
+}
+
+function targetLabel(
+  target: ProjectionEditorTarget,
+  isEnglish: boolean
+): string {
+  if (target.scope === "global")
+    return isEnglish ? "Monthly total" : "Total mensal";
+  if (target.scope === "product")
+    return `${isEnglish ? "Product" : "Produto"}: ${target.label}`;
+  return `${isEnglish ? "Channel row" : "Linha do canal"}: ${target.label}`;
 }
 
 function statusLabel(
@@ -95,9 +134,45 @@ export function MediaPlanDashboard({
     retry: false,
     refetchOnWindowFocus: false,
   });
-  const MEDIA_PLANS = plansQuery.data ?? [];
+  const MEDIA_PLANS = (plansQuery.data ??
+    []) as MediaPlanWithProjectionOverrides[];
+  const authQuery = trpc.auth.me.useQuery(undefined, {
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+  const owner =
+    authQuery.data?.role === "admin" &&
+    authQuery.data.username.trim().toLowerCase() === "rodrigo";
   const [selectedMonth, setSelectedMonth] = useState(initialMonth ?? "");
-  const plan = MEDIA_PLANS.find(item => item.month === selectedMonth);
+  const sourcePlan = MEDIA_PLANS.find(item => item.month === selectedMonth);
+  const projectionsQuery = trpc.mediaPlan.projections.useQuery(
+    { monthId: selectedMonth },
+    {
+      enabled: owner && Boolean(selectedMonth),
+      retry: false,
+      refetchOnWindowFocus: false,
+      staleTime: 0,
+    }
+  );
+  const updateProjections = trpc.mediaPlan.updateProjections.useMutation();
+  const utils = trpc.useUtils();
+  const projectionRead =
+    projectionsQuery.data?.monthId === selectedMonth
+      ? projectionsQuery.data
+      : sourcePlan?.projectionOverrides;
+  const plan = useMemo(() => {
+    if (!sourcePlan) return undefined;
+    return applyMediaPlanProjectionOverrides(
+      sourcePlan,
+      projectionRead ?? { version: 0, values: { products: {}, rows: {} } }
+    );
+  }, [projectionRead, sourcePlan]);
+  const [editorTarget, setEditorTarget] =
+    useState<ProjectionEditorTarget | null>(null);
+  const [editorDraft, setEditorDraft] = useState("");
+  const [editorError, setEditorError] = useState<string | null>(null);
+  const [savedNotice, setSavedNotice] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   useEffect(() => {
     if (!selectedMonth && MEDIA_PLANS[0])
       setSelectedMonth(MEDIA_PLANS[0].month);
@@ -105,8 +180,87 @@ export function MediaPlanDashboard({
   const isEnglish = locale === "en-US";
 
   useEffect(() => {
+    setEditorTarget(null);
+    setEditorDraft("");
+    setEditorError(null);
+  }, [selectedMonth]);
+
+  useEffect(() => {
     if (plan?.updatedAt) onUpdatedAt?.(plan.updatedAt);
   }, [onUpdatedAt, plan?.updatedAt]);
+
+  const openProjectionEditor = (target: ProjectionEditorTarget) => {
+    if (!owner || !plan) return;
+    setEditorTarget(target);
+    const current = targetValue(target, plan);
+    setEditorDraft(current == null ? "" : String(current));
+    setEditorError(null);
+    setSavedNotice(null);
+  };
+
+  const saveProjection = async (value: number | null) => {
+    if (!owner || !plan || !editorTarget || saving) return;
+    const savedMonth = selectedMonth;
+    const expectedVersion = projectionRead?.version ?? 0;
+    const values: MediaPlanProjectionPatch = {};
+    if (editorTarget.scope === "global") values.globalLeads = value;
+    else if (editorTarget.scope === "product")
+      values.products = { [editorTarget.key]: value };
+    else values.rows = { [editorTarget.key]: value };
+    setSaving(true);
+    setEditorError(null);
+    try {
+      await updateProjections.mutateAsync({
+        monthId: savedMonth,
+        expectedVersion,
+        values,
+      });
+      await Promise.all([
+        utils.mediaPlan.plans.invalidate(),
+        utils.mediaPlan.projections.invalidate({ monthId: savedMonth }),
+      ]);
+      setEditorTarget(null);
+      setEditorDraft("");
+      setSavedNotice(
+        isEnglish
+          ? `Projection saved for ${savedMonth}.`
+          : `Projeção salva para ${savedMonth.split("-").reverse().join("/")}.`
+      );
+    } catch (cause) {
+      const message =
+        cause instanceof Error && cause.message
+          ? cause.message
+          : isEnglish
+            ? "Could not save the projection. Refresh and try again."
+            : "Não foi possível salvar a projeção. Atualize e tente novamente.";
+      setEditorError(message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const submitProjection = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!editorTarget) return;
+    if (!/^\d+$/.test(editorDraft.trim())) {
+      setEditorError(
+        isEnglish
+          ? "Enter an integer from 0 to 10,000,000."
+          : "Informe um número inteiro entre 0 e 10.000.000."
+      );
+      return;
+    }
+    const value = Number(editorDraft.trim());
+    if (!Number.isSafeInteger(value) || value < 0 || value > 10_000_000) {
+      setEditorError(
+        isEnglish
+          ? "Enter an integer from 0 to 10,000,000."
+          : "Informe um número inteiro entre 0 e 10.000.000."
+      );
+      return;
+    }
+    await saveProjection(value);
+  };
 
   const channelData = useMemo(() => {
     if (!plan) return [];
@@ -256,6 +410,23 @@ export function MediaPlanDashboard({
     { label: copy.net, value: plan.total.netInvestment },
     { label: copy.actual, value: plan.total.actualInvestment },
   ];
+  const editorValues: MediaPlanProjectionValues = projectionRead?.values ?? {
+    products: {},
+    rows: {},
+  };
+  const editorHasOverride = editorTarget
+    ? editorTarget.scope === "global"
+      ? editorValues.globalLeads !== undefined
+      : editorTarget.scope === "product"
+        ? Object.prototype.hasOwnProperty.call(
+            editorValues.products,
+            editorTarget.key
+          )
+        : Object.prototype.hasOwnProperty.call(
+            editorValues.rows,
+            editorTarget.key
+          )
+    : false;
 
   return (
     <main className="mx-auto min-h-[calc(100vh-88px)] max-w-[1680px] px-4 pb-12 pt-6 lg:px-6">
@@ -273,24 +444,36 @@ export function MediaPlanDashboard({
               {copy.financialDescription}
             </p>
           </div>
-          <label className="min-w-[240px] text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-            {copy.month}
-            <select
-              value={selectedMonth}
-              onChange={event => setSelectedMonth(event.target.value)}
-              className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-900 outline-none focus:border-[#e2212d]/60"
-            >
-              {MEDIA_PLANS.map(item => (
-                <option key={item.month} value={item.month}>
-                  {new Intl.DateTimeFormat(locale, {
-                    month: "long",
-                    year: "numeric",
-                    timeZone: "UTC",
-                  }).format(new Date(`${item.month}-01T12:00:00Z`))}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="flex min-w-[240px] flex-col items-stretch gap-2">
+            <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              {copy.month}
+              <select
+                value={selectedMonth}
+                onChange={event => setSelectedMonth(event.target.value)}
+                className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-900 outline-none focus:border-[#e2212d]/60"
+              >
+                {MEDIA_PLANS.map(item => (
+                  <option key={item.month} value={item.month}>
+                    {new Intl.DateTimeFormat(locale, {
+                      month: "long",
+                      year: "numeric",
+                      timeZone: "UTC",
+                    }).format(new Date(`${item.month}-01T12:00:00Z`))}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {owner ? (
+              <button
+                type="button"
+                onClick={() => openProjectionEditor({ scope: "global" })}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#e2212d] px-3 text-xs font-bold text-white shadow-sm transition hover:bg-[#c91c28] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
+              >
+                <Edit3 className="h-3.5 w-3.5" aria-hidden="true" />
+                {isEnglish ? "Edit projections" : "Editar projeções"}
+              </button>
+            ) : null}
+          </div>
         </div>
 
         <div className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -338,7 +521,7 @@ export function MediaPlanDashboard({
           ) : (
             <>
               <span>
-                {isEnglish ? "Line-up gross budget" : "Verba bruta Line-up"}: {" "}
+                {isEnglish ? "Line-up gross budget" : "Verba bruta Line-up"}:{" "}
                 <strong className="text-slate-800">
                   {formatCurrency(plan.totals[0]?.investment ?? 0, locale)}
                 </strong>
@@ -346,7 +529,7 @@ export function MediaPlanDashboard({
               <span>
                 {isEnglish
                   ? "Dedicated MG4 Urban gross budget"
-                : "Verba bruta dedicada MG4 Urban"}
+                  : "Verba bruta dedicada MG4 Urban"}
                 :{" "}
                 <strong className="text-slate-800">
                   {formatCurrency(plan.totals[1]?.investment ?? 0, locale)}
@@ -355,6 +538,21 @@ export function MediaPlanDashboard({
             </>
           )}
         </div>
+        {plan.projectionOverrides?.globalManual ? (
+          <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-800">
+            {isEnglish
+              ? "Total manual; detailed projections remain unchanged."
+              : "Total manual; projeções detalhadas mantidas."}
+          </p>
+        ) : null}
+        {savedNotice ? (
+          <p
+            role="status"
+            className="mt-3 text-[11px] font-semibold text-emerald-700"
+          >
+            {savedNotice}
+          </p>
+        ) : null}
       </section>
 
       <section className="mt-5 grid gap-5 xl:grid-cols-[1.45fr_0.8fr]">
@@ -439,12 +637,30 @@ export function MediaPlanDashboard({
                     <strong className="text-sm text-slate-900">
                       {total.label}
                     </strong>
-                    <span className="text-xs font-semibold text-[#f0525c]">
-                      {formatPercent(
-                        total.investment / plan.total.investment,
-                        locale
-                      )}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-[#f0525c]">
+                        {formatPercent(
+                          total.investment / plan.total.investment,
+                          locale
+                        )}
+                      </span>
+                      {owner && total.product ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            openProjectionEditor({
+                              scope: "product",
+                              key: total.product as string,
+                              label: total.label,
+                            })
+                          }
+                          className="inline-flex items-center gap-1 rounded-lg border border-red-100 bg-white px-2 py-1 text-[10px] font-bold text-[#e2212d] hover:bg-red-50"
+                        >
+                          <Edit3 className="h-3 w-3" />
+                          {isEnglish ? "Edit" : "Editar"}
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
                     <div>
@@ -486,19 +702,39 @@ export function MediaPlanDashboard({
                       </strong>
                     </div>
                   </div>
-                  {(total.leads != null || total.cpl != null) && (
+                  {(total.leads != null ||
+                    total.cpl != null ||
+                    (owner && total.product)) && (
                     <div className="mt-3 flex gap-5 border-t border-slate-200 pt-3 text-[10px] text-slate-500">
-                      {total.leads != null && (
+                      {(total.leads != null || (owner && total.product)) && (
                         <span>
-                          {copy.leads}: {" "}
-                          <strong className="text-slate-800">
-                            {formatNumber(total.leads, locale)}
-                          </strong>
+                          {copy.leads}:{" "}
+                          {owner && total.product ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openProjectionEditor({
+                                  scope: "product",
+                                  key: total.product as string,
+                                  label: total.label,
+                                })
+                              }
+                              className="font-bold text-slate-800 underline decoration-red-200 underline-offset-2"
+                            >
+                              {total.leads == null
+                                ? unavailableValue
+                                : formatNumber(total.leads, locale)}
+                            </button>
+                          ) : (
+                            <strong className="text-slate-800">
+                              {formatNumber(total.leads as number, locale)}
+                            </strong>
+                          )}
                         </span>
                       )}
                       {total.cpl != null && (
                         <span>
-                          CPL: {" "}
+                          CPL:{" "}
                           <strong className="text-slate-800">
                             {formatCurrency(total.cpl, locale, 2)}
                           </strong>
@@ -611,7 +847,26 @@ export function MediaPlanDashboard({
                     {statusLabel(row.status, locale)}
                   </td>
                   <td className="px-4 py-3 text-right text-slate-700">
-                    {row.leads == null ? "—" : formatNumber(row.leads, locale)}
+                    {row.leads == null ? (
+                      "—"
+                    ) : owner ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          openProjectionEditor({
+                            scope: "row",
+                            key: row.id,
+                            label: `${row.channel} · ${row.product}`,
+                            product: row.product,
+                          })
+                        }
+                        className="font-bold underline decoration-red-200 underline-offset-2 hover:text-[#e2212d]"
+                      >
+                        {formatNumber(row.leads, locale)}
+                      </button>
+                    ) : (
+                      formatNumber(row.leads, locale)
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right text-slate-700">
                     {row.cpl == null ? "—" : formatCurrency(row.cpl, locale, 2)}
@@ -630,6 +885,168 @@ export function MediaPlanDashboard({
           <span>{isEnglish ? plan.sourceNoteEn : plan.sourceNotePt}</span>
         </div>
       </section>
+      {editorTarget ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/30 p-4"
+          role="presentation"
+          onMouseDown={event => {
+            if (event.target === event.currentTarget && !saving)
+              setEditorTarget(null);
+          }}
+        >
+          <div
+            className="w-[min(460px,calc(100vw-24px))] rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="media-projection-editor-title"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3
+                  id="media-projection-editor-title"
+                  className="text-sm font-bold text-slate-900"
+                >
+                  {isEnglish
+                    ? "Edit media projections"
+                    : "Editar projeções de mídia"}
+                </h3>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  {targetLabel(editorTarget, isEnglish)} · {selectedMonth}
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label={isEnglish ? "Close editor" : "Fechar editor"}
+                onClick={() => setEditorTarget(null)}
+                disabled={saving}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 disabled:opacity-50"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <form className="mt-4 space-y-3" onSubmit={submitProjection}>
+              <label className="block">
+                <span className="v2-label">
+                  {isEnglish ? "Projected Leads" : "Leads projetados"}
+                </span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={10_000_000}
+                  step={1}
+                  value={editorDraft}
+                  disabled={
+                    saving ||
+                    projectionsQuery.isFetching ||
+                    Boolean(projectionsQuery.error)
+                  }
+                  onChange={event => {
+                    setEditorDraft(event.target.value);
+                    setEditorError(null);
+                  }}
+                  className="v2-input w-full"
+                  aria-describedby="media-projection-editor-help"
+                  autoFocus
+                />
+              </label>
+              <p
+                id="media-projection-editor-help"
+                className="text-[11px] leading-5 text-slate-500"
+              >
+                {editorTarget.scope === "global"
+                  ? isEnglish
+                    ? "Changes only the monthly headline and CPL. Detailed product and row projections stay intact."
+                    : "Altera somente o total mensal e o CPL. As projeções detalhadas de produto e linha permanecem intactas."
+                  : editorTarget.scope === "product"
+                    ? isEnglish
+                      ? "Product CPL uses net media budget ÷ Leads. The global total sums product totals unless a manual global total is active."
+                      : "O CPL do produto usa verba líquida ÷ Leads. O total global soma os produtos, salvo quando houver total global manual."
+                    : isEnglish
+                      ? "The product total is recalculated from its projected rows; no budget or actual investment is changed."
+                      : "O total do produto é recalculado a partir das linhas projetadas; nenhuma verba ou realização é alterada."}
+              </p>
+              {projectionsQuery.isFetching ? (
+                <p
+                  className="flex items-center gap-2 text-xs text-slate-500"
+                  role="status"
+                >
+                  <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                  {isEnglish
+                    ? "Loading saved override…"
+                    : "Carregando override salvo…"}
+                </p>
+              ) : null}
+              {projectionsQuery.error ? (
+                <div
+                  className="rounded-lg bg-red-50 p-3 text-xs text-red-700"
+                  role="alert"
+                >
+                  {isEnglish
+                    ? "Could not read this month's saved projection."
+                    : "Não foi possível ler a projeção salva deste mês."}
+                  <button
+                    type="button"
+                    onClick={() => void projectionsQuery.refetch()}
+                    className="ml-2 inline-flex items-center gap-1 font-bold underline"
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                    {isEnglish ? "Retry" : "Tentar novamente"}
+                  </button>
+                </div>
+              ) : null}
+              {editorError ? (
+                <p role="alert" className="text-xs text-red-700">
+                  {editorError}
+                </p>
+              ) : null}
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {editorHasOverride ? (
+                  <button
+                    type="button"
+                    disabled={saving || projectionsQuery.isFetching}
+                    onClick={() => void saveProjection(null)}
+                    className="mr-auto inline-flex h-10 items-center gap-1.5 rounded-xl border border-amber-200 px-3 text-xs font-semibold text-amber-700 disabled:opacity-50"
+                  >
+                    {isEnglish ? "Restore source" : "Restaurar fonte"}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => setEditorTarget(null)}
+                  className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-slate-200 px-3 text-xs font-semibold text-slate-600 disabled:opacity-50"
+                >
+                  <X className="h-3.5 w-3.5" />
+                  {isEnglish ? "Cancel" : "Cancelar"}
+                </button>
+                <button
+                  type="submit"
+                  disabled={
+                    saving ||
+                    projectionsQuery.isFetching ||
+                    Boolean(projectionsQuery.error)
+                  }
+                  className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-[#e2212d] px-3 text-xs font-bold text-white disabled:opacity-50"
+                >
+                  {saving ? (
+                    <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Check className="h-3.5 w-3.5" />
+                  )}
+                  {saving
+                    ? isEnglish
+                      ? "Saving…"
+                      : "Salvando…"
+                    : isEnglish
+                      ? "Save projection"
+                      : "Salvar projeção"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

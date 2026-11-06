@@ -23,6 +23,12 @@ export type ParsedCommercialWorkbook = {
   rows: CommercialSourceRow[];
   total: number | null;
   warnings: string[];
+  /** General MTD registration snapshot; never allocated to dealer rows. */
+  registrationMtd?: number | null;
+  /** File-label date for the general registration snapshot, when trusted. */
+  registrationAsOf?: string | null;
+  /** Fixed source sheet for the optional registration snapshot. */
+  sourceSheet?: string;
 };
 
 type HeaderInfo = {
@@ -387,6 +393,141 @@ function findDailyFupSheet(
   );
 }
 
+type RegistrationReadResult = {
+  registrationMtd: number | null;
+  registrationAsOf: string | null;
+  sourceSheet?: string;
+  warnings: string[];
+};
+
+const REGISTRATION_HEADER_ALIASES = new Set([
+  "mtdregistration",
+  "registrationmtd",
+  "mtdregistrations",
+]);
+
+function findDailyFupRegistrationHeader(
+  worksheet: ExcelJS.Worksheet
+): { rowNumber: number; registrationColumn: number } | null {
+  // The current-month block is deliberately restricted to the first eight
+  // rows. A later model/summary table must never be summed or selected.
+  for (
+    let rowNumber = 1;
+    rowNumber <= Math.min(8, worksheet.rowCount);
+    rowNumber++
+  ) {
+    const row = worksheet.getRow(rowNumber);
+    let hasCurrentMonth = false;
+    let registrationColumn: number | null = null;
+    for (let column = 1; column <= worksheet.columnCount; column++) {
+      const label = compact(cellValue(row.getCell(column)));
+      if (label === "currentmonth") hasCurrentMonth = true;
+      if (REGISTRATION_HEADER_ALIASES.has(label) && registrationColumn == null)
+        registrationColumn = column;
+    }
+    if (hasCurrentMonth && registrationColumn != null)
+      return { rowNumber, registrationColumn };
+  }
+  return null;
+}
+
+function registrationDateFromFileName(
+  fileName: string,
+  competence: string,
+  warnings: string[]
+): string | null {
+  const tokens = [...fileName.matchAll(/(?:^|[^0-9])(\d{6})(?!\d)/g)].map(
+    match => match[1]
+  );
+  if (!tokens.length) {
+    warnings.push(
+      `A data de referência do MTD Registration não pôde ser derivada do nome ${fileName}; registrationAsOf permanece nulo.`
+    );
+    return null;
+  }
+
+  for (const token of tokens) {
+    const year = 2000 + Number(token.slice(0, 2));
+    const month = Number(token.slice(2, 4));
+    const day = Number(token.slice(4, 6));
+    const date = new Date(Date.UTC(year, month - 1, day));
+    const isValid =
+      date.getUTCFullYear() === year &&
+      date.getUTCMonth() === month - 1 &&
+      date.getUTCDate() === day;
+    if (!isValid) {
+      warnings.push(
+        `A data ${token} no nome ${fileName} é inválida; registrationAsOf permanece nulo.`
+      );
+      continue;
+    }
+    const isoDate = date.toISOString().slice(0, 10);
+    if (isoDate.slice(0, 7) !== competence) {
+      warnings.push(
+        `A data do MTD Registration (${isoDate}) não pertence à competência ${competence}; registrationAsOf permanece nulo.`
+      );
+      continue;
+    }
+    return isoDate;
+  }
+  return null;
+}
+
+/**
+ * Read the general MTD Registration value from DAILY_FUP without turning it
+ * into a dealer row. The optional weekly `asOf` is intentionally not used to
+ * clamp the file-label date: a general snapshot may be labelled D0 while
+ * dealer sales remain a D-1 WEEKLY_REG snapshot.
+ */
+export function readRegistrationMtd(
+  workbook: ExcelJS.Workbook,
+  fileName: string,
+  competence: string,
+  _asOf?: string
+): RegistrationReadResult {
+  const warnings: string[] = [];
+  const registrationAsOf = registrationDateFromFileName(
+    fileName,
+    competence,
+    warnings
+  );
+  const daily = findDailyFupSheet(workbook);
+  if (!daily) {
+    warnings.push(
+      "A aba DAILY_FUP não foi encontrada; MTD Registration permanece nulo."
+    );
+    return { registrationMtd: null, registrationAsOf, warnings };
+  }
+
+  const header = findDailyFupRegistrationHeader(daily);
+  if (!header) {
+    warnings.push(
+      "O bloco Current Month + MTD Registration não foi encontrado nas linhas 1-8 da aba DAILY_FUP; MTD Registration permanece nulo."
+    );
+    return {
+      registrationMtd: null,
+      registrationAsOf,
+      sourceSheet: daily.name,
+      warnings,
+    };
+  }
+
+  const registrationMtd = parseInteger(
+    cellValue(daily.getCell(header.rowNumber + 1, header.registrationColumn)),
+    `MTD Registration na aba ${daily.name}, linha ${header.rowNumber + 1}`
+  );
+  if (registrationMtd == null)
+    warnings.push(
+      `O valor do MTD Registration na aba ${daily.name}, linha ${header.rowNumber + 1}, está vazio; MTD Registration permanece nulo.`
+    );
+  return {
+    registrationMtd,
+    registrationAsOf,
+    sourceSheet: daily.name,
+    warnings,
+  };
+}
+
 function findWeeklyRegSheet(
   workbook: ExcelJS.Workbook
 ): ExcelJS.Worksheet | null {
@@ -652,6 +793,15 @@ export async function parseCommercialWorkbook(
       result = parseGenericRows(workbook, kind);
     }
   } else result = parseGenericRows(workbook, kind);
+  const registration =
+    kind === "sales"
+      ? readRegistrationMtd(
+          workbook,
+          fileName,
+          competence,
+          parsedAsOf ?? undefined
+        )
+      : undefined;
   return {
     kind,
     competence,
@@ -661,7 +811,16 @@ export async function parseCommercialWorkbook(
     fileSha256: createHash("sha256").update(buffer).digest("hex"),
     rows: result.rows,
     total: result.total,
-    warnings: result.warnings,
+    warnings: [...result.warnings, ...(registration?.warnings ?? [])],
+    ...(registration
+      ? {
+          registrationMtd: registration.registrationMtd,
+          registrationAsOf: registration.registrationAsOf,
+          ...(registration.sourceSheet
+            ? { sourceSheet: registration.sourceSheet }
+            : {}),
+        }
+      : {}),
   };
 }
 

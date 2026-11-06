@@ -1,4 +1,10 @@
 import {
+  readPlansWithProjections,
+  readMediaPlanProjections,
+  updateMediaPlanProjections,
+} from "./v2MediaPlanProjections";
+import { getV2SalesTotalGoal, saveV2SalesTotalGoal } from "./v2SalesGoal";
+import {
   previewCommercialUpload,
   commitCommercialUpload,
   readCommercialStatus,
@@ -24,7 +30,6 @@ import {
   resetV2AccountPassword,
 } from "./v2Accounts";
 import { MAX_GOAL } from "../shared/v2Goals";
-import { MEDIA_PLANS } from "./mediaPlans";
 import {
   listDispatchReports,
   getDispatchReport,
@@ -110,6 +115,14 @@ const adminProcedure = v2Procedure.use(({ ctx, next }) => {
   requireAdministrator(ctx.v2User);
   return next({ ctx });
 });
+const ownerProcedure = adminProcedure.use(({ ctx, next }) => {
+  if (ctx.v2User.username !== "rodrigo")
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Controle exclusivo da conta Rodrigo.",
+    });
+  return next({ ctx });
+});
 export const appRouter = router({
   auth: router({
     me: publicProcedure.query(async ({ ctx }) => {
@@ -154,7 +167,58 @@ export const appRouter = router({
       .input(z.object({ id: z.number().int().positive(), password }))
       .mutation(({ ctx, input }) => resetV2AccountPassword(input, ctx.v2User)),
   }),
-  mediaPlan: router({ plans: v2Procedure.query(() => MEDIA_PLANS) }),
+  mediaPlan: router({
+    plans: v2Procedure.query(async ({ ctx }) => {
+      try {
+        return await readPlansWithProjections();
+      } catch (error) {
+        if (ctx.v2User.role !== "admin") genericClientDataError();
+        throw error;
+      }
+    }),
+    projections: ownerProcedure
+      .input(z.object({ monthId: competence }))
+      .query(({ input }) => readMediaPlanProjections(input.monthId)),
+    updateProjections: ownerProcedure
+      .input(
+        z.object({
+          monthId: competence,
+          expectedVersion: z.number().int().nonnegative(),
+          values: z
+            .object({
+              globalLeads: z
+                .number()
+                .int()
+                .min(0)
+                .max(10_000_000)
+                .nullable()
+                .optional(),
+              products: z
+                .record(
+                  z.string().max(191),
+                  z.number().int().min(0).max(10_000_000).nullable()
+                )
+                .optional(),
+              rows: z
+                .record(
+                  z.string().max(191),
+                  z.number().int().min(0).max(10_000_000).nullable()
+                )
+                .optional(),
+            })
+            .refine(
+              values =>
+                values.globalLeads !== undefined ||
+                Object.keys(values.products ?? {}).length > 0 ||
+                Object.keys(values.rows ?? {}).length > 0,
+              "Informe uma projeção."
+            ),
+        })
+      )
+      .mutation(({ ctx, input }) =>
+        updateMediaPlanProjections(input, ctx.v2User)
+      ),
+  }),
   dispatch: router({
     reports: v2Procedure.query(async ({ ctx }) => {
       const data = await listDispatchReports();
@@ -253,6 +317,17 @@ export const appRouter = router({
       .mutation(({ ctx, input }) => removeCommercialSource(input, ctx.v2User)),
   }),
   leads: router({
+    salesGoal: ownerProcedure
+      .input(z.object({ competence }))
+      .query(async ({ input }) => ({
+        competence: input.competence,
+        goal: await getV2SalesTotalGoal(input.competence),
+      })),
+    updateSalesGoal: ownerProcedure
+      .input(
+        z.object({ competence, goal: z.number().int().min(0).max(10_000_000) })
+      )
+      .mutation(({ input, ctx }) => saveV2SalesTotalGoal(input, ctx.v2User)),
     dashboard: v2Procedure.input(filters).query(async ({ ctx, input }) => {
       try {
         const data = await getV2Dashboard(input);

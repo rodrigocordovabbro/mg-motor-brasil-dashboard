@@ -13,7 +13,15 @@ import {
   Send,
   ShieldCheck,
 } from "lucide-react";
-import { FormEvent, lazy, Suspense, useEffect, useState } from "react";
+import {
+  FormEvent,
+  lazy,
+  Suspense,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 const V2LeadsDashboard = lazy(() => import("@/components/V2LeadsDashboard"));
 const V2DispatchControl = lazy(() => import("@/components/V2DispatchControl"));
@@ -206,8 +214,34 @@ function Topbar({
   onLogout: () => void;
   loggingOut: boolean;
 }) {
+  const headerRef = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const header = headerRef.current;
+    if (!header) return;
+    const updateHeight = () => {
+      document.documentElement.style.setProperty(
+        "--mg-app-header-height",
+        `${Math.ceil(header.getBoundingClientRect().height)}px`
+      );
+    };
+    updateHeight();
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(updateHeight);
+    observer?.observe(header);
+    window.addEventListener("resize", updateHeight);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", updateHeight);
+      document.documentElement.style.removeProperty("--mg-app-header-height");
+    };
+  }, []);
   return (
-    <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/95 backdrop-blur">
+    <header
+      ref={headerRef}
+      className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/95 backdrop-blur"
+    >
       <div className="mx-auto flex min-h-[68px] w-full flex-wrap items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
         <BrandMark />
         <nav
@@ -383,7 +417,9 @@ function AuthenticatedDashboard({
         onLogout={() => void logout()}
         loggingOut={loggingOut}
       />
-      <main className="mx-auto w-full px-3 py-5 sm:px-4 lg:px-5 lg:py-6">
+      <main
+        className={`mx-auto w-full px-3 sm:px-4 lg:px-5 ${activeModule === "leads" ? "pb-5 pt-0 lg:pb-6" : "py-5 lg:py-6"}`}
+      >
         <Suspense
           fallback={
             <div

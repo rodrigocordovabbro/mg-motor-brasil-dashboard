@@ -1,3 +1,9 @@
+import V2SalesGoalEditor from "./V2SalesGoalEditor";
+import {
+  LeadsSectionNavigation,
+  LEADS_SECTION_TABS,
+  type LeadsSectionTab as V2Tab,
+} from "./LeadsSectionNavigation";
 import V2CommercialUploads from "./V2CommercialUploads";
 import V2MonthlyGoalEditor from "./V2MonthlyGoalEditor";
 import { useEffect } from "react";
@@ -1140,15 +1146,33 @@ function DealerPerformanceCard({
           }
         />
         <SummaryFact
-          label="Vendas"
+          label="Vendas gerais (MTD)"
           value={
-            available && totals.sales != null
-              ? numberFormat(totals.sales)
+            performance.generalRegistrationMTD
+              ? numberFormat(performance.generalRegistrationMTD.value)
               : "Indisponível"
+          }
+          detail={
+            performance.generalRegistrationMTD
+              ? `FUP · ${performance.generalRegistrationMTD.asOf ? fullDate(performance.generalRegistrationMTD.asOf) : "referência da fonte"} · total geral`
+              : "MTD Registration não disponível"
           }
         />
         <SummaryFact
           label="Meta de vendas"
+          action={
+            <V2SalesGoalEditor
+              competence={data.pacing.competence}
+              currentGoal={totals.salesGoal}
+              canManage={canManage}
+              onSaved={onUpdated}
+            />
+          }
+          detail={
+            performance.salesGoalOrigin === "manual"
+              ? "Total mensal manual"
+              : undefined
+          }
           value={
             available && totals.salesGoal != null
               ? numberFormat(totals.salesGoal)
@@ -1505,11 +1529,7 @@ function OverviewTab({
           icon={Check}
         />
       </div>
-      <PacingCard
-        data={data}
-        onUpdated={onGoalUpdated}
-        canManage={canManage}
-      />
+      <PacingCard data={data} onUpdated={onGoalUpdated} canManage={canManage} />
       <Card className="overflow-hidden">
         <CardHeading
           eyebrow="Evolução diária"
@@ -1828,29 +1848,37 @@ function LeadsTableTab({
   );
 }
 
-function SummaryFact({ label, value }: { label: string; value: string }) {
+function SummaryFact({
+  label,
+  value,
+  action,
+  detail,
+}: {
+  label: string;
+  value: string;
+  action?: ReactNode;
+  detail?: string;
+}) {
   return (
     <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
-      <p className="text-[10px] font-bold uppercase tracking-[0.13em] text-slate-400">
-        {label}
-      </p>
+      <div className="flex min-h-6 items-center justify-between gap-2">
+        <p className="text-[10px] font-bold uppercase tracking-[0.13em] text-slate-400">
+          {label}
+        </p>
+        {action}
+      </div>
       <p
         className="mt-2 truncate text-lg font-bold text-slate-900"
         title={value}
       >
         {value}
       </p>
+      {detail ? (
+        <p className="mt-1 text-[11px] leading-4 text-slate-500">{detail}</p>
+      ) : null}
     </div>
   );
 }
-
-const TABS = [
-  "Visão Geral",
-  "Regiões",
-  "Lojas & CRM",
-  "Leads",
-] as const;
-type V2Tab = (typeof TABS)[number];
 
 export default function V2LeadsDashboard({
   authenticated,
@@ -1903,12 +1931,30 @@ export default function V2LeadsDashboard({
       ? "Lojas & CRM"
       : "Visão Geral"
   );
+  const dashboardTopRef = useRef<HTMLDivElement>(null);
   const selectTab = (tab: V2Tab) => {
     setActiveTab(tab);
     const url = new URL(window.location.href);
     if (tab === "Lojas & CRM") url.searchParams.set("tab", "stores");
     else url.searchParams.delete("tab");
     window.history.replaceState({}, "", url);
+    window.requestAnimationFrame(() => {
+      const top = dashboardTopRef.current;
+      if (!top) return;
+      const headerHeight =
+        Number.parseFloat(
+          getComputedStyle(document.documentElement).getPropertyValue(
+            "--mg-app-header-height"
+          )
+        ) || 68;
+      window.scrollTo({
+        top: Math.max(
+          0,
+          window.scrollY + top.getBoundingClientRect().top - headerHeight
+        ),
+        behavior: "auto",
+      });
+    });
   };
   const dashboardQuery = v2Trpc.leads.dashboard.useQuery(applied, {
     enabled: authenticated,
@@ -1944,140 +1990,114 @@ export default function V2LeadsDashboard({
   const refresh = () => void dashboardQuery.refetch();
 
   if (!authenticated) return null;
-  if (activeTab === "Lojas & CRM")
-    return (
-      <div className="space-y-4">
-        <div className="overflow-x-auto">
-          <div
-            className="flex min-w-max gap-1 rounded-xl border border-slate-200 bg-white p-1"
-            role="tablist"
-            aria-label="Módulos de leads"
-          >
-            {TABS.map(tab => (
-              <button
-                key={tab}
-                type="button"
-                role="tab"
-                aria-selected={activeTab === tab}
-                onClick={() => selectTab(tab)}
-                className={`rounded-lg px-3 py-2 text-xs font-semibold ${activeTab === tab ? "bg-[#e2212d] text-white" : "text-slate-500 hover:bg-slate-100"}`}
-              >
-                {tab}
-              </button>
-            ))}
-          </div>
-        </div>
-        {data ? (
-          <FilterBar
-            draft={draft}
-            setDraft={setDraft}
-            options={data.options}
-            cutoff={cutoff}
-            onSearch={applyFilters}
-            dateError={dateError}
-            selectedPreset={selectedPreset}
-            onPreset={choosePreset}
-            isFetching={dashboardQuery.isFetching}
-            clientMode={clientMode}
-          />
-        ) : null}
-        <StoresCrmTab
-          filters={applied}
-          clientMode={clientMode}
-          canManage={canManage}
-          onPeriodChange={(from, to) => {
-            setDraft(current => ({
-              ...current,
-              dateFrom: from,
-              dateTo: to,
-              page: 1,
-            }));
-            setApplied(current => ({
-              ...current,
-              dateFrom: from,
-              dateTo: to,
-              page: 1,
-            }));
-          }}
-        />
-      </div>
-    );
-  if (dashboardQuery.isLoading && !data) return <LoadingPanel />;
-  if (dashboardQuery.error && !data) return <QueryError onRetry={refresh} />;
-  if (!data) return <QueryError onRetry={refresh} />;
-
   return (
-    <div className="space-y-4">
-      <FilterBar
-        draft={draft}
-        setDraft={setDraft}
-        options={data.options}
-        cutoff={data.period.cutoffDate || cutoff}
-        onSearch={applyFilters}
-        dateError={dateError}
-        selectedPreset={selectedPreset}
-        onPreset={choosePreset}
-        isFetching={dashboardQuery.isLoading}
-        clientMode={clientMode}
-      />
-      {data.status === "NOT_CONFIGURED" ? (
-        <NotConfiguredPanel data={data} />
-      ) : (
-        <>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold text-slate-500">
-                Período: {fullDate(data.period.dateFrom)} a{" "}
-                {fullDate(data.period.dateTo)}
-              </p>
-              <p className="mt-1 text-[11px] text-slate-400">
-                {canManage
-                  ? `${data.source.name || "Importação autenticada"} · ${formatImportedAt(data.source.importedAt)} · importação inicial, sem sincronização automática`
-                  : "Dados atualizados pela fonte autenticada"}
-              </p>
-            </div>
-            <div className="flex items-center gap-2 text-xs text-slate-500">
-              <span className="h-2 w-2 rounded-full bg-emerald-500" /> Fonte
-              importada {dashboardQuery.isLoading ? "· atualizando" : ""}
-            </div>
-          </div>
-          <div className="overflow-x-auto pb-1">
-            <div
-              className="flex min-w-max gap-1 rounded-xl border border-slate-200 bg-white p-1"
-              role="tablist"
-              aria-label="Módulos de leads"
-            >
-              {TABS.map(tab => (
-                <button
-                  key={tab}
-                  type="button"
-                  role="tab"
-                  aria-selected={activeTab === tab}
-                  onClick={() => selectTab(tab)}
-                  className={`rounded-lg px-3 py-2 text-xs font-semibold transition sm:px-4 ${activeTab === tab ? "bg-[#e2212d] text-white shadow-sm" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"}`}
-                >
-                  {tab}
-                </button>
-              ))}
-            </div>
-          </div>
-          {activeTab === "Visão Geral" ? (
-            <OverviewTab
-              data={data}
-              onGoalUpdated={refresh}
+    <div
+      ref={dashboardTopRef}
+      className="min-h-[calc(100dvh-var(--mg-app-header-height,68px))] space-y-4"
+    >
+      <LeadsSectionNavigation activeTab={activeTab} onChange={selectTab} />
+      <section
+        id="mg-leads-panel"
+        role="tabpanel"
+        aria-labelledby={`mg-leads-tab-${LEADS_SECTION_TABS.indexOf(activeTab)}`}
+        className="space-y-4"
+      >
+        {activeTab === "Lojas & CRM" ? (
+          <>
+            {data ? (
+              <FilterBar
+                draft={draft}
+                setDraft={setDraft}
+                options={data.options}
+                cutoff={cutoff}
+                onSearch={applyFilters}
+                dateError={dateError}
+                selectedPreset={selectedPreset}
+                onPreset={choosePreset}
+                isFetching={dashboardQuery.isFetching}
+                clientMode={clientMode}
+              />
+            ) : null}
+            <StoresCrmTab
+              filters={applied}
+              clientMode={clientMode}
               canManage={canManage}
+              onPeriodChange={(from, to) => {
+                setDraft(current => ({
+                  ...current,
+                  dateFrom: from,
+                  dateTo: to,
+                  page: 1,
+                }));
+                setApplied(current => ({
+                  ...current,
+                  dateFrom: from,
+                  dateTo: to,
+                  page: 1,
+                }));
+              }}
             />
-          ) : null}
-          {activeTab === "Regiões" ? <RegionsTab data={data} /> : null}
-          {activeTab === "Leads" ? (
-            <LeadsTableTab
-              data={data}
-              onPage={changePage}
+          </>
+        ) : dashboardQuery.isLoading && !data ? (
+          <LoadingPanel />
+        ) : !data ? (
+          <QueryError onRetry={refresh} />
+        ) : (
+          <>
+            <FilterBar
+              draft={draft}
+              setDraft={setDraft}
+              options={data.options}
+              cutoff={data.period.cutoffDate || cutoff}
+              onSearch={applyFilters}
+              dateError={dateError}
+              selectedPreset={selectedPreset}
+              onPreset={choosePreset}
+              isFetching={dashboardQuery.isFetching}
               clientMode={clientMode}
             />
-          ) : null}
-        </>
-      )}
+            {data.status === "NOT_CONFIGURED" ? (
+              <NotConfiguredPanel data={data} />
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500">
+                      Período: {fullDate(data.period.dateFrom)} a{" "}
+                      {fullDate(data.period.dateTo)}
+                    </p>
+                    <p className="mt-1 text-[11px] text-slate-400">
+                      {canManage
+                        ? `${data.source.name || "Importação autenticada"} · ${formatImportedAt(data.source.importedAt)} · importação inicial, sem sincronização automática`
+                        : "Dados atualizados pela fonte autenticada"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-slate-500">
+                    <span className="h-2 w-2 rounded-full bg-emerald-500" />{" "}
+                    Fonte importada{" "}
+                    {dashboardQuery.isFetching ? "· atualizando" : ""}
+                  </div>
+                </div>
+                {activeTab === "Visão Geral" ? (
+                  <OverviewTab
+                    data={data}
+                    onGoalUpdated={refresh}
+                    canManage={canManage}
+                  />
+                ) : null}
+                {activeTab === "Regiões" ? <RegionsTab data={data} /> : null}
+                {activeTab === "Leads" ? (
+                  <LeadsTableTab
+                    data={data}
+                    onPage={changePage}
+                    clientMode={clientMode}
+                  />
+                ) : null}
+              </>
+            )}
+          </>
+        )}
+      </section>
     </div>
   );
 }
