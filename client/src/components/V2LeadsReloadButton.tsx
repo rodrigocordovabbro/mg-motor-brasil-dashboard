@@ -34,7 +34,11 @@ export function V2LeadsReloadButton({
     locked.current = true;
     const request = sequence.current;
     setBusy(true);
-    setMessage(null);
+    setMessage(
+      syncExternal
+        ? "Lendo planilha-base e importando. Aguarde a confirmação; a base anterior permanece disponível."
+        : "Consultando dados armazenados. Aguarde a confirmação; a base anterior permanece disponível."
+    );
     setFailed(false);
     try {
       const result = await onReload();
@@ -44,14 +48,16 @@ export function V2LeadsReloadButton({
     } catch (error) {
       if (request !== sequence.current) return;
       const authError = error as { data?: { code?: string }; code?: string };
+      const code = authError?.data?.code ?? authError?.code;
       setFailed(true);
       setMessage(
-        authError?.data?.code === "UNAUTHORIZED" ||
-          authError?.code === "UNAUTHORIZED"
-          ? "Sua sessão expirou. Faça login novamente para atualizar os dados."
-          : authError?.data?.code === "PRECONDITION_FAILED"
-            ? "Conexão Google pendente. Configure a conta de serviço no cartão seguro e dê acesso de Leitor à planilha-base. Nenhum dado foi alterado."
-            : "Não foi possível atualizar a base. Os dados anteriores foram mantidos; tente novamente."
+        code === "FORBIDDEN"
+          ? "Apenas administradores podem importar a planilha-base. Nenhuma permissão foi alterada; os dados anteriores foram mantidos."
+          : code === "UNAUTHORIZED"
+            ? "Sua sessão expirou. Faça login novamente para atualizar os dados."
+            : code === "PRECONDITION_FAILED"
+              ? "Conexão Google pendente. Configure a conta de serviço no cartão seguro e dê acesso de Leitor à planilha-base. Nenhum dado foi alterado."
+              : "Não foi possível atualizar a base. Os dados anteriores foram mantidos; tente novamente."
       );
     } finally {
       locked.current = false;
@@ -84,9 +90,10 @@ export function V2LeadsReloadButton({
             ? "Atualizar base de Leads"
             : "Atualizar indicadores"}
       </button>
-      {showFeedback && message ? (
+      {(showFeedback || busy) && message ? (
         <p
           role={failed ? "alert" : "status"}
+          aria-live="polite"
           className={`pacing-reload-feedback mt-2 text-[11px] leading-4 ${failed ? "text-red-700" : "text-slate-600"}`}
         >
           {message}

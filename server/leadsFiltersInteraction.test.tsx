@@ -423,3 +423,114 @@ it("informa explicitamente período sem Leads em vez de renderizar eixos sem bar
   const empty = chart.type(chart.props);
   expect(empty.props.label).toBe("Nenhum Lead no período selecionado.");
 });
+
+it("não transforma pontos sem fonte em zeros, rótulos ou acumulado contínuo", () => {
+  mock.query.mockReturnValue({
+    data: {
+      status: "READY",
+      period: {},
+      options: { models: [], channels: [], campaigns: [], dealers: [] },
+      source: {},
+      notes: [],
+      channels: [],
+      states: [],
+      dealers: [],
+      daily: [
+        {
+          date: "2026-11-01",
+          total: 5,
+          cumulative: 5,
+          pace: null,
+          channels: { Meta: 5 },
+          sourceAvailable: true,
+        },
+        {
+          date: "2026-11-02",
+          total: 2,
+          cumulative: 7,
+          pace: null,
+          channels: { Site: 2 },
+          sourceAvailable: true,
+        },
+        {
+          date: "2026-11-03",
+          total: null,
+          cumulative: 5,
+          pace: null,
+          channels: {},
+          sourceAvailable: false,
+        },
+      ],
+    },
+    isLoading: false,
+    isFetching: false,
+    refetch: vi.fn(),
+  });
+  const overview = findOverview();
+  const body = overview.type(overview.props);
+  const chart = findElement(
+    body,
+    element => element.type?.name === "DailyChart"
+  );
+  const chartTree = chart.type(chart.props);
+  let chartData: any[] | undefined;
+  const labels: any[] = [];
+  const visit = (node: any) => {
+    if (Array.isArray(node)) return node.forEach(visit);
+    if (!node?.props) return;
+    if (Array.isArray(node.props.data) && node.props.data[0]?.date)
+      chartData = node.props.data;
+    if (
+      node.type?.displayName === "LabelList" ||
+      node.type?.name === "LabelList"
+    )
+      labels.push(node);
+    visit(node.props.children);
+  };
+  visit(chartTree);
+  expect(chartData).toBeDefined();
+  expect(chartData?.[0]["channel:Site"]).toBe(0);
+  expect(chartData?.[1]["channel:Meta"]).toBe(0);
+  expect(chartData?.[2].total).toBeNull();
+  expect(chartData?.[2]["channel:Meta"]).toBeNull();
+  expect(chartData?.[2].cumulative).toBeNull();
+  expect(labels).toHaveLength(1);
+  expect(labels[0].props.formatter(null)).toBe("");
+  expect(labels[0].props.formatter(0)).toBe("0");
+});
+
+it("aguarda a atualização quando todo o período está fora da fonte", () => {
+  mock.query.mockReturnValue({
+    data: {
+      status: "READY",
+      period: {},
+      options: { models: [], channels: [], campaigns: [], dealers: [] },
+      source: {},
+      notes: [],
+      channels: [],
+      states: [],
+      dealers: [],
+      daily: [
+        {
+          date: "2026-11-08",
+          total: null,
+          cumulative: null,
+          pace: null,
+          channels: {},
+          sourceAvailable: false,
+        },
+      ],
+    },
+    isLoading: false,
+    isFetching: false,
+    refetch: vi.fn(),
+  });
+  const overview = findOverview();
+  const chart = findElement(
+    overview.type(overview.props),
+    element => element.type?.name === "DailyChart"
+  );
+  expect(chart.type(chart.props).props.label).toBe(
+    "Aguardando atualização da fonte para este período"
+  );
+});

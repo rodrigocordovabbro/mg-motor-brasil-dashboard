@@ -52,11 +52,18 @@ function fixture(change: Partial<LeadsReloadResult> = {}): LeadsReloadResult {
 }
 function view(
   onReload: () => Promise<LeadsReloadResult>,
-  competence = "2026-11"
+  competence = "2026-11",
+  syncExternal = false,
+  showFeedback = true
 ) {
   hooks.stateIndex = 0;
   hooks.refIndex = 0;
-  return V2LeadsReloadButton({ competence, onReload });
+  return V2LeadsReloadButton({
+    competence,
+    onReload,
+    syncExternal,
+    showFeedback,
+  });
 }
 function deferred() {
   let resolve!: (value: LeadsReloadResult) => void;
@@ -89,6 +96,15 @@ describe("consulta da base de Leads", () => {
     expect(message).toContain("Nova importação encontrada no banco");
     expect(message).not.toContain("a base ainda não cobre");
   });
+  it("resume uma planilha conferida sem declarar importação nova", () => {
+    const message = describeLeadsReload(
+      fixture({
+        sync: { changed: false, inserted: 0, updated: 0, totalRows: 120 },
+      })
+    );
+    expect(message).toContain("Planilha conferida não houve mudanças");
+    expect(message).not.toContain("Nova importação encontrada");
+  });
   it("trava dois cliques antes da nova renderização e mantém o estado ocupado até concluir", async () => {
     const pending = deferred();
     const reload = vi.fn(() => pending.promise);
@@ -102,6 +118,19 @@ describe("consulta da base de Leads", () => {
     await Promise.resolve();
     expect(hooks.values[0]).toBe(false);
     expect(hooks.values[1]).toContain("Consulta concluída");
+  });
+  it("mantém a ajuda de busy visível quando o feedback final está oculto", async () => {
+    const pending = deferred();
+    const reload = vi.fn(() => pending.promise);
+    view(reload, "2026-11", true, false).props.children[0].props.onClick();
+    const busyView = view(reload, "2026-11", true, false);
+    expect(busyView.props.children[0].props.disabled).toBe(true);
+    expect(busyView.props.children[1].props.children).toContain(
+      "Lendo planilha-base e importando"
+    );
+    pending.resolve(fixture());
+    await pending.promise;
+    await Promise.resolve();
   });
   it("não informa sucesso se a consulta falha e permite tentar novamente", async () => {
     const pending = deferred();
@@ -125,6 +154,17 @@ describe("consulta da base de Leads", () => {
     await pending.promise.catch(() => {});
     await Promise.resolve();
     expect(hooks.values[1]).toContain("Faça login novamente");
+    expect(hooks.values[1]).not.toContain("private-details");
+  });
+  it("explica FORBIDDEN como operação administrativa sem sugerir alteração de permissões", async () => {
+    const pending = deferred();
+    const reload = () => pending.promise;
+    view(reload, "2026-11", true).props.children[0].props.onClick();
+    pending.reject({ data: { code: "FORBIDDEN" }, message: "private-details" });
+    await pending.promise.catch(() => {});
+    await Promise.resolve();
+    expect(hooks.values[1]).toContain("Apenas administradores");
+    expect(hooks.values[1]).toContain("Nenhuma permissão foi alterada");
     expect(hooks.values[1]).not.toContain("private-details");
   });
   it("não publica mensagem de uma competência anterior após mudança de mês", async () => {

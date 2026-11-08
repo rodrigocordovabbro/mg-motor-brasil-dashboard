@@ -325,10 +325,16 @@ export function aggregateV2Leads(
   ) {
     const value = dailyMap.get(date) ?? { total: 0, channels: {} };
     cumulative += value.total;
+    const sourceAvailable =
+      Boolean(source.importedAt) &&
+      (source.latestLeadDate === undefined ||
+        (source.latestLeadDate !== null && date <= source.latestLeadDate));
     daily.push({
       date,
-      ...value,
-      cumulative,
+      total: sourceAvailable ? value.total : null,
+      channels: sourceAvailable ? value.channels : {},
+      cumulative: sourceAvailable ? cumulative : null,
+      sourceAvailable,
       pace:
         pacing.goal == null || period.dateFrom !== monthFrom
           ? null

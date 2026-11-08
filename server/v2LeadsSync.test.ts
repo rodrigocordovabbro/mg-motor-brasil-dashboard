@@ -356,3 +356,69 @@ describe("v2 Leads sync service", () => {
     expect(mock.connection.commit).not.toHaveBeenCalled();
   });
 });
+
+it("imports a changed snapshot by writing only its delta while keeping physical IDs and full audit snapshots", async () => {
+  const snapshot = {
+    spreadsheetId: "sheet-test",
+    valueRanges: [
+      site(
+        ["05/11/2026", "MG 4", "Dealer A", "Name A"],
+        ["06/11/2026", "MG Urban", "Dealer B", "Name B"]
+      ),
+    ],
+  };
+  await importLeadsSnapshot(snapshot, actor, "server");
+  const firstIds = [...mock.state.leads.values()].map(row => row.id);
+  const firstSourceRow = structuredClone(mock.state.sync.get("Site\u00002"));
+  vi.clearAllMocks();
+  const result = await importLeadsSnapshot(
+    {
+      ...snapshot,
+      valueRanges: [
+        site(
+          ["05/11/2026", "MG 4", "Dealer A", "Name A"],
+          ["07/11/2026", "MG Urban", "Dealer C", "Name B"]
+        ),
+      ],
+    },
+    actor,
+    "server"
+  );
+  expect(result).toMatchObject({
+    changed: true,
+    inserted: 0,
+    updated: 1,
+    totalRows: 2,
+    latestLeadDate: "2026-11-07",
+  });
+  const writes = mock.connection.execute.mock.calls.filter(([sql]) =>
+    String(sql).includes("INSERT INTO v2_leads")
+  );
+  expect(writes).toHaveLength(1);
+  expect(writes[0][1]).toHaveLength(13);
+  expect(writes[0][1]?.slice(0, 4)).toEqual(["Site", 3, "2026-11-07", null]);
+  expect([...mock.state.leads.values()].map(row => row.id)).toEqual(firstIds);
+  expect(mock.state.sync.get("Site\u00002")).toEqual(firstSourceRow);
+  const history = mock.connection.execute.mock.calls.find(([sql]) =>
+    String(sql).includes("INSERT INTO v2_lead_sync_history")
+  );
+  expect(history?.[1]).toHaveLength(11);
+  expect(JSON.parse(String(history?.[1]?.[8])).normalized.dealer).toBe(
+    "Dealer B"
+  );
+  expect(JSON.parse(String(history?.[1]?.[9])).normalized.dealer).toBe(
+    "Dealer C"
+  );
+  const scan = mock.connection.execute.mock.calls.find(([sql]) =>
+    String(sql).includes(
+      "SELECT l.id AS leadId,l.sourceSheet,l.sourceRow,r.rowHash"
+    )
+  );
+  expect(scan?.[1]).toEqual([1, "Site"]);
+  expect(scan?.[0]).not.toContain("payloadJson");
+  expect(
+    mock.connection.execute.mock.calls.some(([sql]) =>
+      /DELETE|TRUNCATE|v2_dispatch_checks/.test(String(sql))
+    )
+  ).toBe(false);
+});

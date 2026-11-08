@@ -178,3 +178,52 @@ describe("V2 authentication", () => {
     expect(await verifyV2Token(token)).toBeNull();
   });
 });
+
+it("does not turn dates beyond source coverage into zero Leads or a flat actual cumulative line", () => {
+  const r = aggregateV2Leads(
+    [lead(1, "2026-11-01", "Meta"), lead(2, "2026-11-05", "Site")],
+    { dateFrom: "2026-11-01", dateTo: "2026-11-07" },
+    300,
+    { ...source, latestLeadDate: "2026-11-05" },
+    new Date("2026-11-08T16:00:00Z")
+  );
+  expect(r.daily.map(day => day.total)).toEqual([1, 0, 0, 0, 1, null, null]);
+  expect(r.daily.map(day => day.sourceAvailable)).toEqual([
+    true,
+    true,
+    true,
+    true,
+    true,
+    false,
+    false,
+  ]);
+  expect(r.daily.map(day => day.cumulative)).toEqual([
+    1,
+    1,
+    1,
+    1,
+    2,
+    null,
+    null,
+  ]);
+  expect(r.daily[5].channels).toEqual({});
+  expect(r.daily[5].pace).toBe(60);
+  expect(r.summary.total).toBe(2);
+  expect(r.pacing.current).toBe(2);
+  expect(r.period.dateTo).toBe("2026-11-07");
+  const absent = aggregateV2Leads(
+    [],
+    { dateFrom: "2026-11-06", dateTo: "2026-11-07" },
+    null,
+    { ...source, latestLeadDate: null },
+    new Date("2026-11-08T16:00:00Z")
+  );
+  expect(
+    absent.daily.every(
+      day =>
+        day.total === null &&
+        day.cumulative === null &&
+        day.sourceAvailable === false
+    )
+  ).toBe(true);
+});

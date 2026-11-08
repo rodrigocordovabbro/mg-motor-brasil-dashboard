@@ -164,6 +164,19 @@ function formatImportedAt(value: string | null) {
   }).format(parsed)}`;
 }
 
+function reloadErrorCode(error: unknown) {
+  if (!error || typeof error !== "object") return undefined;
+  const candidate = error as {
+    data?: { code?: unknown };
+    code?: unknown;
+  };
+  return typeof candidate.data?.code === "string"
+    ? candidate.data.code
+    : typeof candidate.code === "string"
+      ? candidate.code
+      : undefined;
+}
+
 function statusText(status: V2LeadsResponse["pacing"]["status"]) {
   return {
     AHEAD: "À frente",
@@ -1380,15 +1393,23 @@ function DailyChart({ daily }: { daily: V2DailyPoint[] }) {
     () =>
       daily.map(item => ({
         ...item,
+        cumulative: item.sourceAvailable === false ? null : item.cumulative,
         ...Object.fromEntries(
-          channelKeys.map(key => [`channel:${key}`, item.channels[key] ?? 0])
+          channelKeys.map(key => [
+            `channel:${key}`,
+            item.sourceAvailable === false ? null : (item.channels[key] ?? 0),
+          ])
         ),
       })),
     [channelKeys, daily]
   );
   if (!daily.length)
     return <EmptyDistribution label="Sem dados diários para este período." />;
-  if (!daily.some(item => item.total > 0))
+  if (daily.every(item => item.sourceAvailable === false))
+    return (
+      <EmptyDistribution label="Aguardando atualização da fonte para este período" />
+    );
+  if (!daily.some(item => item.total != null && item.total > 0))
     return <EmptyDistribution label="Nenhum Lead no período selecionado." />;
   return (
     <div className="px-3 pb-5 pt-3 sm:px-5">
@@ -1461,8 +1482,10 @@ function DailyChart({ daily }: { daily: V2DailyPoint[] }) {
               />
               <Tooltip
                 labelFormatter={label => fullDate(String(label))}
-                formatter={(value: number, name: string) => [
-                  numberFormat(Number(value)),
+                formatter={(value: unknown, name: string) => [
+                  typeof value === "number"
+                    ? numberFormat(value)
+                    : "Indisponível",
                   name,
                 ]}
                 contentStyle={{
@@ -1495,7 +1518,7 @@ function DailyChart({ daily }: { daily: V2DailyPoint[] }) {
                       strokeWidth={3}
                       paintOrder="stroke"
                       formatter={(value: unknown) =>
-                        numberFormat(Number(value))
+                        typeof value === "number" ? numberFormat(value) : ""
                       }
                     />
                   ) : null}
@@ -1509,6 +1532,7 @@ function DailyChart({ daily }: { daily: V2DailyPoint[] }) {
                 stroke="#1e293b"
                 strokeWidth={2.5}
                 dot={false}
+                connectNulls={false}
               />
               <Line
                 yAxisId="lines"
@@ -2011,6 +2035,9 @@ export default function V2LeadsDashboard({
     setApplied(current => ({ ...current, page }));
   const refresh = () => void dashboardQuery.refetch();
   const reloadMonthlyBase = async (): Promise<LeadsReloadResult> => {
+    setReloadNotice(
+      "Lendo planilha-base e importando. Aguarde a confirmação; a base anterior permanece disponível."
+    );
     try {
       const previousImport = data?.source.importedAt;
       let syncResult;
@@ -2018,11 +2045,13 @@ export default function V2LeadsDashboard({
         try {
           syncResult = await syncBaseMutation.mutateAsync();
         } catch (error) {
-          const code = (error as { data?: { code?: string } })?.data?.code;
+          const code = reloadErrorCode(error);
           setReloadNotice(
-            code === "PRECONDITION_FAILED"
-              ? "Conexão Google pendente: forneça GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON pelo cartão seguro e compartilhe a planilha-base como Leitor com o client_email dessa conta. A base armazenada foi preservada."
-              : "Não foi possível sincronizar a planilha-base. Os dados anteriores foram preservados; tente novamente."
+            code === "FORBIDDEN"
+              ? "Apenas administradores podem importar a planilha-base. Nenhuma permissão foi alterada; os dados anteriores foram preservados."
+              : code === "PRECONDITION_FAILED"
+                ? "Conexão Google pendente: forneça GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON pelo cartão seguro e compartilhe a planilha-base como Leitor com o client_email dessa conta. A base armazenada foi preservada."
+                : "Não foi possível sincronizar a planilha-base. Os dados anteriores foram preservados; tente novamente."
           );
           throw error;
         }
@@ -2064,13 +2093,15 @@ export default function V2LeadsDashboard({
       setReloadNotice(describeLeadsReload(summary));
       return summary;
     } catch (error) {
-      const code = (error as { data?: { code?: string } })?.data?.code;
+      const code = reloadErrorCode(error);
       setReloadNotice(
-        code === "UNAUTHORIZED"
-          ? "Sua sessão expirou. Faça login novamente para atualizar os dados."
-          : code === "PRECONDITION_FAILED"
-            ? "Conexão Google pendente: forneça a conta de serviço pelo cartão seguro e compartilhe a planilha-base como Leitor com seu client_email. A base armazenada foi preservada."
-            : "Não foi possível atualizar a base. Os dados anteriores foram preservados; tente novamente."
+        code === "FORBIDDEN"
+          ? "Apenas administradores podem importar a planilha-base. Nenhuma permissão foi alterada; os dados anteriores foram preservados."
+          : code === "UNAUTHORIZED"
+            ? "Sua sessão expirou. Faça login novamente para atualizar os dados."
+            : code === "PRECONDITION_FAILED"
+              ? "Conexão Google pendente: forneça a conta de serviço pelo cartão seguro e compartilhe a planilha-base como Leitor com seu client_email. A base armazenada foi preservada."
+              : "Não foi possível atualizar a base. Os dados anteriores foram preservados; tente novamente."
       );
       throw error;
     }
@@ -2086,7 +2117,9 @@ export default function V2LeadsDashboard({
       {reloadNotice ? (
         <div
           role={
-            /Não foi|pendente|sessão expirou/.test(reloadNotice)
+            /Não foi|pendente|sessão expirou|Apenas administradores/.test(
+              reloadNotice
+            )
               ? "alert"
               : "status"
           }
@@ -2148,21 +2181,26 @@ export default function V2LeadsDashboard({
                         ? `${data.source.name || "Importação autenticada"} · ${formatImportedAt(data.source.importedAt)} · atualização manual autenticada`
                         : "Base autenticada · consulta dos dados já importados"}
                     </p>
-                    {data.source.latestLeadDate ? (
-                      <p
-                        className={`mt-1 text-[11px] ${data.source.latestLeadDate < data.period.dateTo ? "text-amber-700" : "text-slate-500"}`}
-                      >
-                        Último dia disponível na base:{" "}
-                        {fullDate(data.source.latestLeadDate)}.
-                        {data.source.latestLeadDate < data.period.dateTo
-                          ? " A fonte ainda não cobre a data final selecionada; é necessária uma nova importação externa."
-                          : ""}
-                      </p>
-                    ) : null}
+                    <p
+                      className={`mt-1 text-[11px] ${data.source.latestLeadDate && data.source.latestLeadDate < data.period.dateTo ? "text-amber-700" : "text-slate-500"}`}
+                    >
+                      {data.source.latestLeadDate
+                        ? `Último dia disponível na base: ${fullDate(data.source.latestLeadDate)}.${data.source.latestLeadDate < data.period.dateTo ? " A fonte ainda não cobre a data final selecionada; é necessária uma nova importação externa." : ""}`
+                        : "A fonte não informa uma data de Lead disponível; o período não foi preenchido com zero."}
+                    </p>
                   </div>
-                  <div className="flex items-center gap-2 text-xs text-slate-500">
-                    <span className="h-2 w-2 rounded-full bg-emerald-500" />{" "}
-                    Fonte importada{" "}
+                  <div
+                    className={`flex items-center gap-2 text-xs ${data.source.latestLeadDate && data.source.latestLeadDate < data.period.dateTo ? "text-amber-700" : data.source.latestLeadDate ? "text-emerald-700" : "text-slate-500"}`}
+                  >
+                    <span
+                      className={`h-2 w-2 rounded-full ${data.source.latestLeadDate && data.source.latestLeadDate < data.period.dateTo ? "bg-amber-500" : data.source.latestLeadDate ? "bg-emerald-500" : "bg-slate-400"}`}
+                    />
+                    {data.source.latestLeadDate &&
+                    data.source.latestLeadDate < data.period.dateTo
+                      ? `Fonte com dados até ${fullDate(data.source.latestLeadDate)}`
+                      : data.source.latestLeadDate
+                        ? "Fonte importada"
+                        : "Fonte sem data disponível"}{" "}
                     {dashboardQuery.isFetching ? "· atualizando" : ""}
                   </div>
                 </div>

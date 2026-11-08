@@ -208,7 +208,8 @@ function oldSnapshotJson(row: ExistingSyncRow | undefined): string | null {
 
 async function readExistingRows(
   connection: PoolConnection,
-  rows: readonly MappedLeadSyncRow[]
+  rows: readonly MappedLeadSyncRow[],
+  entireSources = false
 ): Promise<Map<string, ExistingSyncRow>> {
   const byKey = new Map<string, ExistingSyncRow>();
   if (rows.length === 0) return byKey;
@@ -221,17 +222,25 @@ async function readExistingRows(
   const clauses: string[] = [];
   const params: unknown[] = [];
   for (const [sheet, sourceRows] of groups) {
-    clauses.push(
-      `(l.sourceSheet=? AND l.sourceRow IN (${sourceRows
-        .map(() => "?")
-        .join(",")}))`
-    );
-    params.push(sheet, ...sourceRows);
+    if (entireSources) {
+      clauses.push("l.sourceSheet=?");
+      params.push(sheet);
+    } else {
+      clauses.push(
+        `(l.sourceSheet=? AND l.sourceRow IN (${sourceRows
+          .map(() => "?")
+          .join(",")}))`
+      );
+      params.push(sheet, ...sourceRows);
+    }
   }
-  const [result] = await connection.execute<DbMap[]>(
-    `SELECT l.id AS leadId,l.sourceSheet,l.sourceRow,l.leadDate,l.leadHour,l.name,l.model,l.version,l.channel,l.campaign,l.dealer,l.city,l.state,l.crm,
+  const fields = entireSources
+    ? "l.id AS leadId,l.sourceSheet,l.sourceRow,r.rowHash"
+    : `l.id AS leadId,l.sourceSheet,l.sourceRow,l.leadDate,l.leadHour,l.name,l.model,l.version,l.channel,l.campaign,l.dealer,l.city,l.state,l.crm,
        r.rowHash,r.sourceIdRaw,r.sourceTimestampRaw,r.rawModel,r.rawDealer,
-       r.headersJson,r.valuesJson,r.payloadJson
+       r.headersJson,r.valuesJson,r.payloadJson`;
+  const [result] = await connection.execute<DbMap[]>(
+    `SELECT ${fields}
        FROM v2_leads l
        LEFT JOIN v2_lead_sync_rows r
          ON r.sourceId=? AND r.sourceSheet=l.sourceSheet AND r.sourceRow=l.sourceRow
@@ -519,7 +528,14 @@ async function importPreparedSnapshot(
       spreadsheetId: string;
     }> = [];
 
-    for (const batch of chunk(prepared.rows, ROW_BATCH_SIZE)) {
+    // The source lock serializes imports. Compare once and write only physical
+    // occurrences whose content changed; untouched IDs/snapshots remain intact.
+    const hashRows = await readExistingRows(connection, prepared.rows, true);
+    const rowsToWrite = prepared.rows.filter(row => {
+      const old = hashRows.get(rowKey(row.sourceSheet, row.sourceRow));
+      return !old || old.rowHash !== row.rowHash;
+    });
+    for (const batch of chunk(rowsToWrite, ROW_BATCH_SIZE)) {
       const oldRows = await readExistingRows(connection, batch);
       await upsertLeads(connection, batch);
       const leadIds = await readLeadIds(connection, batch);

@@ -86,9 +86,11 @@ export type V2Dashboard = {
   pacing: V2Pacing;
   daily: {
     date: string;
-    total: number;
+    total: number | null;
     channels: Record<string, number>;
-    cumulative: number;
+    cumulative: number | null;
+    /** false means the imported source does not reach this calendar day. */
+    sourceAvailable?: boolean;
     pace: number | null;
   }[];
   channels: V2Count[];
