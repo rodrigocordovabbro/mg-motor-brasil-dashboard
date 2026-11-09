@@ -1,4 +1,4 @@
-import { BarChart3, MapPin, Store, Users } from "lucide-react";
+import { BarChart3, ChartNoAxesCombined, MapPin, Store, Users } from "lucide-react";
 import { useRef, type KeyboardEvent } from "react";
 
 export const LEADS_SECTION_TABS = [
@@ -7,29 +7,71 @@ export const LEADS_SECTION_TABS = [
   "Regiões",
   "Leads",
 ] as const;
-export type LeadsSectionTab = (typeof LEADS_SECTION_TABS)[number];
-const ICONS = [BarChart3, Store, MapPin, Users];
+export const MODEL_ANALYSIS_TAB = "Análise por modelo" as const;
+export type LeadsBaseSectionTab = (typeof LEADS_SECTION_TABS)[number];
+export type LeadsSectionTab =
+  | LeadsBaseSectionTab
+  | typeof MODEL_ANALYSIS_TAB;
+export type LeadsNavigationAccess = {
+  canManage?: boolean;
+  clientView?: boolean;
+  overviewOnly?: boolean;
+};
+const ICONS = [BarChart3, Store, MapPin, Users] as const;
 const ENGLISH_LABELS: Record<LeadsSectionTab, string> = {
   "Visão Geral": "Overview",
   "Lojas & CRM": "Stores & CRM",
   Regiões: "Regions",
   Leads: "Leads",
+  [MODEL_ANALYSIS_TAB]: "Model analysis",
 };
+
+/** Only an operational Administrator may enter the model-analysis surface. */
+export function canAnalyzeModels(
+  access: LeadsNavigationAccess | boolean = {},
+  clientView = false,
+  overviewOnly = false
+): boolean {
+  const options =
+    typeof access === "boolean"
+      ? { canManage: access, clientView, overviewOnly }
+      : access;
+  return Boolean(
+    options.canManage && !options.clientView && !options.overviewOnly
+  );
+}
+
+export function getTabs(
+  access: LeadsNavigationAccess = {}
+): readonly LeadsSectionTab[] {
+  if (access.overviewOnly) return ["Visão Geral"];
+  return canAnalyzeModels(access)
+    ? [...LEADS_SECTION_TABS, MODEL_ANALYSIS_TAB]
+    : LEADS_SECTION_TABS;
+}
+
+function tabIndex(tab: LeadsSectionTab): number {
+  return tab === MODEL_ANALYSIS_TAB
+    ? LEADS_SECTION_TABS.length
+    : LEADS_SECTION_TABS.indexOf(tab);
+}
 
 export function LeadsSectionNavigation({
   activeTab,
   onChange,
   overviewOnly = false,
   locale = "pt-BR",
+  canManage = false,
+  clientView = false,
 }: {
   activeTab: LeadsSectionTab;
   onChange: (tab: LeadsSectionTab) => void;
   overviewOnly?: boolean;
   locale?: "pt-BR" | "en";
+  canManage?: boolean;
+  clientView?: boolean;
 }) {
-  const tabs: readonly LeadsSectionTab[] = overviewOnly
-    ? ["Visão Geral"]
-    : LEADS_SECTION_TABS;
+  const tabs = getTabs({ canManage, clientView, overviewOnly });
   const buttons = useRef<Array<HTMLButtonElement | null>>([]);
   const onKeyDown = (
     event: KeyboardEvent<HTMLButtonElement>,
@@ -69,8 +111,9 @@ export function LeadsSectionNavigation({
           aria-orientation="horizontal"
         >
           {tabs.map((tab, index) => {
-            const globalIndex = LEADS_SECTION_TABS.indexOf(tab);
-            const Icon = ICONS[globalIndex];
+            const globalIndex = tabIndex(tab);
+            const Icon =
+              tab === MODEL_ANALYSIS_TAB ? ChartNoAxesCombined : ICONS[globalIndex];
             const selected = activeTab === tab;
             return (
               <button

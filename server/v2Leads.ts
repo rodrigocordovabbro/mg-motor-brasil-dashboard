@@ -294,6 +294,22 @@ export async function readV2LeadsForPeriod(
     .map(row => ({ ...row }));
 }
 
+/** Coverage follows corrected canonical dates, not physical import dates. */
+export async function readV2LeadCoverage(): Promise<{
+  earliestLeadDate: string | null;
+  latestLeadDate: string | null;
+}> {
+  const rows = await readCountedSourceRows();
+  let earliestLeadDate: string | null = null;
+  let latestLeadDate: string | null = null;
+  for (const row of rows) {
+    if (!earliestLeadDate || row.date < earliestLeadDate)
+      earliestLeadDate = row.date;
+    if (!latestLeadDate || row.date > latestLeadDate) latestLeadDate = row.date;
+  }
+  return { earliestLeadDate, latestLeadDate };
+}
+
 export function aggregateV2Leads(
   all: V2Lead[],
   input: V2Filters,

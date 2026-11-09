@@ -238,3 +238,9 @@ O novo Cliente recebe só a Visão Geral com curvas, Top 10 estados e os dois bl
 ### Login sempre em inglês — 09/11/2026
 
 Toda a apresentação pré-autenticação usa inglês fixo: marca/captions, formulário, campos/placeholders, botão/estado ocupado, validação, erros e verificação de sessão, independentemente de papel ou idioma do dashboard. Preservar autenticação, credenciais, cookies, permissões e idioma pós-login já configurados. Mensagens de falha exibem texto seguro em inglês sem repassar texto bruto português do servidor; não criar contas, trocar senhas ou publicar automaticamente.
+
+### Aba administrativa de análise por modelo e cópia GitHub — 09/11/2026
+
+Acrescentar Análise por modelo somente ao Administrador em operação, sem expor a aba, rota ou API aos demais perfis. Reutilizar a conciliação explícita de modelos/versões e a mesma população canônica/filtrada antes da paginação. A análise terá mix, qualidade de identificação, modelo × estado/canal/dealer/campanha, série diária, comparação com janela anterior equivalente e painel de oportunidades/gaps de mix com denominadores e amostra mínima claros. Lacunas de cadastro não são oportunidades comerciais; participação esperada é benchmark do recorte, não meta ou prova de vendas/envio CRM. Indisponibilidade/baixa amostra/sem histórico ficam explícitas. Não usar campanhas para inferir modelo, não criar conversão/model-goal/CPL sem fonte, não expor contatos em cruzamentos ou diagnósticos.
+
+Salvar o código sanitizado no repositório Manus e depois tentar atualizar a cópia GitHub já autorizada digocordova83-cyber/v2-mgmotor, exclusivamente dashboard-v2. Não mudar o repositório canônico, a main, V1 ou credenciais; em falta de permissão, informar o bloqueio sem contornar. O login inglês já foi salvo em 7c1fd65; a publicação permanece uma ação separada.

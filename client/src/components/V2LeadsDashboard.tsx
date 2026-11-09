@@ -21,10 +21,13 @@ import { resolveBrazilianState } from "@shared/stateRegistry";
 import {
   LeadsSectionNavigation,
   LEADS_SECTION_TABS,
+  MODEL_ANALYSIS_TAB,
+  canAnalyzeModels,
   type LeadsSectionTab as V2Tab,
 } from "./LeadsSectionNavigation";
 import V2CommercialUploads from "./V2CommercialUploads";
 import V2MonthlyGoalEditor from "./V2MonthlyGoalEditor";
+import V2AdminModelInsights from "./V2AdminModelInsights";
 import { useEffect } from "react";
 import V2DispatchControl from "./V2DispatchControl";
 import V2RegionalModelMatrix from "./newcomponentV2RegionalModelMatrix";
@@ -2361,14 +2364,17 @@ function SummaryFact({
   );
 }
 
-function resolveInitialLeadsTab(): V2Tab {
+function resolveInitialLeadsTab(allowModelAnalysis = false): V2Tab {
+  if (typeof window === "undefined") return "Visão Geral";
   const tab = new URLSearchParams(window.location.search).get("tab");
-  if (tab === "models") {
+  if (tab === "models" || (tab === "model-analysis" && !allowModelAnalysis)) {
     const url = new URL(window.location.href);
     url.searchParams.delete("tab");
     window.history.replaceState({}, "", url);
   }
-  return tab === "stores" ? "Lojas & CRM" : "Visão Geral";
+  if (tab === "stores") return "Lojas & CRM";
+  if (tab === "model-analysis" && allowModelAnalysis) return MODEL_ANALYSIS_TAB;
+  return "Visão Geral";
 }
 
 export default function V2LeadsDashboard({
@@ -2423,25 +2429,48 @@ export default function V2LeadsDashboard({
     setApplied(advance);
   }, [cutoff]);
   const [dateError, setDateError] = useState<string | null>(null);
+  const modelAnalysisAllowed = canAnalyzeModels({
+    canManage,
+    clientView,
+    overviewOnly,
+  });
   const [requestedTab, setActiveTab] = useState<V2Tab>(() =>
-    overviewOnly ? "Visão Geral" : resolveInitialLeadsTab()
+    overviewOnly ? "Visão Geral" : resolveInitialLeadsTab(modelAnalysisAllowed)
   );
   const activeTab: V2Tab = overviewOnly ? "Visão Geral" : requestedTab;
   useEffect(() => {
-    if (!overviewOnly) return;
-    setActiveTab("Visão Geral");
+    if (!overviewOnly && modelAnalysisAllowed) return;
+    if (requestedTab !== "Visão Geral") setActiveTab("Visão Geral");
+    if (typeof window === "undefined") return;
     const url = new URL(window.location.href);
-    if (url.searchParams.has("tab")) {
+    if (url.searchParams.get("tab") === "model-analysis") {
       url.searchParams.delete("tab");
       window.history.replaceState({}, "", url);
     }
-  }, [overviewOnly]);
+  }, [modelAnalysisAllowed, overviewOnly, requestedTab]);
+  useEffect(() => {
+    const onPopState = () => {
+      setActiveTab(
+        overviewOnly
+          ? "Visão Geral"
+          : resolveInitialLeadsTab(modelAnalysisAllowed)
+      );
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [modelAnalysisAllowed, overviewOnly]);
   const dashboardTopRef = useRef<HTMLDivElement>(null);
   const selectTab = (tab: V2Tab) => {
-    if (overviewOnly && tab !== "Visão Geral") return;
+    if (
+      (overviewOnly && tab !== "Visão Geral") ||
+      (tab === MODEL_ANALYSIS_TAB && !modelAnalysisAllowed)
+    )
+      return;
     setActiveTab(tab);
     const url = new URL(window.location.href);
     if (tab === "Lojas & CRM") url.searchParams.set("tab", "stores");
+    else if (tab === MODEL_ANALYSIS_TAB)
+      url.searchParams.set("tab", "model-analysis");
     else url.searchParams.delete("tab");
     window.history.replaceState({}, "", url);
     window.requestAnimationFrame(() => {
@@ -2477,6 +2506,11 @@ export default function V2LeadsDashboard({
     };
   }, []);
   const queryUtils = v2Trpc.useUtils();
+  const modelInsightsQueryUtils = (
+    queryUtils.leads as typeof queryUtils.leads & {
+      modelInsights?: typeof queryUtils.leads.modelInsights;
+    }
+  ).modelInsights;
   const syncBaseMutation = v2Trpc.leads.syncBase.useMutation();
   const dashboardQuery = v2Trpc.leads.dashboard.useQuery(
     omitLeadCampaign(applied),
@@ -2487,6 +2521,28 @@ export default function V2LeadsDashboard({
     }
   );
   const data = dashboardQuery.data;
+  const modelInsightsProcedure = (
+    v2Trpc.leads as typeof v2Trpc.leads & {
+      modelInsights?: typeof v2Trpc.leads.modelInsights;
+    }
+  ).modelInsights;
+  const modelInsightsQuery = modelInsightsProcedure
+    ? modelInsightsProcedure.useQuery(applied, {
+        enabled:
+          authenticated &&
+          modelAnalysisAllowed &&
+          activeTab === MODEL_ANALYSIS_TAB &&
+          data?.status === "READY",
+        retry: false,
+        refetchOnWindowFocus: false,
+      })
+    : {
+        data: undefined,
+        error: null,
+        isLoading: false,
+        isFetching: false,
+        refetch: async () => ({ data: undefined }),
+      };
 
   const choosePreset = (preset: string) => {
     if (refreshBusy || activeReloadLock.current) return;
@@ -2568,6 +2624,11 @@ export default function V2LeadsDashboard({
           queryUtils.leads.dashboard.invalidate(undefined, {
             refetchType: "none",
           }),
+          modelInsightsQueryUtils
+            ? modelInsightsQueryUtils.invalidate(undefined, {
+                refetchType: "none",
+              })
+            : Promise.resolve(),
           queryUtils.dispatch.leadControl.invalidate(undefined, {
             refetchType: "none",
           }),
@@ -2660,6 +2721,8 @@ export default function V2LeadsDashboard({
         activeTab={activeTab}
         onChange={selectTab}
         overviewOnly={overviewOnly}
+        canManage={canManage}
+        clientView={clientView}
         locale={locale}
       />
       {reloadNotice ? (
@@ -2679,7 +2742,7 @@ export default function V2LeadsDashboard({
       <section
         id="mg-leads-panel"
         role="tabpanel"
-        aria-labelledby={`mg-leads-tab-${LEADS_SECTION_TABS.indexOf(activeTab)}`}
+        aria-labelledby={`mg-leads-tab-${activeTab === MODEL_ANALYSIS_TAB ? LEADS_SECTION_TABS.length : LEADS_SECTION_TABS.indexOf(activeTab)}`}
         className="space-y-4"
       >
         {activeTab === "Lojas & CRM" ? (
@@ -2721,7 +2784,14 @@ export default function V2LeadsDashboard({
               locale={locale}
             />
             {data.status === "NOT_CONFIGURED" ? (
-              <NotConfiguredPanel data={data} locale={locale} />
+              activeTab === MODEL_ANALYSIS_TAB && modelAnalysisAllowed ? (
+                <V2AdminModelInsights
+                  sourceStatus="NOT_CONFIGURED"
+                  onRetry={() => void dashboardQuery.refetch()}
+                />
+              ) : (
+                <NotConfiguredPanel data={data} locale={locale} />
+              )
             ) : (
               <>
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -2797,6 +2867,29 @@ export default function V2LeadsDashboard({
                     clientMode={clientMode}
                     isBusy={refreshBusy || dashboardQuery.isFetching}
                     locale={locale}
+                  />
+                ) : null}
+                {activeTab === MODEL_ANALYSIS_TAB ? (
+                  <V2AdminModelInsights
+                    data={
+                      modelInsightsQuery.isFetching
+                        ? undefined
+                        : modelInsightsQuery.data
+                    }
+                    loading={
+                      modelInsightsQuery.isLoading ||
+                      modelInsightsQuery.isFetching
+                    }
+                    error={
+                      modelInsightsQuery.error
+                        ? tr(
+                            locale,
+                            "Não foi possível carregar a análise por modelo.",
+                            "Unable to load model analysis."
+                          )
+                        : undefined
+                    }
+                    onRetry={() => void modelInsightsQuery.refetch()}
                   />
                 ) : null}
               </>

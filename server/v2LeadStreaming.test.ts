@@ -17,6 +17,7 @@ vi.mock("./v2Db", () => ({
 import {
   invalidateAnalyticalCache,
   readV2LeadsForPeriod,
+  readV2LeadCoverage,
   V2_COUNTING_SOURCE_SELECT,
 } from "./v2Leads";
 function row(id: number) {
@@ -100,5 +101,16 @@ describe("leitura analítica streaming em produção", () => {
       1
     );
     expect(state.coreQuery).toHaveBeenCalledTimes(2);
+  });
+  it("obtém limites pela data corrigida e compartilha a leitura canônica em cache", async () => {
+    state.rows = [{ ...row(1), date: "2026-11-09" }];
+    const leads = await readV2LeadsForPeriod("2026-11-01", "2026-11-08");
+    expect(leads[0].date).toBe("2026-11-08");
+    expect(await readV2LeadCoverage()).toEqual({
+      earliestLeadDate: "2026-11-08",
+      latestLeadDate: "2026-11-08",
+    });
+    expect(state.coreQuery).toHaveBeenCalledOnce();
+    expect(state.execute).not.toHaveBeenCalled();
   });
 });

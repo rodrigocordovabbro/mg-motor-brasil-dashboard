@@ -17,6 +17,7 @@ import { z } from "zod";
 import { publicProcedure, router } from "./_core/trpc";
 import { loginV2, logoutV2, readV2Session } from "./v2Auth";
 import { getV2Dashboard } from "./v2Leads";
+import { getAdminModelInsights } from "./v2AdminModelInsights";
 import { exportV2LeadsCSV } from "./v2LeadsExport";
 import {
   syncLeadsFromGoogle,
@@ -417,6 +418,9 @@ export const appRouter = router({
         z.object({ competence, goal: z.number().int().min(0).max(10_000_000) })
       )
       .mutation(({ input, ctx }) => saveV2SalesTotalGoal(input, ctx.v2User)),
+    modelInsights: adminProcedure
+      .input(filters)
+      .query(({ input }) => getAdminModelInsights(input)),
     dashboard: v2Procedure.input(filters).query(async ({ ctx, input }) => {
       try {
         const data = await getV2Dashboard(input);

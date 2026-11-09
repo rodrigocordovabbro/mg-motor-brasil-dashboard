@@ -334,3 +334,17 @@ Evidência final: TypeScript, 430 testes/54 arquivos e build aprovados; revisão
 - [x] Tela de login e verificação de sessão sempre em inglês em desktop/mobile, antes de identificar qualquer perfil; textos, campos/placeholders, acessibilidade, botão ocupado, validação e erros em inglês. Não expor erro bruto do servidor, usuário existente ou credenciais. Autenticação, cookie/sessão, envio do usuário/senha, permissões, idioma pós-login e dados intactos; salvar no Manus sem publicação automática.
 
 Evidência: seis testes novos de login/inglês/validação/erros/envio/pending e 16 regressões de navegação/perfis/logout aprovados; TypeScript incluindo o novo teste, build, diff-check e health/manifesto HTTP 200. Mocks apenas, sem autenticação real ou alteração de contas/dados; publicação separada.
+
+## Análise administrativa completa por modelo — 09/11/2026
+
+- [x] Aba Análise por modelo somente no Administrador operacional, com API protegida e normalização de rotas para perfis sem acesso; preservar abas/menu dos Clientes, ADM - Cliente, BBRO e apresentação. Mesmos filtros canônicos, D-1 e população integral antes da paginação, modelos/versões por aliases exatos, sem inferência por campanha.
+- [x] Mix e cobertura, cruzamentos modelo × estado/canal/dealer/campanha/versão, evolução diária e comparação com janela anterior equivalente; gaps de mix e concentração/qualidade com amostra, denominador, referência e ressalvas claros. Não afirmar meta, venda/conversão, custo ou entrega CRM sem fonte. Dados faltantes, histórico não coberto, zeros e amostra baixa explícitos; sem dados pessoais em payload/insights, sem reimportar/gravar Leads/metas/CRM.
+- [x] Interface clara e responsiva em português, seletor local de modelo e matrizes/insights acionáveis, resultados consistentes com o dashboard e testes de cálculo/permissão/rota/UI. Código sanitizado salvo no Manus, sem V1, publicação automática ou arquivos operacionais.
+
+Evidência: 452 testes/58 arquivos, TypeScript e build aprovados. Revisão somente leitura corrigida: cobertura utiliza as datas corrigidas canônicas em cache, com regressão da borda física; fonte desconhecida conectada sem consulta indevida. 4.068 Leads (01–08/11) coincidem no dashboard, mix, daily e quatro matrizes; MG 4/Meta=865 nos dois caminhos. Conferência real só leitura; API sem login HTTP 401 e manifesto/health HTTP 200 com sete rotas. Build contém API/rota nova. Login inglês e dados/perfis anteriores preservados; publicação separada.
+
+## Atualizar cópia GitHub autorizada — 09/11/2026
+
+- [ ] Atualizar digocordova83-cyber/v2-mgmotor, somente dashboard-v2, com todo o código atual sanitizado e após validação. Preservar mudanças remotas, sem force push/main ou troca do repositório Manus; não enviar dados/segredos/planilhas. Verificar referência enviada ou informar bloqueio exato de permissão/conexão, sem contornar restrição.
+
+Bloqueio verificado: integração ativa autenticada como rodrigocordovabbro; viewerPermission=READ no repositório digocordova83-cyber/v2-mgmotor. Não há escrita disponível, portanto não houve push ao GitHub, tentativa de contornar, troca de credencial/repositório ou alteração da main. Código completo continua preservado no Manus; cópia pendente até concessão/conexão autorizada com escrita.
