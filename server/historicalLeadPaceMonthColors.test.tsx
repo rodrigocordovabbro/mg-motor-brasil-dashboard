@@ -189,9 +189,15 @@ describe("cores mensais do histórico de Leads Plan", () => {
   });
 
   it("mantém três cores e padrões distintos em ago/set/out e atravessa dez/jan/fev sem colisão indevida", () => {
-    expect(getHistoricalMonthStyle("2026-08")).toEqual(expectedStyles["2026-08"]);
-    expect(getHistoricalMonthStyle("2026-09")).toEqual(expectedStyles["2026-09"]);
-    expect(getHistoricalMonthStyle("2026-10")).toEqual(expectedStyles["2026-10"]);
+    expect(getHistoricalMonthStyle("2026-08")).toEqual(
+      expectedStyles["2026-08"]
+    );
+    expect(getHistoricalMonthStyle("2026-09")).toEqual(
+      expectedStyles["2026-09"]
+    );
+    expect(getHistoricalMonthStyle("2026-10")).toEqual(
+      expectedStyles["2026-10"]
+    );
     expect(
       new Set(
         ["2026-08", "2026-09", "2026-10"].map(
@@ -200,9 +206,15 @@ describe("cores mensais do histórico de Leads Plan", () => {
       ).size
     ).toBe(3);
 
-    expect(getHistoricalMonthStyle("2026-12")).toEqual(expectedStyles["2026-12"]);
-    expect(getHistoricalMonthStyle("2027-01")).toEqual(expectedStyles["2027-01"]);
-    expect(getHistoricalMonthStyle("2027-02")).toEqual(expectedStyles["2027-02"]);
+    expect(getHistoricalMonthStyle("2026-12")).toEqual(
+      expectedStyles["2026-12"]
+    );
+    expect(getHistoricalMonthStyle("2027-01")).toEqual(
+      expectedStyles["2027-01"]
+    );
+    expect(getHistoricalMonthStyle("2027-02")).toEqual(
+      expectedStyles["2027-02"]
+    );
     expect(
       new Set(
         ["2026-12", "2027-01", "2027-02"].map(
@@ -215,7 +227,10 @@ describe("cores mensais do histórico de Leads Plan", () => {
   it("deriva a cor pela competência, não pela posição após filtrar ou reordenar", () => {
     const competences = ["2026-08", "2026-09", "2026-10"];
     const expectedByCompetence = new Map(
-      competences.map(competence => [competence, getHistoricalMonthStyle(competence)])
+      competences.map(competence => [
+        competence,
+        getHistoricalMonthStyle(competence),
+      ])
     );
     const orders = [
       ["2026-10", "2026-08", "2026-09"],
@@ -241,11 +256,12 @@ describe("cores mensais do histórico de Leads Plan", () => {
     );
 
     expect(historicalLines).toHaveLength(3);
-    expect(findByType(tree, Bar).find(node => node.props?.dataKey === "real"))
-      .toMatchObject({ props: { fill: "#e2212d", dataKey: "real" } });
     expect(
-      lines.find(node => node.props?.dataKey === "plan")
-    ).toMatchObject({ props: { stroke: "#2563eb", strokeWidth: 3 } });
+      findByType(tree, Bar).find(node => node.props?.dataKey === "real")
+    ).toMatchObject({ props: { fill: "#e2212d", dataKey: "real" } });
+    expect(lines.find(node => node.props?.dataKey === "plan")).toMatchObject({
+      props: { stroke: "#2563eb", strokeWidth: 3 },
+    });
     expect(
       lines.find(node => node.props?.dataKey === "projection")
     ).toMatchObject({
@@ -253,7 +269,8 @@ describe("cores mensais do histórico de Leads Plan", () => {
     });
 
     data.reference.forEach((reference, index) => {
-      const style = expectedStyles[reference.competence as keyof typeof expectedStyles];
+      const style =
+        expectedStyles[reference.competence as keyof typeof expectedStyles];
       const line = historicalLines.find(
         node => node.props?.dataKey === `historical_${index}`
       );
@@ -283,12 +300,18 @@ describe("cores mensais do histórico de Leads Plan", () => {
       )[0];
       expect(referenceRow).toBeDefined();
       expect(styleOf(referenceRow).backgroundColor).toBe(`${style.color}0a`);
-      const referenceCell = findNodes(referenceRow, node => node.type === "td")[0];
+      const referenceCell = findNodes(
+        referenceRow,
+        node => node.type === "td"
+      )[0];
       expect(styleOf(referenceCell)).toMatchObject({
         color: style.color,
         borderLeftColor: style.color,
       });
-      const tableSwatch = findNodes(referenceCell, node => node.type === "i")[0];
+      const tableSwatch = findNodes(
+        referenceCell,
+        node => node.type === "i"
+      )[0];
       expect(styleOf(tableSwatch).backgroundColor).toBe(style.color);
     });
   });
@@ -316,7 +339,8 @@ describe("cores mensais do histórico de Leads Plan", () => {
     expect(textContent(tree)).not.toContain("setembro de 2026 (histórico)");
     const unavailableReferenceRow = findNodes(
       tree,
-      node => node.type === "tr" && textContent(node).includes("setembro de 2026")
+      node =>
+        node.type === "tr" && textContent(node).includes("setembro de 2026")
     )[0];
     expect(unavailableReferenceRow).toBeDefined();
     expect(textContent(unavailableReferenceRow)).toContain("—");

@@ -138,6 +138,39 @@ describe("V2 account management", () => {
     expect(mock.connection.execute.mock.calls[0][1][2]).toBe("bbro");
   });
 
+  it("accepts client_admin and keeps the new account active by default", async () => {
+    mock.connection.execute
+      .mockResolvedValueOnce([{ insertId: 10 }, []])
+      .mockResolvedValueOnce([{}, []])
+      .mockResolvedValueOnce([
+        [
+          {
+            id: 10,
+            username: "legacy-client-admin",
+            role: "client_admin",
+            isActive: 1,
+            createdAt: null,
+          },
+        ],
+        [],
+      ]);
+    await expect(
+      createV2Account(
+        {
+          username: "legacy-client-admin",
+          password: "safe-pass",
+          role: "client_admin",
+        },
+        admin
+      )
+    ).resolves.toMatchObject({
+      username: "legacy-client-admin",
+      role: "client_admin",
+      isActive: true,
+    });
+    expect(mock.connection.execute.mock.calls[0][1][2]).toBe("client_admin");
+  });
+
   it("creates a salted scrypt account and audits without secret fields", async () => {
     mock.connection.execute
       .mockResolvedValueOnce([{ insertId: 9 }, []])

@@ -59,7 +59,13 @@ function errorMessage(error: unknown) {
   return "Usuário ou senha inválidos. Confira os dados e tente novamente.";
 }
 
-function BrandMark({ inverted = false }: { inverted?: boolean }) {
+function BrandMark({
+  inverted = false,
+  locale = "pt-BR",
+}: {
+  inverted?: boolean;
+  locale?: "pt-BR" | "en";
+}) {
   return (
     <div
       className="flex shrink-0 items-center gap-3"
@@ -83,7 +89,9 @@ function BrandMark({ inverted = false }: { inverted?: boolean }) {
         <p
           className={`mt-1.5 text-[11px] font-medium ${inverted ? "text-slate-300" : "text-slate-500"}`}
         >
-          Acompanhamento de resultados
+          {locale === "en"
+            ? "Performance dashboard"
+            : "Acompanhamento de resultados"}
         </p>
       </div>
     </div>
@@ -216,6 +224,8 @@ function Topbar({
   onClientModeChange,
   onLogout,
   loggingOut,
+  overviewOnly = false,
+  locale = "pt-BR",
 }: {
   user: V2AuthUser;
   module: DashboardModule;
@@ -225,6 +235,8 @@ function Topbar({
   onClientModeChange: (value: boolean) => void;
   onLogout: () => void;
   loggingOut: boolean;
+  overviewOnly?: boolean;
+  locale?: "pt-BR" | "en";
 }) {
   const headerRef = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
@@ -255,10 +267,10 @@ function Topbar({
       className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/95 backdrop-blur"
     >
       <div className="mx-auto flex min-h-[68px] w-full flex-wrap items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-        <BrandMark />
+        <BrandMark locale={locale} />
         <nav
           className="order-3 flex w-full gap-1 sm:order-2 sm:w-auto"
-          aria-label="Módulos"
+          aria-label={locale === "en" ? "Modules" : "Módulos"}
         >
           <button
             type="button"
@@ -268,22 +280,28 @@ function Topbar({
           >
             <BarChart3 className="h-4 w-4 shrink-0" /> Leads
           </button>
-          <button
-            type="button"
-            aria-current={module === "media" ? "page" : undefined}
-            onClick={() => onModuleChange("media")}
-            className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-[11px] font-bold transition sm:flex-none sm:gap-2 sm:px-3 sm:text-xs ${module === "media" ? "bg-red-50 text-[#e2212d]" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"}`}
-          >
-            <FileSpreadsheet className="h-4 w-4 shrink-0" /> Plano de mídia
-          </button>
-          <button
-            type="button"
-            aria-current={module === "dispatch" ? "page" : undefined}
-            onClick={() => onModuleChange("dispatch")}
-            className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-[11px] font-bold transition sm:flex-none sm:gap-2 sm:px-3 sm:text-xs ${module === "dispatch" ? "bg-red-50 text-[#e2212d]" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"}`}
-          >
-            <Send className="h-4 w-4 shrink-0" /> Controle de envios
-          </button>
+          {!overviewOnly ? (
+            <button
+              type="button"
+              aria-current={module === "media" ? "page" : undefined}
+              onClick={() => onModuleChange("media")}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-[11px] font-bold transition sm:flex-none sm:gap-2 sm:px-3 sm:text-xs ${module === "media" ? "bg-red-50 text-[#e2212d]" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"}`}
+            >
+              <FileSpreadsheet className="h-4 w-4 shrink-0" />{" "}
+              {locale === "en" ? "Media plan" : "Plano de mídia"}
+            </button>
+          ) : null}
+          {!overviewOnly ? (
+            <button
+              type="button"
+              aria-current={module === "dispatch" ? "page" : undefined}
+              onClick={() => onModuleChange("dispatch")}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-[11px] font-bold transition sm:flex-none sm:gap-2 sm:px-3 sm:text-xs ${module === "dispatch" ? "bg-red-50 text-[#e2212d]" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"}`}
+            >
+              <Send className="h-4 w-4 shrink-0" />{" "}
+              {locale === "en" ? "Dispatch control" : "Controle de envios"}
+            </button>
+          ) : null}
           {canManage ? (
             <button
               type="button"
@@ -297,7 +315,11 @@ function Topbar({
         </nav>
         <div className="order-2 flex items-center gap-2 sm:order-3">
           <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] text-amber-700 sm:px-2.5 sm:tracking-[0.12em]">
-            {ROLE_LABELS[user.role ?? "client"]}
+            {locale === "en"
+              ? user.role === "client_admin"
+                ? "Client Admin"
+                : "Client"
+              : ROLE_LABELS[user.role ?? "client"]}
           </span>
           {canManage ? (
             <button
@@ -321,12 +343,14 @@ function Topbar({
           ) : null}
           <div className="hidden text-right md:block">
             <p className="text-xs font-bold text-slate-800">{user.username}</p>
-            <p className="text-[10px] text-slate-400">Sessão ativa</p>
+            <p className="text-[10px] text-slate-400">
+              {locale === "en" ? "Active session" : "Sessão ativa"}
+            </p>
           </div>
           <button
             type="button"
-            title="Sair"
-            aria-label="Sair"
+            title={locale === "en" ? "Sign out" : "Sair"}
+            aria-label={locale === "en" ? "Sign out" : "Sair"}
             onClick={onLogout}
             disabled={loggingOut}
             className="rounded-xl p-2 text-slate-400 transition hover:bg-red-50 hover:text-[#e2212d] disabled:opacity-50"
@@ -360,7 +384,11 @@ function AuthenticatedDashboard({
     moduleFromLocation()
   );
   const canManage = user.role === "admin";
-  const activeModule = module === "users" && !canManage ? "leads" : module;
+  const overviewOnly = user.role === "client" || user.role === undefined;
+  const isClientProfile = overviewOnly || user.role === "client_admin";
+  const locale: "pt-BR" | "en" = isClientProfile ? "en" : "pt-BR";
+  const activeModule =
+    overviewOnly || (module === "users" && !canManage) ? "leads" : module;
   const [clientMode, setClientMode] = useState(() =>
     canManage ? readClientModePreference() : true
   );
@@ -375,13 +403,14 @@ function AuthenticatedDashboard({
   }, []);
 
   useEffect(() => {
-    if (module === "users" && !canManage) {
+    if (overviewOnly || (module === "users" && !canManage)) {
       setModule("leads");
       const url = new URL(window.location.href);
       url.searchParams.set("module", "leads");
+      if (overviewOnly) url.searchParams.delete("tab");
       window.history.replaceState({}, "", url);
     }
-  }, [module, canManage]);
+  }, [module, canManage, overviewOnly]);
 
   useEffect(() => {
     if (!canManage) setClientMode(true);
@@ -400,6 +429,7 @@ function AuthenticatedDashboard({
   }, [canManage, clientMode]);
 
   const changeModule = (nextModule: DashboardModule) => {
+    if (overviewOnly && nextModule !== "leads") return;
     setModule(nextModule);
     const url = new URL(window.location.href);
     url.searchParams.set("module", nextModule);
@@ -429,6 +459,8 @@ function AuthenticatedDashboard({
         onClientModeChange={setClientMode}
         onLogout={() => void logout()}
         loggingOut={loggingOut}
+        overviewOnly={overviewOnly}
+        locale={locale}
       />
       <main
         className={`mx-auto w-full px-3 sm:px-4 lg:px-5 ${activeModule === "leads" ? "pb-5 pt-0 lg:pb-6" : "py-5 lg:py-6"}`}
@@ -448,9 +480,12 @@ function AuthenticatedDashboard({
               authenticated
               clientMode={canManage ? clientMode : false}
               canManage={canManage}
+              clientView={isClientProfile || (canManage && clientMode)}
+              overviewOnly={overviewOnly}
+              locale={locale}
             />
           ) : activeModule === "media" ? (
-            <MediaPlanDashboard locale="pt-BR" />
+            <MediaPlanDashboard locale={locale === "en" ? "en-US" : "pt-BR"} />
           ) : activeModule === "users" ? (
             <V2UserManagement currentUserId={user.id} />
           ) : (
@@ -458,6 +493,7 @@ function AuthenticatedDashboard({
               authenticated
               clientMode={canManage ? clientMode : false}
               canManage={canManage}
+              locale={locale}
             />
           )}
         </Suspense>

@@ -1,0 +1,5 @@
+-- Manual data migration for the canonical client profiles.
+-- The runner validates the additive four-value role enum and uses the
+-- v2_user_migrations/v2_account_audit tables from v2-accounts.sql.
+-- No account, password, status, lead, CRM, goal or snapshot rows are created.
+-- Migration marker: v2-client-profiles-v1

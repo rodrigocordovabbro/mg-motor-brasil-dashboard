@@ -1,5 +1,4 @@
 import { AlertCircle, CheckCircle2, LoaderCircle } from "lucide-react";
-
 import {
   Dialog,
   DialogContent,
@@ -12,19 +11,12 @@ import {
   LEADS_RELOAD_VERSION_NOT_CONFIRMED,
   type LeadsReloadResult,
   type LeadsReloadStage,
+  type LeadsLocale,
 } from "@shared/leadsReload";
 
 export type LeadsReloadDialogOutcome =
-  | {
-      type: "success";
-      result: LeadsReloadResult;
-      description: string;
-    }
-  | {
-      type: "error";
-      message: string;
-      code?: string;
-    };
+  | { type: "success"; result: LeadsReloadResult; description: string }
+  | { type: "error"; message: string; code?: string };
 
 type V2LeadsReloadDialogProps = {
   open: boolean;
@@ -32,15 +24,8 @@ type V2LeadsReloadDialogProps = {
   stage: LeadsReloadStage;
   outcome: LeadsReloadDialogOutcome | null;
   onClose: () => void;
+  locale?: LeadsLocale;
 };
-
-const stageLabel: Record<LeadsReloadStage, string> = {
-  syncing: "Atualizando a base",
-  refreshing: "Atualizando números e gráficos",
-};
-
-const formatNumber = (value: number) =>
-  new Intl.NumberFormat("pt-BR").format(value);
 
 export function V2LeadsReloadDialog({
   open,
@@ -48,9 +33,20 @@ export function V2LeadsReloadDialog({
   stage,
   outcome,
   onClose,
+  locale = "pt-BR",
 }: V2LeadsReloadDialogProps) {
+  const t = (portuguese: string, english: string) =>
+    locale === "en" ? english : portuguese;
+  const formatNumber = (value: number) =>
+    new Intl.NumberFormat(locale === "en" ? "en-US" : "pt-BR").format(value);
+  const stageLabel: Record<LeadsReloadStage, string> = {
+    syncing: t("Atualizando a base", "Refreshing the source"),
+    refreshing: t(
+      "Atualizando números e gráficos",
+      "Refreshing numbers and charts"
+    ),
+  };
   const preventDismiss = (event: Event) => event.preventDefault();
-
   return (
     <Dialog
       open={open}
@@ -76,11 +72,16 @@ export function V2LeadsReloadDialog({
             </div>
             <DialogHeader className="items-center">
               <DialogTitle className="text-xl text-slate-900">
-                Atualizando a base de Leads
+                {t(
+                  "Atualizando a base de Leads",
+                  "Refreshing the Leads source"
+                )}
               </DialogTitle>
               <DialogDescription className="mt-1 max-w-sm text-center text-sm leading-5 text-slate-600">
-                Aguarde enquanto a base é conferida e os números e gráficos são
-                atualizados.
+                {t(
+                  "Aguarde enquanto a base é conferida e os números e gráficos são atualizados.",
+                  "Please wait while the source is checked and the numbers and charts are refreshed."
+                )}
               </DialogDescription>
             </DialogHeader>
             <p
@@ -98,17 +99,19 @@ export function V2LeadsReloadDialog({
                 <CheckCircle2 className="h-6 w-6" aria-hidden="true" />
               </div>
               <DialogTitle className="text-xl text-slate-900">
-                Atualização concluída
+                {t("Atualização concluída", "Refresh completed")}
               </DialogTitle>
               <DialogDescription className="mt-1 text-sm leading-5 text-slate-600">
-                Os números e gráficos exibidos já correspondem à leitura fresca
-                da base.
+                {t(
+                  "Os números e gráficos exibidos já correspondem à leitura fresca da base.",
+                  "The displayed numbers and charts now match the latest confirmed source reading."
+                )}
               </DialogDescription>
             </DialogHeader>
             <div className="mt-6 grid grid-cols-2 gap-3">
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  Total do recorte
+                  {t("Total do recorte", "Selected total")}
                 </p>
                 <p className="mt-1 text-2xl font-bold text-slate-900">
                   {formatNumber(outcome.result.total)}
@@ -117,7 +120,7 @@ export function V2LeadsReloadDialog({
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  Acumulado mensal
+                  {t("Acumulado mensal", "Month to date")}
                 </p>
                 <p className="mt-1 text-2xl font-bold text-slate-900">
                   {formatNumber(outcome.result.monthlyTotal)}
@@ -136,7 +139,10 @@ export function V2LeadsReloadDialog({
                 <AlertCircle className="h-6 w-6" aria-hidden="true" />
               </div>
               <DialogTitle className="text-xl text-slate-900">
-                Não foi possível concluir a atualização
+                {t(
+                  "Não foi possível concluir a atualização",
+                  "Unable to complete the refresh"
+                )}
               </DialogTitle>
               <DialogDescription
                 role="alert"
@@ -147,8 +153,14 @@ export function V2LeadsReloadDialog({
             </DialogHeader>
             <p className="mt-5 rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-600">
               {outcome.code === LEADS_RELOAD_VERSION_NOT_CONFIRMED
-                ? "A importação foi recebida, mas a nova versão ainda não foi confirmada pelos números do painel. Feche esta janela e tente novamente."
-                : "Nenhum resultado novo foi confirmado. Feche esta janela e tente novamente."}
+                ? t(
+                    "A importação foi recebida, mas a nova versão ainda não foi confirmada pelos números do painel. Feche esta janela e tente novamente.",
+                    "The import was received, but the dashboard numbers have not confirmed the new version yet. Close this window and try again."
+                  )
+                : t(
+                    "Nenhum resultado novo foi confirmado. Feche esta janela e tente novamente.",
+                    "No new result was confirmed. Close this window and try again."
+                  )}
             </p>
           </div>
         ) : null}
@@ -159,7 +171,7 @@ export function V2LeadsReloadDialog({
             disabled={busy}
             className="inline-flex min-h-10 w-full items-center justify-center rounded-xl bg-[#b41b26] px-4 py-2 text-sm font-bold text-white transition hover:bg-[#991b1b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 disabled:cursor-wait disabled:opacity-60"
           >
-            Fechar
+            {t("Fechar", "Close")}
           </button>
         </DialogFooter>
       </DialogContent>

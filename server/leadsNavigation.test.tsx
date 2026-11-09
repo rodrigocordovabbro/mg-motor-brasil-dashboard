@@ -45,8 +45,8 @@ describe("Menu persistente de Leads", () => {
       new URL("../client/src/components/V2LeadsDashboard.tsx", import.meta.url),
       "utf8"
     );
-    expect((source.match(/<LeadsSectionNavigation /g) || []).length).toBe(1);
-    expect(source.indexOf("<LeadsSectionNavigation ")).toBeLessThan(
+    expect((source.match(/<LeadsSectionNavigation\b/g) || []).length).toBe(1);
+    expect(source.indexOf("<LeadsSectionNavigation")).toBeLessThan(
       source.indexOf('id="mg-leads-panel"')
     );
     expect(source).not.toContain('role="tablist"');
@@ -55,6 +55,36 @@ describe("Menu persistente de Leads", () => {
       "utf8"
     );
     expect(css).toContain("top: var(--mg-app-header-height, 68px)");
+  });
+  it("usa Lojas & CRM em segundo e mantém só Overview para o novo Cliente", () => {
+    expect(LEADS_SECTION_TABS).toEqual([
+      "Visão Geral",
+      "Lojas & CRM",
+      "Regiões",
+      "Leads",
+    ]);
+    const restricted = renderToStaticMarkup(
+      <LeadsSectionNavigation
+        activeTab="Visão Geral"
+        onChange={() => {}}
+        overviewOnly
+        locale="en"
+      />
+    );
+    expect((restricted.match(/role="tab"/g) || []).length).toBe(1);
+    expect(restricted).toContain("Overview");
+    expect(restricted).not.toContain("Stores &amp; CRM");
+    expect(restricted).not.toContain("Regions");
+    const full = renderToStaticMarkup(
+      <LeadsSectionNavigation
+        activeTab="Lojas & CRM"
+        onChange={() => {}}
+        locale="en"
+      />
+    );
+    expect(full.indexOf("Stores &amp; CRM")).toBeLessThan(
+      full.indexOf("Regions")
+    );
   });
 });
 

@@ -1,6 +1,7 @@
 import type { RowDataPacket } from "mysql2/promise";
 import type {
   LeadsExportInput,
+  LeadsExportLocale,
   LeadsExportResult,
 } from "../shared/leadsExport";
 import { groupedStateLabel } from "../shared/stateRegistry";
@@ -13,7 +14,7 @@ import { getV2Pool } from "./v2Db";
 export const LEADS_EXPORT_MAX_ROWS = 100_000;
 export const LEADS_EXPORT_MAX_BYTES = 16 * 1024 * 1024;
 
-const CSV_HEADERS = [
+const CSV_HEADERS_PT = [
   "Data",
   "Hora",
   "Lead",
@@ -24,6 +25,19 @@ const CSV_HEADERS = [
   "Concessionária",
   "Cidade",
   "UF",
+  "CRM",
+] as const;
+const CSV_HEADERS_EN = [
+  "Date",
+  "Time",
+  "Lead",
+  "Model",
+  "Version",
+  "Channel",
+  "Campaign",
+  "Dealer",
+  "City",
+  "State",
   "CRM",
 ] as const;
 
@@ -91,16 +105,27 @@ function csvCell(value: string | number | null, protectFormula = true): string {
   return /[;"\r\n]/u.test(safe) ? `"${escaped}"` : safe;
 }
 
+function exportLabel(value: string, locale: LeadsExportLocale): string {
+  if (locale !== "en") return value;
+  if (value === "Não informado") return "N/A";
+  return value;
+}
+
 function leadCsvRow(
   row: V2Lead,
   maskNames: boolean,
-  groupStates: boolean
+  groupStates: boolean,
+  locale: LeadsExportLocale
 ): string[] {
   return [
     row.date,
     // Keep integer hours, including 0. Null is the only empty hour.
     row.hour,
-    maskNames ? "Nome oculto no modo cliente" : row.name,
+    maskNames
+      ? locale === "en"
+        ? "Hidden name in client mode"
+        : "Nome oculto no modo cliente"
+      : row.name,
     row.model,
     row.version,
     row.channel,
@@ -111,7 +136,10 @@ function leadCsvRow(
     row.crm,
   ].map((value, index) =>
     // Hours are numeric V2Lead values, not user-controlled spreadsheet text.
-    csvCell(value, index !== 1)
+    csvCell(
+      typeof value === "string" ? exportLabel(value, locale) : value,
+      index !== 1
+    )
   );
 }
 
@@ -123,6 +151,8 @@ export function buildLeadsExportCsv(
   if (rows.length > LEADS_EXPORT_MAX_ROWS) throw new LeadsExportLimitError();
   const maskNames = Boolean(input.clientMode);
   const groupStates = Boolean(presentation.groupStates);
+  const locale = input.locale ?? "pt-BR";
+  const headers = locale === "en" ? CSV_HEADERS_EN : CSV_HEADERS_PT;
   const chunks: string[] = [];
   let byteLength = 0;
   const append = (line: string) => {
@@ -135,9 +165,9 @@ export function buildLeadsExportCsv(
   // before appending the header so oversized output is rejected while built.
   const bom = "\uFEFF";
   byteLength = Buffer.byteLength(bom, "utf8");
-  append(CSV_HEADERS.map(header => csvCell(header)).join(";"));
+  append(headers.map(header => csvCell(header)).join(";"));
   for (const row of rows)
-    append(leadCsvRow(row, maskNames, groupStates).join(";"));
+    append(leadCsvRow(row, maskNames, groupStates, locale).join(";"));
   return bom + chunks.join("");
 }
 

@@ -9,7 +9,7 @@ const mock = vi.hoisted(() => {
     rows,
     readRows,
     execute: vi.fn(),
-    role: "admin" as "admin" | "client" | "bbro" | null,
+    role: "admin" as "admin" | "client" | "client_admin" | "bbro" | null,
     source: {
       status: "READY" as string,
       importedAt: "2026-11-08T12:00:00.000Z" as string | null,
@@ -247,7 +247,7 @@ describe("leads.exportCSV", () => {
     expect(admin.csv).toContain(";SP;");
     expect(admin.nameMasked).toBe(false);
 
-    mock.role = "client";
+    mock.role = "client_admin";
     const client = await caller().api.leads.exportCSV({
       dateFrom,
       dateTo: cutoff,

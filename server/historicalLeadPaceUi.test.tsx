@@ -69,11 +69,21 @@ const base: HistoricalLeadPace = {
   last3Months: readyScenario(),
 };
 
-const html = (data: HistoricalLeadPace = base) =>
+type TestLocale = "pt-BR" | "en";
+
+const html = (
+  data: HistoricalLeadPace = base,
+  clientView = false,
+  locale: TestLocale = "pt-BR"
+) =>
   renderToStaticMarkup(
     <V2HistoricalLeadPaceCard
       data={data}
-      actions={<button>Atualizar base</button>}
+      actions={
+        <button>{locale === "en" ? "Refresh data" : "Atualizar base"}</button>
+      }
+      clientView={clientView}
+      locale={locale}
     />
   );
 
@@ -88,11 +98,87 @@ describe("V2HistoricalLeadPaceCard", () => {
     expect(markup).toContain("4.068");
     expect(markup).toContain("16.600");
     expect(markup).toContain("08/11/2026");
-    expect(markup).toContain("Plano");
+    expect(markup).toContain("Planejado do mês");
     expect(markup).toContain("Real");
     expect(markup).toContain("Projeção");
+    expect(markup).toContain("Base últimos 3 meses");
     expect(markup).toContain("Corte da fonte");
     expect(markup).toContain("Método:");
+  });
+
+  it("localiza a visão EN administrativa e cliente sem vazar rótulos PT", () => {
+    const data = { ...base, current: 0, goal: null };
+    const adminMarkup = html(data, false, "en");
+    const clientMarkup = html(data, true, "en");
+
+    expect(adminMarkup).toContain("Leads Plan — pace and projection");
+    expect(adminMarkup).toContain("Last 3 months");
+    expect(adminMarkup).toContain("Last month");
+    expect(adminMarkup).toContain("November 2026");
+    expect(adminMarkup).toContain("11/08/2026");
+    expect(adminMarkup).toContain("N/A");
+    expect(adminMarkup).toMatch(/Leads realized this month[\s\S]*?>0</);
+    expect(adminMarkup).toContain("Planned this month");
+    expect(adminMarkup).toContain("Cumulative actuals (bars)");
+    expect(adminMarkup).toContain("Projected month close (estimated)");
+    expect(adminMarkup).toContain("Method:");
+    expect(adminMarkup).toContain("Reference months");
+    expect(adminMarkup).toContain("Daily audit table");
+
+    expect(clientMarkup).toContain("Leads Plan — pace and projection");
+    expect(clientMarkup).toContain("Method:");
+    expect(clientMarkup).not.toContain("Reference months");
+    expect(clientMarkup).not.toContain("Daily audit table");
+
+    const portugueseLabels = [
+      "Últimos",
+      "Último",
+      "ritmo",
+      "projeção",
+      "Realizado",
+      "Planejado",
+      "Fonte",
+      "Meta mensal",
+      "Método",
+      "Tabela",
+      "Competência",
+      "Disponível",
+      "Indisponível",
+      "histórico",
+      "N/D",
+    ];
+    for (const markup of [adminMarkup, clientMarkup]) {
+      for (const label of portugueseLabels) expect(markup).not.toContain(label);
+    }
+  });
+
+  it("mantém cinco KPIs em uma faixa única e remove os três secundários", () => {
+    const markup = html({ ...base, current: 4068 });
+
+    expect(markup).toContain("Leads realizados no mês");
+    expect(markup).toContain("Meta mensal");
+    expect(markup).toContain("Projeção de fechamento");
+    expect(markup).toContain("Projeção vs. meta");
+    expect(markup).toContain("Diferença acumulada");
+    expect(markup).toContain(
+      'aria-label="Indicadores principais do Leads Plan"'
+    );
+    expect(markup).toContain("min-w-[900px]");
+    expect(markup).toContain("grid-cols-5");
+    expect(markup).not.toContain("Esperado até o corte");
+    expect(markup).not.toContain("Necessário por dia");
+    expect(markup).not.toContain("Ritmo");
+  });
+
+  it("mantém as tabelas para a visão administrativa e as omite estruturalmente no cliente", () => {
+    const adminMarkup = html(base, false);
+    expect(adminMarkup).toContain("Meses de referência");
+    expect(adminMarkup).toContain("Tabela diária para auditoria");
+
+    const clientMarkup = html(base, true);
+    expect(clientMarkup).not.toContain("Meses de referência");
+    expect(clientMarkup).not.toContain("Tabela diária para auditoria");
+    expect(clientMarkup).toContain("Método:");
   });
 
   it("preserva zero real, nulos futuros e tabela de auditoria sem transformar nulo em zero", () => {

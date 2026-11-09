@@ -3,6 +3,7 @@ import {
   LeadsReloadVersionNotConfirmedError,
   type LeadsReloadResult,
   type LeadsReloadHandler,
+  type LeadsLocale,
 } from "@shared/leadsReload";
 import type { LeadsSyncResult } from "@shared/leadsSync";
 import { showDealerInCommercialTable } from "@shared/dealerPresentation";
@@ -15,7 +16,8 @@ import {
 import { V2LeadsReloadButton } from "./V2LeadsReloadButton";
 import { V2HistoricalLeadPaceCard } from "./V2HistoricalLeadPaceCard";
 import { V2LeadsExportButton } from "./V2LeadsExportButton";
-import V2SalesGoalEditor from "./V2SalesGoalEditor";
+import { V2CommercialSummary } from "./V2CommercialSummary";
+import { resolveBrazilianState } from "@shared/stateRegistry";
 import {
   LeadsSectionNavigation,
   LEADS_SECTION_TABS,
@@ -26,6 +28,7 @@ import V2MonthlyGoalEditor from "./V2MonthlyGoalEditor";
 import { useEffect } from "react";
 import V2DispatchControl from "./V2DispatchControl";
 import V2RegionalModelMatrix from "./newcomponentV2RegionalModelMatrix";
+import { V2ModelDeliveryCard } from "./V2ModelDeliveryCard";
 import { trpc } from "@/lib/trpc";
 import {
   addIsoDays,
@@ -113,24 +116,28 @@ const SOFT_COLORS = [
   "#64748b",
 ];
 
-function numberFormat(value: number) {
-  return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 }).format(
-    value
-  );
+function tr(locale: LeadsLocale = "pt-BR", pt: string, en: string) {
+  return locale === "en" ? en : pt;
 }
 
-function percentFormat(value: number) {
-  return new Intl.NumberFormat("pt-BR", {
+function numberFormat(value: number, locale: LeadsLocale = "pt-BR") {
+  return new Intl.NumberFormat(locale === "en" ? "en-US" : "pt-BR", {
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function percentFormat(value: number, locale: LeadsLocale = "pt-BR") {
+  return new Intl.NumberFormat(locale === "en" ? "en-US" : "pt-BR", {
     style: "percent",
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   }).format(value);
 }
 
-function compactDate(value: string) {
+function compactDate(value: string, locale: LeadsLocale = "pt-BR") {
   const parsed = new Date(`${value}T12:00:00Z`);
   if (Number.isNaN(parsed.getTime())) return value;
-  return new Intl.DateTimeFormat("pt-BR", {
+  return new Intl.DateTimeFormat(locale === "en" ? "en-US" : "pt-BR", {
     day: "2-digit",
     month: "short",
     timeZone: "UTC",
@@ -139,34 +146,47 @@ function compactDate(value: string) {
     .replace(" de ", " ");
 }
 
-function fullDate(value: string) {
+function fullDate(value: string, locale: LeadsLocale = "pt-BR") {
   const parsed = new Date(`${value}T12:00:00Z`);
   if (Number.isNaN(parsed.getTime())) return value;
-  return new Intl.DateTimeFormat("pt-BR", {
+  return new Intl.DateTimeFormat(locale === "en" ? "en-US" : "pt-BR", {
     dateStyle: "medium",
     timeZone: "UTC",
   }).format(parsed);
 }
 
-function leadNameForMode(name: string, clientMode: boolean) {
-  return clientMode ? "Nome oculto no modo cliente" : name || "Não informado";
+function leadNameForMode(
+  name: string,
+  clientMode: boolean,
+  locale: LeadsLocale = "pt-BR"
+) {
+  return clientMode
+    ? tr(locale, "Nome oculto no modo cliente", "Hidden name in client mode")
+    : name || tr(locale, "Não informado", "N/A");
 }
 
-function formatHour(value: string | number) {
-  if (String(value) === "Não informado") return "Não informado";
+function formatHour(value: string | number, locale: LeadsLocale = "pt-BR") {
+  if (String(value) === "Não informado")
+    return tr(locale, "Não informado", "N/A");
   const raw = String(value).replace("h", "");
-  return `${raw.padStart(2, "0")}h`;
+  return locale === "en"
+    ? `${raw.padStart(2, "0")}:00`
+    : `${raw.padStart(2, "0")}h`;
 }
 
-function formatImportedAt(value: string | null) {
-  if (!value) return "Importação não informada";
+function formatImportedAt(value: string | null, locale: LeadsLocale = "pt-BR") {
+  if (!value)
+    return tr(locale, "Importação não informada", "Import time unavailable");
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
-  return `Importado em ${new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "short",
-    timeZone: "America/Sao_Paulo",
-  }).format(parsed)}`;
+  return `${tr(locale, "Importado em", "Imported on")} ${new Intl.DateTimeFormat(
+    locale === "en" ? "en-US" : "pt-BR",
+    {
+      dateStyle: "short",
+      timeStyle: "short",
+      timeZone: "America/Sao_Paulo",
+    }
+  ).format(parsed)}`;
 }
 
 function reloadErrorCode(error: unknown) {
@@ -182,12 +202,15 @@ function reloadErrorCode(error: unknown) {
       : undefined;
 }
 
-function statusText(status: V2LeadsResponse["pacing"]["status"]) {
+function statusText(
+  status: V2LeadsResponse["pacing"]["status"],
+  locale: LeadsLocale = "pt-BR"
+) {
   return {
-    AHEAD: "À frente",
-    BEHIND: "Abaixo do ritmo",
-    ON_TRACK: "No ritmo",
-    NO_GOAL: "Sem meta",
+    AHEAD: tr(locale, "À frente", "Ahead"),
+    BEHIND: tr(locale, "Abaixo do ritmo", "Behind pace"),
+    ON_TRACK: tr(locale, "No ritmo", "On track"),
+    NO_GOAL: tr(locale, "Sem meta", "No target"),
   }[status];
 }
 
@@ -335,7 +358,13 @@ function LoadingPanel() {
   );
 }
 
-function QueryError({ onRetry }: { onRetry: () => void }) {
+function QueryError({
+  onRetry,
+  locale = "pt-BR",
+}: {
+  onRetry: () => void;
+  locale?: LeadsLocale;
+}) {
   return (
     <Card className="border-red-200 p-8 text-center">
       <AlertCircle
@@ -343,24 +372,38 @@ function QueryError({ onRetry }: { onRetry: () => void }) {
         aria-hidden="true"
       />
       <h2 className="mt-3 text-base font-bold text-slate-900">
-        Não foi possível carregar os leads
+        {tr(
+          locale,
+          "Não foi possível carregar os leads",
+          "Unable to load Leads"
+        )}
       </h2>
       <p className="mx-auto mt-1 max-w-md text-sm text-slate-500">
-        Verifique sua sessão ou tente novamente. Nenhum dado foi preenchido
-        localmente.
+        {tr(
+          locale,
+          "Verifique sua sessão ou tente novamente. Nenhum dado foi preenchido localmente.",
+          "Check your session or try again. No local data was filled in."
+        )}
       </p>
       <button
         type="button"
         onClick={onRetry}
         className="mt-5 inline-flex h-10 items-center gap-2 rounded-xl bg-[#e2212d] px-4 text-sm font-semibold text-white transition hover:bg-[#c91c28] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
       >
-        <RefreshCw className="h-4 w-4" /> Tentar novamente
+        <RefreshCw className="h-4 w-4" />
+        {tr(locale, "Tentar novamente", "Try again")}
       </button>
     </Card>
   );
 }
 
-function NotConfiguredPanel({ data }: { data: V2LeadsResponse }) {
+function NotConfiguredPanel({
+  data,
+  locale = "pt-BR",
+}: {
+  data: V2LeadsResponse;
+  locale?: LeadsLocale;
+}) {
   return (
     <Card className="overflow-hidden">
       <div className="border-b border-slate-100 bg-slate-50/80 px-5 py-5">
@@ -370,12 +413,18 @@ function NotConfiguredPanel({ data }: { data: V2LeadsResponse }) {
           </div>
           <div>
             <h2 className="text-base font-bold text-slate-900">
-              Dados de leads ainda não disponíveis
+              {tr(
+                locale,
+                "Dados de leads ainda não disponíveis",
+                "Lead data is not available yet"
+              )}
             </h2>
             <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
-              Ainda não há uma importação autenticada disponível para este
-              painel. Para manter a leitura confiável, não exibimos zeros,
-              amostras ou números de apresentação como substitutos.
+              {tr(
+                locale,
+                "Ainda não há uma importação autenticada disponível para este painel. Para manter a leitura confiável, não exibimos zeros, amostras ou números de apresentação como substitutos.",
+                "No authenticated import is available for this panel yet. To keep the view reliable, zeros, samples, and presentation numbers are not shown as substitutes."
+              )}
             </p>
           </div>
         </div>
@@ -383,23 +432,24 @@ function NotConfiguredPanel({ data }: { data: V2LeadsResponse }) {
       <div className="grid gap-4 px-5 py-5 sm:grid-cols-3">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
-            Origem
+            {tr(locale, "Origem", "Source")}
           </p>
           <p className="mt-1 text-sm font-semibold text-slate-800">
-            {data.source.name || "Aguardando configuração"}
+            {data.source.name ||
+              tr(locale, "Aguardando configuração", "Awaiting configuration")}
           </p>
         </div>
         <div>
           <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
-            Situação
+            {tr(locale, "Situação", "Status")}
           </p>
           <p className="mt-1 text-sm font-semibold text-slate-800">
-            Aguardando importação
+            {tr(locale, "Aguardando importação", "Awaiting import")}
           </p>
         </div>
         <div>
           <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
-            Período consultado
+            {tr(locale, "Período consultado", "Selected period")}
           </p>
           <p className="mt-1 text-sm font-semibold text-slate-800">
             {fullDate(data.period.dateFrom)} a {fullDate(data.period.dateTo)}
@@ -410,7 +460,7 @@ function NotConfiguredPanel({ data }: { data: V2LeadsResponse }) {
         <div className="border-t border-slate-100 px-5 py-4">
           <details>
             <summary className="cursor-pointer list-none text-xs font-semibold text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
-              Observações da importação
+              {tr(locale, "Observações da importação", "Import notes")}
             </summary>
             <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-500">
               {data.notes.map(note => (
@@ -436,6 +486,7 @@ function FilterBar({
   isFetching,
   clientMode,
   pendingChanges,
+  locale = "pt-BR",
 }: {
   draft: V2DashboardFilters;
   setDraft: (next: V2DashboardFilters) => void;
@@ -448,6 +499,7 @@ function FilterBar({
   isFetching: boolean;
   clientMode: boolean;
   pendingChanges: boolean;
+  locale?: LeadsLocale;
 }) {
   const update = (key: keyof V2DashboardFilters, value: string) =>
     setDraft({
@@ -470,16 +522,20 @@ function FilterBar({
             <div className="flex items-center gap-2">
               <Filter className="h-4 w-4 text-[#e2212d]" aria-hidden="true" />
               <h2 className="text-sm font-bold text-slate-900">
-                Filtros de leads
+                {tr(locale, "Filtros de leads", "Lead filters")}
               </h2>
               <span className="hidden text-xs text-slate-400 sm:inline">
-                Dados encerrados até D-1
+                {tr(
+                  locale,
+                  "Dados encerrados até D-1",
+                  "Data closed through D-1"
+                )}
               </span>
             </div>
             <div
               className="flex flex-wrap gap-1.5"
               role="group"
-              aria-label="Período rápido"
+              aria-label={tr(locale, "Período rápido", "Quick period")}
             >
               {LEAD_PERIOD_PRESETS.map(preset => (
                 <button
@@ -489,16 +545,33 @@ function FilterBar({
                   aria-pressed={selectedPreset === preset}
                   className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${selectedPreset === preset ? "bg-red-50 text-[#e2212d]" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"}`}
                 >
-                  {preset}
+                  {tr(
+                    locale,
+                    preset,
+                    (
+                      {
+                        Hoje: "Today",
+                        Ontem: "Yesterday",
+                        "Últimos 7 dias": "Last 7 days",
+                        "Últimos 30 dias": "Last 30 days",
+                        "7 dias": "7 days",
+                        "14 dias": "14 days",
+                        "30 dias": "30 days",
+                        "60 dias": "60 days",
+                        "Mês passado": "Previous month",
+                        Mês: "Month",
+                      } as Record<string, string>
+                    )[preset] ?? preset
+                  )}
                 </button>
               ))}
             </div>
           </div>
           <div className="grid gap-3 px-5 py-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
             <label className="xl:col-span-1">
-              <span className="v2-label">Início</span>
+              <span className="v2-label">{tr(locale, "Início", "From")}</span>
               <input
-                aria-label="Data inicial"
+                aria-label={tr(locale, "Data inicial", "Start date")}
                 type="date"
                 max={cutoff}
                 value={draft.dateFrom}
@@ -514,9 +587,9 @@ function FilterBar({
               />
             </label>
             <label className="xl:col-span-1">
-              <span className="v2-label">Fim</span>
+              <span className="v2-label">{tr(locale, "Fim", "To")}</span>
               <input
-                aria-label="Data final"
+                aria-label={tr(locale, "Data final", "End date")}
                 type="date"
                 max={cutoff}
                 value={draft.dateTo}
@@ -532,26 +605,31 @@ function FilterBar({
               />
             </label>
             <SelectFilter
-              label="Modelo"
+              label={tr(locale, "Modelo", "Model")}
               value={draft.model ?? ""}
               options={options.models}
               onChange={value => update("model", value)}
+              locale={locale}
             />
             <SelectFilter
-              label="Canal"
+              label={tr(locale, "Canal", "Channel")}
               value={draft.channel ?? ""}
               options={options.channels}
               onChange={value => update("channel", value)}
+              locale={locale}
             />
             <SelectFilter
-              label="Concessionária"
+              label={tr(locale, "Concessionária", "Dealer")}
               value={draft.dealer ?? ""}
               options={options.dealers}
               onChange={value => update("dealer", value)}
+              locale={locale}
             />
             <label className="sm:col-span-2 xl:col-span-2">
               <span className="v2-label">
-                {clientMode ? "Cidade/UF/concessionária" : "Busca"}
+                {clientMode
+                  ? tr(locale, "Cidade/UF/concessionária", "City/state/dealer")
+                  : tr(locale, "Busca", "Search")}
               </span>
               <div className="relative">
                 <Search
@@ -560,14 +638,28 @@ function FilterBar({
                 />
                 <input
                   aria-label={
-                    clientMode ? "Cidade/UF/concessionária" : "Buscar lead"
+                    clientMode
+                      ? tr(
+                          locale,
+                          "Cidade/UF/concessionária",
+                          "City/state/dealer"
+                        )
+                      : tr(locale, "Buscar lead", "Search Leads")
                   }
                   value={draft.search ?? ""}
                   onChange={event => update("search", event.target.value)}
                   placeholder={
                     clientMode
-                      ? "Cidade, UF ou concessionária"
-                      : "Nome, cidade ou estado"
+                      ? tr(
+                          locale,
+                          "Cidade, UF ou concessionária",
+                          "City, state, or dealer"
+                        )
+                      : tr(
+                          locale,
+                          "Nome, cidade ou estado",
+                          "Name, city, or state"
+                        )
                   }
                   className="v2-input pl-9"
                 />
@@ -578,8 +670,12 @@ function FilterBar({
             <p className="min-h-5 text-xs text-[#b41b26]">
               {dateError ??
                 (pendingChanges
-                  ? "Filtros alterados. Clique em Buscar para aplicar."
-                  : `Limite operacional: ${fullDate(cutoff)} (America/Sao_Paulo)`)}
+                  ? tr(
+                      locale,
+                      "Filtros alterados. Clique em Buscar para aplicar.",
+                      "Filters changed. Click Search to apply."
+                    )
+                  : `${tr(locale, "Limite operacional", "Operational cutoff")}: ${fullDate(cutoff, locale)} (America/Sao_Paulo)`)}
             </p>
             <button
               type="submit"
@@ -587,7 +683,9 @@ function FilterBar({
               className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#e2212d] px-5 text-sm font-bold text-white shadow-sm transition hover:bg-[#c91c28] disabled:cursor-wait disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
             >
               <Search className="h-4 w-4" />
-              {isFetching ? "Buscando…" : "Buscar"}
+              {isFetching
+                ? tr(locale, "Buscando…", "Searching…")
+                : tr(locale, "Buscar", "Search")}
             </button>
           </div>
         </fieldset>
@@ -601,11 +699,13 @@ function SelectFilter({
   value,
   options,
   onChange,
+  locale = "pt-BR",
 }: {
   label: string;
   value: string;
   options: string[];
   onChange: (value: string) => void;
+  locale?: LeadsLocale;
 }) {
   return (
     <label>
@@ -616,7 +716,7 @@ function SelectFilter({
         onChange={event => onChange(event.target.value)}
         className="v2-input"
       >
-        <option value="">Todos</option>
+        <option value="">{tr(locale, "Todos", "All")}</option>
         {options.map(option => (
           <option key={option} value={option}>
             {option}
@@ -632,11 +732,13 @@ function PacingCard({
   onUpdated,
   onReloadMonth,
   canManage,
+  locale = "pt-BR",
 }: {
   data: V2LeadsResponse;
   onUpdated: () => void;
   onReloadMonth: () => Promise<LeadsReloadResult>;
   canManage: boolean;
+  locale?: LeadsLocale;
 }) {
   const pacing = data.pacing;
   const progressRatio =
@@ -651,16 +753,20 @@ function PacingCard({
   return (
     <Card className="overflow-hidden">
       <CardHeading
-        eyebrow="Ritmo mensal"
-        title="Pacing de leads"
-        description="Pacing MTD da competência até D-1; as demais métricas respeitam o período filtrado."
+        eyebrow={tr(locale, "Ritmo mensal", "Monthly pace")}
+        title={tr(locale, "Pacing de leads", "Lead pacing")}
+        description={tr(
+          locale,
+          "Pacing MTD da competência até D-1; as demais métricas respeitam o período filtrado.",
+          "MTD pace for the period through D-1; other metrics follow the selected filters."
+        )}
         icon={Target}
         action={
           <div className="pacing-card-actions">
             <span
               className={`pacing-card-status rounded-full border px-2.5 py-1 text-[10px] font-bold ${statusTone(pacing.status)}`}
             >
-              {statusText(pacing.status)}
+              {statusText(pacing.status, locale)}
             </span>
             <div className="pacing-card-action-control">
               <V2LeadsReloadButton
@@ -668,6 +774,7 @@ function PacingCard({
                 onReload={onReloadMonth}
                 syncExternal={canManage}
                 showFeedback={false}
+                locale={locale}
               />
             </div>
             {canManage ? (
@@ -683,8 +790,16 @@ function PacingCard({
         }
         actionHelp={
           canManage
-            ? "Atualizar base importa a planilha-base pelo servidor; requer conexão Google própria configurada. Atualizar metas altera somente a meta mensal."
-            : "Atualizar indicadores consulta os dados armazenados. A importação externa é controlada pelo administrador."
+            ? tr(
+                locale,
+                "Atualizar base importa a planilha-base pelo servidor; requer conexão Google própria configurada. Atualizar metas altera somente a meta mensal.",
+                "Update source imports the base spreadsheet through the server; it requires a configured Google connection. Update goals changes only the monthly target."
+              )
+            : tr(
+                locale,
+                "Atualizar indicadores consulta os dados armazenados. A importação externa é controlada pelo administrador.",
+                "Refresh indicators reads stored data. External imports are controlled by an administrator."
+              )
         }
       />
       <div className="grid gap-5 p-5 lg:grid-cols-[1.25fr_1fr]">
@@ -692,30 +807,36 @@ function PacingCard({
           <div className="flex items-end justify-between gap-3">
             <div>
               <p className="text-xs font-semibold text-slate-500">
-                Competência {pacing.competence}
+                {tr(locale, "Competência", "Period")} {pacing.competence}
               </p>
               <p className="mt-1 text-3xl font-bold tracking-tight text-slate-950">
-                {numberFormat(pacing.current)}
+                {numberFormat(pacing.current, locale)}
               </p>
-              <p className="text-xs text-slate-500">Leads MTD da competência</p>
+              <p className="text-xs text-slate-500">
+                {tr(locale, "Leads MTD da competência", "Period MTD Leads")}
+              </p>
             </div>
             <div className="text-right">
               <p className="text-xs font-semibold text-slate-500">
-                Meta mensal
+                {tr(locale, "Meta mensal", "Monthly target")}
               </p>
               <p
                 className={`mt-1 text-xl font-bold ${pacing.goal == null ? "text-slate-400" : "text-slate-900"}`}
               >
                 {pacing.goal == null
-                  ? "Indisponível"
-                  : numberFormat(pacing.goal)}
+                  ? tr(locale, "Indisponível", "Unavailable")
+                  : numberFormat(pacing.goal, locale)}
               </p>
             </div>
           </div>
           <div
             className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100"
             role="progressbar"
-            aria-label="Atingimento da meta de Leads"
+            aria-label={tr(
+              locale,
+              "Atingimento da meta de Leads",
+              "Lead target attainment"
+            )}
             aria-valuenow={
               pacing.progressPercent == null
                 ? undefined
@@ -732,68 +853,85 @@ function PacingCard({
           <div className="mt-2 flex justify-between gap-3 text-[11px] text-slate-500">
             <span>
               {progressRatio == null
-                ? "Percentual indisponível sem meta"
-                : `${percentFormat(progressRatio)} da meta`}
+                ? tr(
+                    locale,
+                    "Percentual indisponível sem meta",
+                    "Percentage unavailable without a target"
+                  )
+                : `${percentFormat(progressRatio, locale)} ${tr(locale, "da meta", "of target")}`}
             </span>
             <span>
-              {pacing.closedDays}/{pacing.daysInMonth} dias fechados
+              {pacing.closedDays}/{pacing.daysInMonth}{" "}
+              {tr(locale, "dias fechados", "days closed")}
             </span>
           </div>
           {pacing.goal == null ? (
             <p className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2.5 text-xs leading-5 text-slate-500">
               {narrowed
-                ? "Recorte ativo: a meta global não é comparada a um subconjunto de Leads. Remova os filtros para acompanhar a meta mensal."
-                : "Clique em Atualizar metas para definir o objetivo do mês e habilitar os KPIs de atingimento."}
+                ? tr(
+                    locale,
+                    "Recorte ativo: a meta global não é comparada a um subconjunto de Leads. Remova os filtros para acompanhar a meta mensal.",
+                    "Filtered view: the global target is not compared with a Lead subset. Remove filters to follow the monthly target."
+                  )
+                : tr(
+                    locale,
+                    "Clique em Atualizar metas para definir o objetivo do mês e habilitar os KPIs de atingimento.",
+                    "Click Update goals to set the monthly target and enable attainment KPIs."
+                  )}
             </p>
           ) : null}
           <p className="mt-3 text-[11px] leading-5 text-slate-400">
-            Meta salva por competência. Alterações atualizam os KPIs e mantêm os
-            meses anteriores.
+            {tr(
+              locale,
+              "Meta salva por competência. Alterações atualizam os KPIs e mantêm os meses anteriores.",
+              "Target saved by period. Changes update KPIs while preserving previous months."
+            )}
           </p>
         </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-2">
           <PacingMetric
-            label="Média/dia"
-            value={numberFormat(Math.round(pacing.averagePerDay))}
+            label={tr(locale, "Média/dia", "Average/day")}
+            value={numberFormat(Math.round(pacing.averagePerDay), locale)}
           />
           <PacingMetric
-            label="Necessário/dia"
+            label={tr(locale, "Necessário/dia", "Required/day")}
             value={
               pacing.requiredPerDay == null
-                ? "N/D"
-                : numberFormat(Math.ceil(pacing.requiredPerDay))
+                ? tr(locale, "N/D", "N/A")
+                : numberFormat(Math.ceil(pacing.requiredPerDay), locale)
             }
           />
           <PacingMetric
-            label="Projeção"
-            value={numberFormat(pacing.projection)}
+            label={tr(locale, "Projeção", "Projection")}
+            value={numberFormat(pacing.projection, locale)}
           />
           <PacingMetric
-            label="Restante"
+            label={tr(locale, "Restante", "Remaining")}
             value={
               pacing.remainingToGoal == null
-                ? "N/D"
-                : numberFormat(Math.max(0, pacing.remainingToGoal))
+                ? tr(locale, "N/D", "N/A")
+                : numberFormat(Math.max(0, pacing.remainingToGoal), locale)
             }
           />
           <PacingMetric
-            label="Esperado até D-1"
+            label={tr(locale, "Esperado até D-1", "Expected through D-1")}
             value={
               pacing.goal == null
-                ? "N/D"
+                ? tr(locale, "N/D", "N/A")
                 : numberFormat(
                     Math.round(
                       (pacing.goal * pacing.closedDays) / pacing.daysInMonth
-                    )
+                    ),
+                    locale
                   )
             }
           />
           <PacingMetric
-            label="Projeção vs. meta"
+            label={tr(locale, "Projeção vs. meta", "Projection vs. target")}
             value={
               pacing.projectedDifference == null
-                ? "N/D"
-                : `${pacing.projectedDifference >= 0 ? "+" : ""}${numberFormat(pacing.projectedDifference)}`
+                ? tr(locale, "N/D", "N/A")
+                : `${pacing.projectedDifference >= 0 ? "+" : ""}${numberFormat(pacing.projectedDifference, locale)}`
             }
           />
         </div>
@@ -813,18 +951,30 @@ function PacingMetric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function unavailablePerformanceValue() {
-  return <span className="text-slate-400">Indisponível</span>;
+function unavailablePerformanceValue(locale: LeadsLocale = "pt-BR") {
+  return (
+    <span className="text-slate-400">
+      {tr(locale, "Indisponível", "Unavailable")}
+    </span>
+  );
 }
 
-function performanceNumber(value: number | null, available: boolean) {
-  if (!available || value == null) return unavailablePerformanceValue();
-  return numberFormat(value);
+function performanceNumber(
+  value: number | null,
+  available: boolean,
+  locale: LeadsLocale = "pt-BR"
+) {
+  if (!available || value == null) return unavailablePerformanceValue(locale);
+  return numberFormat(value, locale);
 }
 
-function performancePercent(value: number | null, available: boolean) {
-  if (!available || value == null) return unavailablePerformanceValue();
-  return percentFormat(value);
+function performancePercent(
+  value: number | null,
+  available: boolean,
+  locale: LeadsLocale = "pt-BR"
+) {
+  if (!available || value == null) return unavailablePerformanceValue(locale);
+  return percentFormat(value, locale);
 }
 
 type DealerPerformanceRow =
@@ -838,19 +988,25 @@ type DealerDisplayRow = DealerPerformanceRow & {
   sourceLabels: string[];
 };
 
-function commercialKindLabel(kind: GroupedGoal["kind"]) {
-  if (kind === "lead-goals") return "Meta de Leads";
-  if (kind === "sales-goals") return "Meta de Vendas";
-  return "Vendas";
+function commercialKindLabel(
+  kind: GroupedGoal["kind"],
+  locale: LeadsLocale = "pt-BR"
+) {
+  if (kind === "lead-goals") return tr(locale, "Meta de Leads", "Lead goal");
+  if (kind === "sales-goals") return tr(locale, "Meta de Vendas", "Sales goal");
+  return tr(locale, "Vendas", "Sales");
 }
 
-function sourcesByOfficialDealer(groups: GroupedGoal[]) {
+function sourcesByOfficialDealer(
+  groups: GroupedGoal[],
+  locale: LeadsLocale = "pt-BR"
+) {
   const sources = new Map<string, string[]>();
   for (const group of groups) {
     for (const dealer of group.dealers) {
       const canonical = officialDealer(dealer)?.name ?? dealer;
       const current = sources.get(canonical) ?? [];
-      const label = `${commercialKindLabel(group.kind)}: ${group.sourceLabel}`;
+      const label = `${commercialKindLabel(group.kind, locale)}: ${group.sourceLabel}`;
       if (!current.includes(label)) current.push(label);
       sources.set(canonical, current);
     }
@@ -861,26 +1017,32 @@ function sourcesByOfficialDealer(groups: GroupedGoal[]) {
 function GroupGoalBadge({
   value,
   groups,
+  locale = "pt-BR",
 }: {
   value: number | null;
   groups: GroupedGoal[];
+  locale?: LeadsLocale;
 }) {
   const collectiveGroups = groups.filter(group => group.dealers.length !== 1);
   if (value != null || !collectiveGroups.length) return null;
   return (
     <div className="mt-1">
       <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-800">
-        Meta de grupo
+        {tr(locale, "Meta de grupo", "Group target")}
       </span>
       <details className="mt-1 text-[11px] font-normal text-slate-500">
         <summary className="cursor-pointer list-none underline decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
-          Origem do grupo ({collectiveGroups.length})
+          {tr(locale, "Origem do grupo", "Group source")} (
+          {collectiveGroups.length})
         </summary>
         <ul className="mt-1 space-y-0.5 leading-4">
           {collectiveGroups.map(group => (
             <li key={`${group.kind}:${group.key}`}>
-              {group.sourceLabel} · valor do grupo:{" "}
-              {group.value == null ? "N/D" : numberFormat(group.value)}
+              {group.sourceLabel} ·{" "}
+              {tr(locale, "valor do grupo", "group value")}:{" "}
+              {group.value == null
+                ? tr(locale, "N/D", "N/A")
+                : numberFormat(group.value, locale)}
             </li>
           ))}
         </ul>
@@ -889,23 +1051,39 @@ function GroupGoalBadge({
   );
 }
 
-function UnmatchedLeadDetails({ rows }: { rows: DealerPerformanceRow[] }) {
+function UnmatchedLeadDetails({
+  rows,
+  locale = "pt-BR",
+}: {
+  rows: DealerPerformanceRow[];
+  locale?: LeadsLocale;
+}) {
   if (!rows.length) return null;
   return (
     <details className="mx-5 mb-4 rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-xs">
       <summary className="cursor-pointer font-semibold text-amber-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
-        Leads sem dealer oficial conciliado ({rows.length} linhas)
+        {tr(
+          locale,
+          "Leads sem dealer oficial conciliado",
+          "Leads without a matched official dealer"
+        )}{" "}
+        ({rows.length} {tr(locale, "linhas", "rows")})
       </summary>
       <p className="mt-2 leading-5 text-amber-900">
-        Os nomes abaixo permanecem na origem e não são transferidos para uma
-        unidade oficial por aproximação. Os totais globais não mudam.
+        {tr(
+          locale,
+          "Os nomes abaixo permanecem na origem e não são transferidos para uma unidade oficial por aproximação. Os totais globais não mudam.",
+          "The names below remain from the source and are not assigned to an official unit by approximation. Global totals do not change."
+        )}
       </p>
       <div className="mt-3 max-h-64 overflow-auto rounded-lg border border-amber-200 bg-white">
         <table className="w-full text-left">
           <thead className="bg-amber-50 text-[10px] font-bold uppercase tracking-[0.1em] text-amber-900">
             <tr>
-              <th className="px-3 py-2">Dealer original</th>
-              <th className="px-3 py-2">UF</th>
+              <th className="px-3 py-2">
+                {tr(locale, "Dealer original", "Original dealer")}
+              </th>
+              <th className="px-3 py-2">{tr(locale, "UF", "State")}</th>
               <th className="px-3 py-2 text-right">Leads</th>
             </tr>
           </thead>
@@ -913,13 +1091,13 @@ function UnmatchedLeadDetails({ rows }: { rows: DealerPerformanceRow[] }) {
             {rows.map((row, index) => (
               <tr key={`${row.dealer}:${row.state}:${index}`}>
                 <td className="px-3 py-2 font-semibold text-slate-700">
-                  {row.dealer || "Não informado"}
+                  {row.dealer || tr(locale, "Não informado", "N/A")}
                 </td>
                 <td className="px-3 py-2 text-slate-500">
-                  {row.state || "N/D"}
+                  {row.state || tr(locale, "N/D", "N/A")}
                 </td>
                 <td className="px-3 py-2 text-right font-bold text-slate-900">
-                  {numberFormat(row.leads)}
+                  {numberFormat(row.leads, locale)}
                 </td>
               </tr>
             ))}
@@ -930,28 +1108,51 @@ function UnmatchedLeadDetails({ rows }: { rows: DealerPerformanceRow[] }) {
   );
 }
 
-function GroupedGoalsDetails({ groups }: { groups: GroupedGoal[] }) {
+function GroupedGoalsDetails({
+  groups,
+  locale = "pt-BR",
+}: {
+  groups: GroupedGoal[];
+  locale?: LeadsLocale;
+}) {
   if (!groups.length) return null;
   return (
     <details className="mx-5 mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs">
       <summary className="cursor-pointer font-semibold text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
-        Metas e vendas na origem ({groups.length}) — individuais e coletivas,
-        sem somar grupos aos KPIs
+        {tr(locale, "Metas e vendas na origem", "Goals and sales from source")}{" "}
+        ({groups.length}) —{" "}
+        {tr(
+          locale,
+          "individuais e coletivas, sem somar grupos aos KPIs",
+          "individual and collective; groups are not added to KPIs"
+        )}
       </summary>
       <p className="mt-2 leading-5 text-slate-500">
-        A tabela principal mostra valores individuais por unidade. Cada valor
-        coletivo abaixo aparece uma única vez, com o nome original preservado;
-        não há rateio por loja.
+        {tr(
+          locale,
+          "A tabela principal mostra valores individuais por unidade. Cada valor coletivo abaixo aparece uma única vez, com o nome original preservado; não há rateio por loja.",
+          "The main table shows individual values by unit. Each collective value below appears once, preserving the original name; no store allocation is applied."
+        )}
       </p>
       <div className="mt-3 max-h-72 overflow-auto rounded-lg border border-slate-200 bg-white">
         <table className="min-w-[760px] w-full text-left">
           <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">
             <tr>
-              <th className="px-3 py-2">Unidade oficial</th>
-              <th className="px-3 py-2">Fonte original</th>
-              <th className="px-3 py-2">Classificação</th>
-              <th className="px-3 py-2 text-right">Valor do grupo</th>
-              <th className="px-3 py-2 text-right">Leads na base</th>
+              <th className="px-3 py-2">
+                {tr(locale, "Unidade oficial", "Official unit")}
+              </th>
+              <th className="px-3 py-2">
+                {tr(locale, "Fonte original", "Original source")}
+              </th>
+              <th className="px-3 py-2">
+                {tr(locale, "Classificação", "Classification")}
+              </th>
+              <th className="px-3 py-2 text-right">
+                {tr(locale, "Valor do grupo", "Group value")}
+              </th>
+              <th className="px-3 py-2 text-right">
+                {tr(locale, "Leads na base", "Leads in source")}
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -977,7 +1178,7 @@ function GroupedGoalsDetails({ groups }: { groups: GroupedGoal[] }) {
                   >
                     {group.sourceLabel}
                     <span className="mt-0.5 block text-[11px] font-normal text-slate-400">
-                      {commercialKindLabel(group.kind)}
+                      {commercialKindLabel(group.kind, locale)}
                     </span>
                   </td>
                   <td className="px-3 py-2 align-top">
@@ -985,15 +1186,25 @@ function GroupedGoalsDetails({ groups }: { groups: GroupedGoal[] }) {
                       className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-bold ${collective ? "border-amber-200 bg-amber-50 text-amber-800" : "border-blue-200 bg-blue-50 text-blue-800"}`}
                     >
                       {collective
-                        ? "Coletiva — sem rateio por loja"
-                        : "Individual — unidade oficial"}
+                        ? tr(
+                            locale,
+                            "Coletiva — sem rateio por loja",
+                            "Collective — no store allocation"
+                          )
+                        : tr(
+                            locale,
+                            "Individual — unidade oficial",
+                            "Individual — official unit"
+                          )}
                     </span>
                   </td>
                   <td className="px-3 py-2 text-right align-top font-bold text-slate-900">
-                    {group.value == null ? "N/D" : numberFormat(group.value)}
+                    {group.value == null
+                      ? tr(locale, "N/D", "N/A")
+                      : numberFormat(group.value, locale)}
                   </td>
                   <td className="px-3 py-2 text-right align-top text-slate-600">
-                    {numberFormat(group.leads)}
+                    {numberFormat(group.leads, locale)}
                   </td>
                 </tr>
               );
@@ -1009,10 +1220,14 @@ function DealerPerformanceCard({
   data,
   onUpdated,
   canManage,
+  filters,
+  locale = "pt-BR",
 }: {
   data: V2LeadsResponse;
   onUpdated: () => void;
   canManage: boolean;
+  filters: V2DashboardFilters;
+  locale?: "pt-BR" | "en";
 }) {
   const performance = data.dealerPerformance;
   const lookupDealer = useMemo(
@@ -1030,8 +1245,8 @@ function DealerPerformanceCard({
   const tableScrollRef = useRef<HTMLDivElement>(null);
   const groupedGoals = performance.groupedGoals ?? [];
   const sourceLabels = useMemo(
-    () => sourcesByOfficialDealer(groupedGoals),
-    [groupedGoals]
+    () => sourcesByOfficialDealer(groupedGoals, locale),
+    [groupedGoals, locale]
   );
   const goalGroupsByDealer = useMemo(() => {
     const groups = new Map<string, GroupedGoal[]>();
@@ -1097,15 +1312,25 @@ function DealerPerformanceCard({
   return (
     <Card className="overflow-hidden">
       <CardHeading
-        eyebrow="Acompanhamento comercial"
-        title="Vendas e metas por concessionária"
-        description="Concessionárias em acompanhamento. Unidades EM BREVE não são exibidas nesta tabela."
+        eyebrow={tr(locale, "Acompanhamento comercial", "Commercial tracking")}
+        title={tr(
+          locale,
+          "Vendas e metas por concessionária",
+          "Sales and goals by dealer"
+        )}
+        description={tr(
+          locale,
+          "Concessionárias em acompanhamento. Unidades EM BREVE não são exibidas nesta tabela.",
+          "Dealers under tracking. UPCOMING units are not shown in this table."
+        )}
         icon={TrendingUp}
         action={
           <span
             className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${available ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-500"}`}
           >
-            {available ? "Fonte disponível" : "Aguardando arquivos"}
+            {available
+              ? tr(locale, "Fonte disponível", "Source available")
+              : tr(locale, "Aguardando arquivos", "Awaiting files")}
           </span>
         }
       />
@@ -1131,24 +1356,33 @@ function DealerPerformanceCard({
           </ul>
         </div>
       ) : null}
-      <UnmatchedLeadDetails rows={unmatchedLeadRows} />
+      <UnmatchedLeadDetails rows={unmatchedLeadRows} locale={locale} />
       {performance.unmapped?.length ? (
         <details className="mx-5 mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs">
           <summary className="cursor-pointer font-semibold text-slate-700">
-            {performance.unmapped.length} linhas comerciais sem vínculo com
-            unidade oficial — ver origem preservada
+            {performance.unmapped.length}{" "}
+            {tr(
+              locale,
+              "linhas comerciais sem vínculo com unidade oficial — ver origem preservada",
+              "commercial rows without an official unit — view preserved source"
+            )}
           </summary>
           <p className="mt-2 leading-5 text-slate-500">
-            Linha fora do cadastro ou vínculo ainda não definido; metas mantidas
-            na origem, sem alocação por aproximação.
+            {tr(
+              locale,
+              "Linha fora do cadastro ou vínculo ainda não definido; metas mantidas na origem, sem alocação por aproximação.",
+              "Row is outside the registry or not yet linked; goals remain in the source without approximate allocation."
+            )}
           </p>
           <div className="mt-2 max-h-64 overflow-auto">
             <table className="w-full text-left">
               <thead>
                 <tr>
-                  <th className="py-2">Fonte</th>
-                  <th>Nome original</th>
-                  <th className="text-right">Meta/quantidade</th>
+                  <th className="py-2">{tr(locale, "Fonte", "Source")}</th>
+                  <th>{tr(locale, "Nome original", "Original name")}</th>
+                  <th className="text-right">
+                    {tr(locale, "Meta/quantidade", "Goal/quantity")}
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -1159,14 +1393,16 @@ function DealerPerformanceCard({
                   >
                     <td className="py-2">
                       {row.kind === "lead-goals"
-                        ? "Meta de Leads"
+                        ? tr(locale, "Meta de Leads", "Lead goal")
                         : row.kind === "sales-goals"
-                          ? "Meta de Vendas"
-                          : "Vendas"}
+                          ? tr(locale, "Meta de Vendas", "Sales goal")
+                          : tr(locale, "Vendas", "Sales")}
                     </td>
                     <td>{row.sourceLabel}</td>
                     <td className="text-right">
-                      {row.value == null ? "N/D" : numberFormat(row.value)}
+                      {row.value == null
+                        ? tr(locale, "N/D", "N/A")
+                        : numberFormat(row.value, locale)}
                     </td>
                   </tr>
                 ))}
@@ -1175,85 +1411,44 @@ function DealerPerformanceCard({
           </div>
         </details>
       ) : null}
-      <div className="grid gap-3 border-b border-slate-100 p-5 sm:grid-cols-2 lg:grid-cols-5">
-        <SummaryFact label="Leads reais" value={numberFormat(totals.leads)} />
-        <SummaryFact
-          label="Meta de leads"
-          value={
-            available && totals.leadGoal != null
-              ? numberFormat(totals.leadGoal)
-              : "Indisponível"
-          }
-        />
-        <SummaryFact
-          label="Vendas Retail (MTD)"
-          value={
-            available && totals.sales != null && performance.generalRetailMTD
-              ? numberFormat(totals.sales)
-              : "Indisponível"
-          }
-          detail={
-            available && totals.sales != null && performance.generalRetailMTD
-              ? `Retail · ${performance.generalRetailMTD.asOf ? fullDate(performance.generalRetailMTD.asOf) : "referência da fonte"} · sem Test Drive e Direct Sales`
-              : performance.generalRetailMTD
-                ? "Total geral não comparável a este filtro"
-                : "Retail do resumo DAILY_FUP não disponível"
-          }
-        />
-        <SummaryFact
-          label="Meta de vendas"
-          action={
-            <V2SalesGoalEditor
-              competence={data.pacing.competence}
-              currentGoal={totals.salesGoal}
-              canManage={canManage}
-              onSaved={onUpdated}
-            />
-          }
-          detail={
-            performance.salesGoalOrigin === "manual"
-              ? "Total mensal manual"
-              : undefined
-          }
-          value={
-            available && totals.salesGoal != null
-              ? numberFormat(totals.salesGoal)
-              : "Indisponível"
-          }
-        />
-        <SummaryFact
-          label="Conversão"
-          value={
-            available && totals.conversionRate != null
-              ? new Intl.NumberFormat("pt-BR", {
-                  style: "percent",
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                }).format(totals.conversionRate)
-              : "Indisponível"
-          }
-          detail={
-            totals.conversionRate != null && totals.sales != null
-              ? `${numberFormat(totals.sales)} vendas MTD ÷ ${numberFormat(totals.leads)} leads do período · comparativo geral`
-              : "Sem base comparável para este filtro"
-          }
-        />
-      </div>
-      <GroupedGoalsDetails groups={groupedGoals} />
+      <V2CommercialSummary
+        performance={performance}
+        competence={data.pacing.competence}
+        canManage={canManage}
+        onUpdated={onUpdated}
+        locale={locale}
+        generalComparable={
+          filters.dateFrom.slice(0, 7) === filters.dateTo.slice(0, 7) &&
+          ![
+            filters.model,
+            filters.channel,
+            filters.campaign,
+            filters.dealer,
+            filters.search,
+          ].some(value => Boolean(value?.trim()))
+        }
+      />
+      <GroupedGoalsDetails groups={groupedGoals} locale={locale} />
       <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-end">
         <label className="min-w-0 flex-1">
-          <span className="v2-label">Consultar concessionária ou UF</span>
+          <span className="v2-label">
+            {tr(
+              locale,
+              "Consultar concessionária ou UF",
+              "Search dealer or state"
+            )}
+          </span>
           <input
             className="v2-input"
             value={dealerSearch}
             onChange={event => {
               setDealerSearch(event.target.value);
             }}
-            placeholder="Buscar na tabela"
+            placeholder={tr(locale, "Buscar na tabela", "Search this table")}
           />
         </label>
         <label className="sm:w-48">
-          <span className="v2-label">Ordenação</span>
+          <span className="v2-label">{tr(locale, "Ordenação", "Sort")}</span>
           <select
             className="v2-input"
             value={dealerSort}
@@ -1261,8 +1456,12 @@ function DealerPerformanceCard({
               setDealerSort(event.target.value);
             }}
           >
-            <option value="leads">Mais Leads primeiro</option>
-            <option value="name">Nome da concessionária</option>
+            <option value="leads">
+              {tr(locale, "Mais Leads primeiro", "Most Leads first")}
+            </option>
+            <option value="name">
+              {tr(locale, "Nome da concessionária", "Dealer name")}
+            </option>
           </select>
         </label>
       </div>
@@ -1271,18 +1470,32 @@ function DealerPerformanceCard({
         className="mg-dealer-scroll"
         tabIndex={0}
         role="region"
-        aria-label="Tabela de vendas e metas por concessionária — role para consultar todas as lojas"
+        aria-label={tr(
+          locale,
+          "Tabela de vendas e metas por concessionária — role para consultar todas as lojas",
+          "Sales and goals by dealer — scroll to view all stores"
+        )}
       >
         <table className="min-w-[760px] w-full text-left">
           <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.13em] text-slate-500">
             <tr>
-              <th className="px-5 py-3">Concessionária / fonte</th>
-              <th className="px-4 py-3">UF</th>
+              <th className="px-5 py-3">
+                {tr(locale, "Concessionária / fonte", "Dealer / source")}
+              </th>
+              <th className="px-4 py-3">{tr(locale, "UF", "State")}</th>
               <th className="px-4 py-3 text-right">Leads</th>
-              <th className="px-4 py-3 text-right">Meta leads · unidade</th>
-              <th className="px-4 py-3 text-right">Vendas</th>
-              <th className="px-4 py-3 text-right">Meta vendas · unidade</th>
-              <th className="px-5 py-3 text-right">Conversão</th>
+              <th className="px-4 py-3 text-right">
+                {tr(locale, "Meta leads · unidade", "Lead goal · unit")}
+              </th>
+              <th className="px-4 py-3 text-right">
+                {tr(locale, "Vendas", "Sales")}
+              </th>
+              <th className="px-4 py-3 text-right">
+                {tr(locale, "Meta vendas · unidade", "Sales goal · unit")}
+              </th>
+              <th className="px-5 py-3 text-right">
+                {tr(locale, "Conversão", "Conversion")}
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-xs">
@@ -1297,19 +1510,20 @@ function DealerPerformanceCard({
                     title={row.dealer}
                   >
                     <span className="block truncate">
-                      {row.dealer || "Não informado"}
+                      {row.dealer || tr(locale, "Não informado", "N/A")}
                     </span>
                     <span
                       className={`mt-1 inline-flex rounded-full border px-1.5 py-0.5 text-[9px] font-bold ${row.official ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-800"}`}
                     >
                       {row.official
-                        ? "Cadastro oficial"
-                        : "Cadastro por arquivo"}
+                        ? tr(locale, "Cadastro oficial", "Official registry")
+                        : tr(locale, "Cadastro por arquivo", "File registry")}
                     </span>
                     {row.sourceLabels.length ? (
                       <details className="mt-1 text-[11px] font-normal text-slate-500">
                         <summary className="cursor-pointer list-none underline decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
-                          Fontes originais ({row.sourceLabels.length})
+                          {tr(locale, "Fontes originais", "Original sources")} (
+                          {row.sourceLabels.length})
                         </summary>
                         <ul className="mt-1 space-y-0.5 leading-4">
                           {row.sourceLabels.map(source => (
@@ -1320,13 +1534,13 @@ function DealerPerformanceCard({
                     ) : null}
                   </td>
                   <td className="px-4 py-3 text-slate-500">
-                    {row.state || "N/D"}
+                    {row.state || tr(locale, "N/D", "N/A")}
                   </td>
                   <td className="px-4 py-3 text-right font-bold text-slate-900">
-                    {numberFormat(row.leads)}
+                    {numberFormat(row.leads, locale)}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    {performanceNumber(row.leadGoal, available)}
+                    {performanceNumber(row.leadGoal, available, locale)}
                     <GroupGoalBadge
                       value={row.leadGoal}
                       groups={
@@ -1334,13 +1548,14 @@ function DealerPerformanceCard({
                           .get(row.dealer)
                           ?.filter(group => group.kind === "lead-goals") ?? []
                       }
+                      locale={locale}
                     />
                   </td>
                   <td className="px-4 py-3 text-right">
-                    {performanceNumber(row.sales, available)}
+                    {performanceNumber(row.sales, available, locale)}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    {performanceNumber(row.salesGoal, available)}
+                    {performanceNumber(row.salesGoal, available, locale)}
                     <GroupGoalBadge
                       value={row.salesGoal}
                       groups={
@@ -1348,17 +1563,24 @@ function DealerPerformanceCard({
                           .get(row.dealer)
                           ?.filter(group => group.kind === "sales-goals") ?? []
                       }
+                      locale={locale}
                     />
                   </td>
                   <td className="px-5 py-3 text-right">
-                    {performancePercent(row.conversionRate, available)}
+                    {performancePercent(row.conversionRate, available, locale)}
                   </td>
                 </tr>
               ))
             ) : (
               <tr>
                 <td colSpan={7}>
-                  <EmptyDistribution label="Nenhuma concessionária corresponde à consulta." />
+                  <EmptyDistribution
+                    label={tr(
+                      locale,
+                      "Nenhuma concessionária corresponde à consulta.",
+                      "No dealer matches this search."
+                    )}
+                  />
                 </td>
               </tr>
             )}
@@ -1367,11 +1589,19 @@ function DealerPerformanceCard({
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
         <span>
-          {filteredRows.length} concessionárias · Os totais acima permanecem os
-          do período.
+          {filteredRows.length}{" "}
+          {tr(
+            locale,
+            "concessionárias · Os totais acima permanecem os do período.",
+            "dealers · totals above remain for the selected period."
+          )}
         </span>
         <span className="text-[11px] text-slate-400">
-          Role para consultar todas as lojas
+          {tr(
+            locale,
+            "Role para consultar todas as lojas",
+            "Scroll to view all stores"
+          )}
         </span>
       </div>
       <div className="border-t border-slate-100 px-5 py-4 text-xs leading-5 text-slate-500">
@@ -1379,12 +1609,20 @@ function DealerPerformanceCard({
           <span>
             {performance.sourceName ? `Fonte: ${performance.sourceName}. ` : ""}
             {performance.updatedAt
-              ? formatImportedAt(performance.updatedAt)
-              : "Atualização da fonte não informada."}
+              ? formatImportedAt(performance.updatedAt, locale)
+              : tr(
+                  locale,
+                  "Atualização da fonte não informada.",
+                  "Source update time unavailable."
+                )}
           </span>
         ) : (
           <span>
-            Fonte de vendas e metas por concessionária ainda não configurada.
+            {tr(
+              locale,
+              "Fonte de vendas e metas por concessionária ainda não configurada.",
+              "Sales and dealer-goal source is not configured yet."
+            )}
           </span>
         )}
       </div>
@@ -1395,9 +1633,11 @@ function DealerPerformanceCard({
 function DailyChart({
   daily,
   showPace = true,
+  locale = "pt-BR",
 }: {
   daily: V2DailyPoint[];
   showPace?: boolean;
+  locale?: LeadsLocale;
 }) {
   const channelKeys = useMemo(
     () =>
@@ -1419,13 +1659,35 @@ function DailyChart({
     [channelKeys, daily]
   );
   if (!daily.length)
-    return <EmptyDistribution label="Sem dados diários para este período." />;
+    return (
+      <EmptyDistribution
+        label={tr(
+          locale,
+          "Sem dados diários para este período.",
+          "No daily data for this period."
+        )}
+      />
+    );
   if (daily.every(item => item.sourceAvailable === false))
     return (
-      <EmptyDistribution label="Aguardando atualização da fonte para este período" />
+      <EmptyDistribution
+        label={tr(
+          locale,
+          "Aguardando atualização da fonte para este período",
+          "Awaiting source update for this period"
+        )}
+      />
     );
   if (!daily.some(item => item.total != null && item.total > 0))
-    return <EmptyDistribution label="Nenhum Lead no período selecionado." />;
+    return (
+      <EmptyDistribution
+        label={tr(
+          locale,
+          "Nenhum Lead no período selecionado.",
+          "No Leads in the selected period."
+        )}
+      />
+    );
   return (
     <div className="px-3 pb-5 pt-3 sm:px-5">
       <div className="mb-3 flex flex-wrap gap-x-4 gap-y-2 text-[11px] text-slate-500">
@@ -1443,19 +1705,24 @@ function DailyChart({
           </span>
         ))}
         <span className="inline-flex items-center gap-1.5">
-          <i className="h-2 w-2 rounded-full bg-slate-800" /> Real acumulado
+          <i className="h-2 w-2 rounded-full bg-slate-800" />{" "}
+          {tr(locale, "Real acumulado", "Cumulative actuals")}
         </span>
         {showPace ? (
           <span className="inline-flex items-center gap-1.5">
             <i className="h-2 w-2 rounded-full border border-dashed border-blue-600" />{" "}
-            Pace acumulado
+            {tr(locale, "Pace acumulado", "Cumulative pace")}
           </span>
         ) : null}
       </div>
       <div
         className="overflow-x-auto"
         role="region"
-        aria-label="Gráfico diário de Leads, com totais sobre as barras"
+        aria-label={tr(
+          locale,
+          "Gráfico diário de Leads, com totais sobre as barras",
+          "Daily Lead chart with totals above the bars"
+        )}
         tabIndex={0}
       >
         <div
@@ -1472,7 +1739,7 @@ function DailyChart({
               <CartesianGrid stroke="#eef1f4" vertical={false} />
               <XAxis
                 dataKey="date"
-                tickFormatter={compactDate}
+                tickFormatter={value => compactDate(String(value), locale)}
                 tick={{ fill: "#94a3b8", fontSize: 10 }}
                 axisLine={false}
                 tickLine={false}
@@ -1498,11 +1765,11 @@ function DailyChart({
                 tickLine={false}
               />
               <Tooltip
-                labelFormatter={label => fullDate(String(label))}
+                labelFormatter={label => fullDate(String(label), locale)}
                 formatter={(value: unknown, name: string) => [
                   typeof value === "number"
-                    ? numberFormat(value)
-                    : "Indisponível",
+                    ? numberFormat(value, locale)
+                    : tr(locale, "Indisponível", "Unavailable"),
                   name,
                 ]}
                 contentStyle={{
@@ -1545,7 +1812,7 @@ function DailyChart({
                 yAxisId="lines"
                 type="monotone"
                 dataKey="cumulative"
-                name="Real acumulado"
+                name={tr(locale, "Real acumulado", "Cumulative actuals")}
                 stroke="#1e293b"
                 strokeWidth={2.5}
                 dot={false}
@@ -1556,7 +1823,7 @@ function DailyChart({
                   yAxisId="lines"
                   type="monotone"
                   dataKey="pace"
-                  name="Pace acumulado"
+                  name={tr(locale, "Pace acumulado", "Cumulative pace")}
                   stroke="#2563eb"
                   strokeWidth={1.8}
                   strokeDasharray="5 4"
@@ -1577,17 +1844,27 @@ function OverviewTab({
   onGoalUpdated,
   onReloadMonth,
   canManage,
+  clientView = false,
+  overviewOnly = false,
+  filters,
+  locale = "pt-BR",
 }: {
   data: V2LeadsResponse;
   onGoalUpdated: () => void;
   onReloadMonth: () => Promise<LeadsReloadResult>;
   canManage: boolean;
+  clientView?: boolean;
+  overviewOnly?: boolean;
+  filters: V2DashboardFilters;
+  locale?: "pt-BR" | "en";
 }) {
   return (
     <div className="space-y-4">
       {data.historicalPace ? (
         <V2HistoricalLeadPaceCard
           data={data.historicalPace}
+          clientView={clientView}
+          locale={locale}
           actions={
             <div className="flex flex-wrap items-center gap-2">
               <V2LeadsReloadButton
@@ -1595,6 +1872,7 @@ function OverviewTab({
                 onReload={onReloadMonth}
                 syncExternal={canManage}
                 showFeedback={false}
+                locale={locale}
               />
               {canManage ? (
                 <V2MonthlyGoalEditor
@@ -1612,53 +1890,120 @@ function OverviewTab({
           onUpdated={onGoalUpdated}
           onReloadMonth={onReloadMonth}
           canManage={canManage}
+          locale={locale}
         />
       )}
       <Card className="overflow-hidden">
         <CardHeading
-          eyebrow="Evolução diária"
-          title="Leads por dia e canal"
+          eyebrow={tr(locale, "Evolução diária", "Daily evolution")}
+          title={tr(
+            locale,
+            "Leads por dia e canal",
+            "Leads by day and channel"
+          )}
           description={
             data.historicalPace
-              ? "Barras por canal e realizado acumulado do período. O plano e a projeção mensal estão na curva histórica acima."
-              : "Barras empilhadas com o real acumulado e o pace retornado pela API."
+              ? tr(
+                  locale,
+                  "Barras por canal e realizado acumulado do período. O plano e a projeção mensal estão na curva histórica acima.",
+                  "Bars by channel and cumulative actuals for the period. The plan and monthly projection are in the historical curve above."
+                )
+              : tr(
+                  locale,
+                  "Barras empilhadas com o real acumulado e o pace retornado pela API.",
+                  "Stacked bars with cumulative actuals and the pace returned by the API."
+                )
           }
           icon={TrendingUp}
         />
-        <DailyChart daily={data.daily} showPace={!data.historicalPace} />
+        <DailyChart
+          daily={data.daily}
+          showPace={!data.historicalPace}
+          locale={locale}
+        />
       </Card>
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card className="overflow-hidden lg:col-span-2">
-          <CardHeading title="Distribuição por canal" icon={BarChart3} />
+      {canManage && !clientView ? (
+        <V2ModelDeliveryCard
+          items={data.models}
+          total={data.summary.total}
+          locale={locale}
+        />
+      ) : null}
+      <div className={`grid gap-4 ${clientView ? "" : "lg:grid-cols-2"}`}>
+        {!clientView ? (
+          <Card className="overflow-hidden">
+            <CardHeading
+              title={tr(
+                locale,
+                "Distribuição por canal",
+                "Channel distribution"
+              )}
+              icon={BarChart3}
+            />
+            <DistributionList
+              items={data.channels}
+              limit={data.channels.length}
+            />
+          </Card>
+        ) : null}
+        <Card className="overflow-hidden">
+          <CardHeading
+            title={tr(locale, "Top 10 estados", "Top 10 states")}
+            icon={MapPin}
+          />
           <DistributionList
-            items={data.channels}
-            limit={data.channels.length}
+            items={[...data.states]
+              .filter(item => resolveBrazilianState(item.label) !== null)
+              .sort(
+                (a, b) =>
+                  b.count - a.count || a.label.localeCompare(b.label, "pt-BR")
+              )}
+            limit={10}
           />
         </Card>
-        <Card className="overflow-hidden">
-          <CardHeading title="Distribuição por estado" icon={MapPin} />
-          <DistributionList items={data.states} />
-        </Card>
-        <Card className="overflow-hidden">
-          <CardHeading title="Distribuição por concessionária" icon={Users} />
-          <DistributionList items={data.dealers} />
-        </Card>
       </div>
-      <DealerPerformanceCard
-        data={data}
-        onUpdated={onGoalUpdated}
-        canManage={canManage}
-      />
-      {data.notes.length ? <Notes notes={data.notes} /> : null}
+      {overviewOnly ? (
+        <V2CommercialSummary
+          performance={data.dealerPerformance}
+          competence={data.pacing.competence}
+          canManage={false}
+          onUpdated={onGoalUpdated}
+          locale={locale}
+          generalComparable={
+            !filters.model &&
+            !filters.channel &&
+            !filters.campaign &&
+            !filters.dealer &&
+            !filters.search &&
+            filters.dateFrom.slice(0, 7) === filters.dateTo.slice(0, 7)
+          }
+        />
+      ) : (
+        <DealerPerformanceCard
+          data={data}
+          onUpdated={onGoalUpdated}
+          canManage={canManage}
+          filters={filters}
+          locale={locale}
+        />
+      )}
+      {data.notes.length ? <Notes notes={data.notes} locale={locale} /> : null}
     </div>
   );
 }
 
-function Notes({ notes }: { notes: string[] }) {
+function Notes({
+  notes,
+  locale = "pt-BR",
+}: {
+  notes: string[];
+  locale?: LeadsLocale;
+}) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
       <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
-        <CircleHelp className="h-4 w-4 text-slate-400" /> Notas da fonte
+        <CircleHelp className="h-4 w-4 text-slate-400" />{" "}
+        {tr(locale, "Notas da fonte", "Source notes")}
       </div>
       <ul className="mt-2 grid gap-1 text-xs leading-5 text-slate-500 md:grid-cols-2">
         {notes.map(note => (
@@ -1669,14 +2014,24 @@ function Notes({ notes }: { notes: string[] }) {
   );
 }
 
-function RegionsTab({ data }: { data: V2LeadsResponse }) {
+function RegionsTab({
+  data,
+  locale = "pt-BR",
+}: {
+  data: V2LeadsResponse;
+  locale?: LeadsLocale;
+}) {
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <Card className="overflow-hidden">
         <CardHeading
-          eyebrow="Geografia"
-          title="Leads por estado"
-          description="Distribuição conforme o campo de estado recebido."
+          eyebrow={tr(locale, "Geografia", "Geography")}
+          title={tr(locale, "Leads por estado", "Leads by state")}
+          description={tr(
+            locale,
+            "Distribuição conforme o campo de estado recebido.",
+            "Distribution based on the received state field."
+          )}
           icon={MapPin}
         />
         <div className="max-h-[520px] overflow-y-auto">
@@ -1685,41 +2040,63 @@ function RegionsTab({ data }: { data: V2LeadsResponse }) {
       </Card>
       <Card className="overflow-hidden">
         <CardHeading
-          eyebrow="Geografia"
-          title="Leads por cidade"
-          description="Cidades com maior volume no período."
+          eyebrow={tr(locale, "Geografia", "Geography")}
+          title={tr(locale, "Leads por cidade", "Leads by city")}
+          description={tr(
+            locale,
+            "Cidades com maior volume no período.",
+            "Cities with the highest volume in the period."
+          )}
           icon={MapPin}
         />
         <DistributionList items={data.cities} limit={12} />
       </Card>
       <Card className="overflow-hidden lg:col-span-2">
-        <CardHeading title="Leitura regional" icon={TrendingUp} />
+        <CardHeading
+          title={tr(locale, "Leitura regional", "Regional view")}
+          icon={TrendingUp}
+        />
         <div className="grid gap-3 p-5 sm:grid-cols-3">
           <SummaryFact
-            label="Estados identificados"
-            value={numberFormat(data.summary.states)}
+            label={tr(locale, "Estados identificados", "Identified states")}
+            value={numberFormat(data.summary.states, locale)}
           />
           <SummaryFact
-            label="Cidades identificadas"
-            value={numberFormat(data.summary.cities)}
+            label={tr(locale, "Cidades identificadas", "Identified cities")}
+            value={numberFormat(data.summary.cities, locale)}
           />
           <SummaryFact
-            label="Estado líder"
-            value={data.summary.topState?.label ?? "Indisponível"}
+            label={tr(locale, "Estado líder", "Top state")}
+            value={
+              data.summary.topState?.label ??
+              tr(locale, "Indisponível", "Unavailable")
+            }
           />
         </div>
       </Card>
       <div className="lg:col-span-2">
-        <V2RegionalModelMatrix data={data.regionalModels} />
+        <V2RegionalModelMatrix data={data.regionalModels} locale={locale} />
       </div>
     </div>
   );
 }
 
-function CrmDonut({ items }: { items: V2DistributionItem[] }) {
+function CrmDonut({
+  items,
+  locale = "pt-BR",
+}: {
+  items: V2DistributionItem[];
+  locale?: LeadsLocale;
+}) {
   if (!items.length)
     return (
-      <EmptyDistribution label="CRM indisponível para os metadados atuais." />
+      <EmptyDistribution
+        label={tr(
+          locale,
+          "CRM indisponível para os metadados atuais.",
+          "CRM is unavailable for the current metadata."
+        )}
+      />
     );
   return (
     <div className="flex flex-col items-center gap-4 p-5 sm:flex-row sm:justify-center">
@@ -1778,15 +2155,18 @@ function CrmDonut({ items }: { items: V2DistributionItem[] }) {
 function StoresCrmTab({
   clientMode,
   canManage,
+  locale = "pt-BR",
 }: {
   clientMode: boolean;
   canManage: boolean;
+  locale?: LeadsLocale;
 }) {
   return (
     <V2DispatchControl
       authenticated
       clientMode={clientMode}
       canManage={canManage}
+      locale={locale}
       embedded
     />
   );
@@ -1798,12 +2178,14 @@ function LeadsTableTab({
   onPage,
   clientMode,
   isBusy,
+  locale = "pt-BR",
 }: {
   data: V2LeadsResponse;
   filters: V2Filters;
   onPage: (page: number) => void;
   clientMode: boolean;
   isBusy: boolean;
+  locale?: LeadsLocale;
 }) {
   const totalPages = Math.max(
     1,
@@ -1813,9 +2195,9 @@ function LeadsTableTab({
   return (
     <Card className="overflow-hidden">
       <CardHeading
-        eyebrow="Registros"
-        title="Leads recentes"
-        description={`${numberFormat(data.recent.total)} registros encontrados com os filtros aplicados.`}
+        eyebrow={tr(locale, "Registros", "Records")}
+        title={tr(locale, "Leads recentes", "Recent Leads")}
+        description={`${numberFormat(data.recent.total, locale)} ${tr(locale, "registros encontrados com os filtros aplicados.", "records found with the applied filters.")}`}
         icon={Users}
         action={
           <V2LeadsExportButton
@@ -1823,6 +2205,7 @@ function LeadsTableTab({
             count={data.recent.total}
             clientMode={clientMode}
             disabled={isBusy || data.status !== "READY"}
+            locale={locale}
           />
         }
       />
@@ -1831,13 +2214,13 @@ function LeadsTableTab({
           <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.13em] text-slate-500">
             <tr>
               {[
-                "Data",
+                tr(locale, "Data", "Date"),
                 "Lead",
-                "Modelo",
-                "Canal",
-                "Campanha",
-                "Concessionária",
-                "Cidade/UF",
+                tr(locale, "Modelo", "Model"),
+                tr(locale, "Canal", "Channel"),
+                tr(locale, "Campanha", "Campaign"),
+                tr(locale, "Concessionária", "Dealer"),
+                tr(locale, "Cidade/UF", "City/State"),
                 "CRM",
               ].map(label => (
                 <th key={label} className="px-4 py-3">
@@ -1852,11 +2235,11 @@ function LeadsTableTab({
                 <tr key={row.id} className="transition hover:bg-slate-50">
                   <td className="whitespace-nowrap px-4 py-3 text-slate-600">
                     <span className="font-semibold text-slate-800">
-                      {fullDate(row.date)}
+                      {fullDate(row.date, locale)}
                     </span>
                     {row.hour == null ? null : (
                       <span className="ml-2 text-slate-400">
-                        {formatHour(row.hour)}
+                        {formatHour(row.hour, locale)}
                       </span>
                     )}
                   </td>
@@ -1864,35 +2247,36 @@ function LeadsTableTab({
                     className="max-w-[190px] truncate px-4 py-3 font-semibold text-slate-800"
                     title={clientMode ? undefined : row.name}
                   >
-                    {leadNameForMode(row.name, clientMode)}
+                    {leadNameForMode(row.name, clientMode, locale)}
                   </td>
                   <td className="px-4 py-3 text-slate-600">
-                    {row.model || "N/D"}
+                    {row.model || tr(locale, "N/D", "N/A")}
                     <span className="block text-[11px] text-slate-400">
                       {row.version || ""}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-slate-600">
-                    {row.channel || "N/D"}
+                    {row.channel || tr(locale, "N/D", "N/A")}
                   </td>
                   <td
                     className="max-w-[180px] truncate px-4 py-3 text-slate-600"
                     title={row.campaign}
                   >
-                    {row.campaign || "N/D"}
+                    {row.campaign || tr(locale, "N/D", "N/A")}
                   </td>
                   <td
                     className="max-w-[180px] truncate px-4 py-3 text-slate-600"
                     title={row.dealer}
                   >
-                    {row.dealer || "N/D"}
+                    {row.dealer || tr(locale, "N/D", "N/A")}
                   </td>
                   <td className="px-4 py-3 text-slate-600">
-                    {[row.city, row.state].filter(Boolean).join(" / ") || "N/D"}
+                    {[row.city, row.state].filter(Boolean).join(" / ") ||
+                      tr(locale, "N/D", "N/A")}
                   </td>
                   <td className="px-4 py-3">
                     <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">
-                      {row.crm || "N/D"}
+                      {row.crm || tr(locale, "N/D", "N/A")}
                     </span>
                   </td>
                 </tr>
@@ -1900,7 +2284,13 @@ function LeadsTableTab({
             ) : (
               <tr>
                 <td colSpan={8}>
-                  <EmptyDistribution label="Nenhum lead encontrado com os filtros atuais." />
+                  <EmptyDistribution
+                    label={tr(
+                      locale,
+                      "Nenhum lead encontrado com os filtros atuais.",
+                      "No Lead found with the current filters."
+                    )}
+                  />
                 </td>
               </tr>
             )}
@@ -1909,13 +2299,14 @@ function LeadsTableTab({
       </div>
       <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-3 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
         <span>
-          Página {currentPage} de {totalPages}
+          {tr(locale, "Página", "Page")} {currentPage} {tr(locale, "de", "of")}{" "}
+          {totalPages}
         </span>
         <div className="flex items-center gap-2">
           <button
             type="button"
-            aria-label="Página anterior"
-            title="Página anterior"
+            aria-label={tr(locale, "Página anterior", "Previous page")}
+            title={tr(locale, "Página anterior", "Previous page")}
             disabled={isBusy || currentPage <= 1}
             onClick={() => onPage(currentPage - 1)}
             className="rounded-lg border border-slate-200 p-2 disabled:opacity-35"
@@ -1924,8 +2315,8 @@ function LeadsTableTab({
           </button>
           <button
             type="button"
-            aria-label="Próxima página"
-            title="Próxima página"
+            aria-label={tr(locale, "Próxima página", "Next page")}
+            title={tr(locale, "Próxima página", "Next page")}
             disabled={isBusy || currentPage >= totalPages}
             onClick={() => onPage(currentPage + 1)}
             className="rounded-lg border border-slate-200 p-2 disabled:opacity-35"
@@ -1984,10 +2375,16 @@ export default function V2LeadsDashboard({
   authenticated,
   clientMode = true,
   canManage = false,
+  clientView = false,
+  overviewOnly = false,
+  locale = "pt-BR",
 }: {
   authenticated: boolean;
   clientMode?: boolean;
   canManage?: boolean;
+  clientView?: boolean;
+  overviewOnly?: boolean;
+  locale?: "pt-BR" | "en";
 }) {
   const [cutoff, setCutoff] = useState(() => getDashboardCutoffDate());
   useEffect(() => {
@@ -2026,9 +2423,22 @@ export default function V2LeadsDashboard({
     setApplied(advance);
   }, [cutoff]);
   const [dateError, setDateError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<V2Tab>(resolveInitialLeadsTab);
+  const [requestedTab, setActiveTab] = useState<V2Tab>(() =>
+    overviewOnly ? "Visão Geral" : resolveInitialLeadsTab()
+  );
+  const activeTab: V2Tab = overviewOnly ? "Visão Geral" : requestedTab;
+  useEffect(() => {
+    if (!overviewOnly) return;
+    setActiveTab("Visão Geral");
+    const url = new URL(window.location.href);
+    if (url.searchParams.has("tab")) {
+      url.searchParams.delete("tab");
+      window.history.replaceState({}, "", url);
+    }
+  }, [overviewOnly]);
   const dashboardTopRef = useRef<HTMLDivElement>(null);
   const selectTab = (tab: V2Tab) => {
+    if (overviewOnly && tab !== "Visão Geral") return;
     setActiveTab(tab);
     const url = new URL(window.location.href);
     if (tab === "Lojas & CRM") url.searchParams.set("tab", "stores");
@@ -2121,8 +2531,16 @@ export default function V2LeadsDashboard({
     const run = async (): Promise<LeadsReloadResult> => {
       notify(
         canManage
-          ? "Lendo planilha-base e importando. Aguarde a confirmação; a base anterior permanece disponível."
-          : "Consultando os dados armazenados. Aguarde a confirmação dos indicadores."
+          ? tr(
+              locale,
+              "Lendo planilha-base e importando. Aguarde a confirmação; a base anterior permanece disponível.",
+              "Reading and importing the base spreadsheet. Please wait for confirmation; the previous source remains available."
+            )
+          : tr(
+              locale,
+              "Consultando os dados armazenados. Aguarde a confirmação dos indicadores.",
+              "Reading stored data. Please wait for the indicators to be confirmed."
+            )
       );
       const previousImport = data?.source.importedAt;
       let syncResult: LeadsSyncResult | undefined;
@@ -2158,13 +2576,19 @@ export default function V2LeadsDashboard({
         if (result.error) throw result.error;
         const fresh = result.data;
         if (!fresh || fresh.status !== "READY")
-          throw new Error("Fonte de Leads não configurada.");
+          throw new Error(
+            tr(
+              locale,
+              "Fonte de Leads não configurada.",
+              "Leads source is not configured."
+            )
+          );
         if (
           syncResult &&
           (fresh.source.importedAt !== syncResult.importedAt ||
             fresh.source.totalRows !== syncResult.totalRows)
         )
-          throw new LeadsReloadVersionNotConfirmedError();
+          throw new LeadsReloadVersionNotConfirmedError(locale);
         const summary: LeadsReloadResult = {
           competence: fresh.pacing.competence,
           total: fresh.summary.total,
@@ -2185,11 +2609,13 @@ export default function V2LeadsDashboard({
               }
             : {}),
         };
-        notify(describeLeadsReload(summary));
+        notify(describeLeadsReload(summary, locale));
         return summary;
       } catch (error) {
         if (syncResult) {
-          const confirmationError = new LeadsReloadVersionNotConfirmedError();
+          const confirmationError = new LeadsReloadVersionNotConfirmedError(
+            locale
+          );
           notify(confirmationError.message);
           throw confirmationError;
         }
@@ -2199,10 +2625,18 @@ export default function V2LeadsDashboard({
             (code === "FORBIDDEN"
               ? "Apenas administradores podem importar a planilha-base. Nenhuma permissão foi alterada; os dados anteriores foram preservados."
               : code === "UNAUTHORIZED"
-                ? "Sua sessão expirou. Faça login novamente para atualizar os dados."
+                ? tr(
+                    locale,
+                    "Sua sessão expirou. Faça login novamente para atualizar os dados.",
+                    "Your session expired. Sign in again to refresh the data."
+                  )
                 : code === "PRECONDITION_FAILED"
                   ? "Conexão Google pendente: forneça a conta de serviço pelo cartão seguro e compartilhe a planilha-base como Leitor com seu client_email. A base armazenada foi preservada."
-                  : "Não foi possível atualizar a base. Os dados anteriores foram preservados; tente novamente.")
+                  : tr(
+                      locale,
+                      "Não foi possível atualizar a base. Os dados anteriores foram preservados; tente novamente.",
+                      "Unable to refresh the source. The previous data was preserved; please try again."
+                    ))
         );
         throw error;
       }
@@ -2222,7 +2656,12 @@ export default function V2LeadsDashboard({
       ref={dashboardTopRef}
       className="min-h-[calc(100dvh-var(--mg-app-header-height,68px))] space-y-4"
     >
-      <LeadsSectionNavigation activeTab={activeTab} onChange={selectTab} />
+      <LeadsSectionNavigation
+        activeTab={activeTab}
+        onChange={selectTab}
+        overviewOnly={overviewOnly}
+        locale={locale}
+      />
       {reloadNotice ? (
         <div
           role={
@@ -2244,11 +2683,15 @@ export default function V2LeadsDashboard({
         className="space-y-4"
       >
         {activeTab === "Lojas & CRM" ? (
-          <StoresCrmTab clientMode={clientMode} canManage={canManage} />
+          <StoresCrmTab
+            clientMode={clientMode}
+            canManage={canManage}
+            locale={locale}
+          />
         ) : dashboardQuery.isLoading && !data ? (
           <LoadingPanel />
         ) : !data ? (
-          <QueryError onRetry={refresh} />
+          <QueryError onRetry={refresh} locale={locale} />
         ) : (
           <>
             <FilterBar
@@ -2275,28 +2718,39 @@ export default function V2LeadsDashboard({
               onPreset={choosePreset}
               isFetching={dashboardQuery.isFetching || refreshBusy}
               clientMode={clientMode}
+              locale={locale}
             />
             {data.status === "NOT_CONFIGURED" ? (
-              <NotConfiguredPanel data={data} />
+              <NotConfiguredPanel data={data} locale={locale} />
             ) : (
               <>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="text-xs font-semibold text-slate-500">
-                      Período: {fullDate(data.period.dateFrom)} a{" "}
-                      {fullDate(data.period.dateTo)}
+                      {tr(locale, "Período:", "Period:")}{" "}
+                      {fullDate(data.period.dateFrom, locale)}{" "}
+                      {tr(locale, "a", "to")}{" "}
+                      {fullDate(data.period.dateTo, locale)}
                     </p>
                     <p className="mt-1 text-[11px] text-slate-400">
                       {canManage
-                        ? `${data.source.name || "Importação autenticada"} · ${formatImportedAt(data.source.importedAt)} · atualização manual autenticada`
-                        : "Base autenticada · consulta dos dados já importados"}
+                        ? `${data.source.name || tr(locale, "Importação autenticada", "Authenticated import")} · ${formatImportedAt(data.source.importedAt, locale)} · ${tr(locale, "atualização manual autenticada", "authenticated manual refresh")}`
+                        : tr(
+                            locale,
+                            "Base autenticada · consulta dos dados já importados",
+                            "Authenticated source · reading imported data"
+                          )}
                     </p>
                     <p
                       className={`mt-1 text-[11px] ${data.source.latestLeadDate && data.source.latestLeadDate < data.period.dateTo ? "text-amber-700" : "text-slate-500"}`}
                     >
                       {data.source.latestLeadDate
-                        ? `Último dia disponível na base: ${fullDate(data.source.latestLeadDate)}.${data.source.latestLeadDate < data.period.dateTo ? " A fonte ainda não cobre a data final selecionada; é necessária uma nova importação externa." : ""}`
-                        : "A fonte não informa uma data de Lead disponível; o período não foi preenchido com zero."}
+                        ? `${tr(locale, "Último dia disponível na base:", "Latest day available in the source:")} ${fullDate(data.source.latestLeadDate, locale)}.${data.source.latestLeadDate < data.period.dateTo ? tr(locale, " A fonte ainda não cobre a data final selecionada; é necessária uma nova importação externa.", " The source does not yet cover the selected end date; a new external import is required.") : ""}`
+                        : tr(
+                            locale,
+                            "A fonte não informa uma data de Lead disponível; o período não foi preenchido com zero.",
+                            "The source does not report an available Lead date; the period was not filled with zero."
+                          )}
                     </p>
                   </div>
                   <div
@@ -2307,12 +2761,16 @@ export default function V2LeadsDashboard({
                     />
                     {data.source.latestLeadDate &&
                     data.source.latestLeadDate < data.period.dateTo
-                      ? `Fonte com dados até ${fullDate(data.source.latestLeadDate)}`
+                      ? `${tr(locale, "Fonte com dados até", "Source data through")} ${fullDate(data.source.latestLeadDate, locale)}`
                       : data.source.latestLeadDate
-                        ? "Fonte importada"
-                        : "Fonte sem data disponível"}{" "}
+                        ? tr(locale, "Fonte importada", "Imported source")
+                        : tr(
+                            locale,
+                            "Fonte sem data disponível",
+                            "Source date unavailable"
+                          )}{" "}
                     {dashboardQuery.isFetching || refreshBusy
-                      ? "· atualizando"
+                      ? tr(locale, "· atualizando", "· refreshing")
                       : ""}
                   </div>
                 </div>
@@ -2322,9 +2780,15 @@ export default function V2LeadsDashboard({
                     onGoalUpdated={refresh}
                     onReloadMonth={reloadMonthlyBase}
                     canManage={canManage}
+                    clientView={clientView}
+                    overviewOnly={overviewOnly}
+                    filters={applied}
+                    locale={locale}
                   />
                 ) : null}
-                {activeTab === "Regiões" ? <RegionsTab data={data} /> : null}
+                {activeTab === "Regiões" ? (
+                  <RegionsTab data={data} locale={locale} />
+                ) : null}
                 {activeTab === "Leads" ? (
                   <LeadsTableTab
                     data={data}
@@ -2332,6 +2796,7 @@ export default function V2LeadsDashboard({
                     onPage={changePage}
                     clientMode={clientMode}
                     isBusy={refreshBusy || dashboardQuery.isFetching}
+                    locale={locale}
                   />
                 ) : null}
               </>

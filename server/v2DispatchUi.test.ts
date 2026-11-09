@@ -10,7 +10,7 @@ const state = vi.hoisted(() => ({
   report: null as unknown,
   list: [] as unknown[],
   error: null as unknown,
-  role: "admin" as "admin" | "client" | "bbro",
+  role: "admin" as "admin" | "client" | "client_admin" | "bbro",
 }));
 vi.mock("@shared/dashboardDates", () => ({
   getDashboardCutoffDate: () => "2026-11-04",
@@ -158,16 +158,20 @@ describe("Lojas & CRM operational clone", () => {
     expect(html).toContain("04/nov");
     expect(html).not.toContain("05/nov");
     expect(html).not.toContain("Como ler");
-    expect(html.match(/<input[^>]+aria-label="Manual OK[^>]+>/)?.[0]).toContain(
-      'checked=""'
-    );
+    expect(
+      html.match(
+        /<input[^>]+aria-label="Integração API BBRO \(manual\) Check[^>]+>/
+      )?.[0]
+    ).toContain('checked=""');
     expect(html).not.toContain("OKs do arquivo");
     expect(html).toContain("Expandir planilha");
-    const checkbox = html.match(/<input[^>]+aria-label="Manual OK[^>]+>/)?.[0];
+    const checkbox = html.match(
+      /<input[^>]+aria-label="Integração API BBRO \(manual\) Check[^>]+>/
+    )?.[0];
     expect(checkbox).not.toContain('disabled=""');
   });
-  it("cliente vê nomes de CRM, mas o checkbox Manual fica somente leitura", () => {
-    state.role = "client";
+  it("ADM - Cliente vê nomes de CRM, mas o checkbox Check fica somente leitura", () => {
+    state.role = "client_admin";
     const html = renderToStaticMarkup(
       React.createElement(TestControl, {
         authenticated: true,
@@ -176,7 +180,9 @@ describe("Lojas & CRM operational clone", () => {
     );
     expect(html).toContain("Autobrand Recife");
     expect(html).toContain("Contato de teste restrito");
-    const checkbox = html.match(/<input[^>]+aria-label="Manual OK[^>]+>/)?.[0];
+    const checkbox = html.match(
+      /<input[^>]+aria-label="Integração API BBRO \(manual\) Check[^>]+>/
+    )?.[0];
     expect(checkbox).toContain('disabled=""');
   });
   it("BBRO vê nomes de CRM e pode editar o checkbox Manual", () => {
@@ -189,7 +195,9 @@ describe("Lojas & CRM operational clone", () => {
     );
     expect(html).toContain("Autobrand Recife");
     expect(html).toContain("Contato de teste restrito");
-    const checkbox = html.match(/<input[^>]+aria-label="Manual OK[^>]+>/)?.[0];
+    const checkbox = html.match(
+      /<input[^>]+aria-label="Integração API BBRO \(manual\) Check[^>]+>/
+    )?.[0];
     expect(checkbox).not.toContain('disabled=""');
   });
   it("does not invent zero volume or OK for a day awaiting source", () => {
@@ -221,9 +229,12 @@ describe("Lojas & CRM operational clone", () => {
     );
     expect(html).toContain("Volume indisponível na base de Leads");
     expect(
-      html.match(/<input[^>]+aria-label="Manual Pendente[^>]+>/)?.[0]
+      html.match(
+        /<input[^>]+aria-label="Integração API BBRO \(manual\) --[^>]+>/
+      )?.[0]
     ).not.toContain('checked=""');
-    expect(html).toContain("Pendente");
+    expect(html).toContain("--");
+    expect(html).not.toContain("Pendente");
   });
   it("announces source-read errors accessibly", () => {
     state.list = [];
@@ -272,7 +283,9 @@ describe("manual source provenance", () => {
         canManage: true,
       })
     );
-    const checkbox = html.match(/<input[^>]+aria-label="Manual OK[^>]+>/)?.[0];
+    const checkbox = html.match(
+      /<input[^>]+aria-label="Integração API BBRO \(manual\) Check[^>]+>/
+    )?.[0];
     expect(checkbox).toContain('checked=""');
     expect(html).toContain("Origem: Arquivo");
     expect(html).toContain("Histórico auditado anterior preservado");
@@ -304,7 +317,7 @@ describe("manual source provenance", () => {
       })
     );
     const checkbox = html.match(
-      /<input[^>]+aria-label="Manual Pendente[^>]+>/
+      /<input[^>]+aria-label="Integração API BBRO \(manual\) --[^>]+>/
     )?.[0];
     expect(checkbox).not.toContain('checked=""');
     expect(html).toContain("Atualizado por auditor-new");
@@ -339,7 +352,7 @@ describe("manual and lead status colors", () => {
     expect(currentManualValidation(cell)).toBe(cell.validation);
     expect(effectiveManualOk(cell)).toBe(false);
     const html = renderFixture();
-    expect(html).toContain('aria-label="Manual Pendente');
+    expect(html).toContain('aria-label="Integração API BBRO (manual) --');
     expect(html).not.toContain('style="background-color:#e8f4ef');
     expect(html).not.toContain('style="background-color:#17624f');
   });
@@ -361,7 +374,7 @@ describe("manual and lead status colors", () => {
     expect(currentManualValidation(cell)).toBeNull();
     expect(effectiveManualOk(cell)).toBe(false);
     const html = renderFixture();
-    expect(html).toContain('aria-label="Manual Pendente');
+    expect(html).toContain('aria-label="Integração API BBRO (manual) --');
     expect(html).not.toContain('style="background-color:#e8f4ef');
     expect(html).not.toContain('style="background-color:#17624f');
   });
@@ -373,7 +386,7 @@ describe("manual and lead status colors", () => {
     sourceOk.rows[0].cells[0].validation = null;
     state.report = sourceOk;
     let html = renderFixture();
-    expect(html).toContain('aria-label="Manual OK');
+    expect(html).toContain('aria-label="Integração API BBRO (manual) Check');
     expect(html).toContain('style="background-color:#e8f4ef;color:#145645"');
 
     const auditedOk = fixture();
@@ -387,7 +400,7 @@ describe("manual and lead status colors", () => {
     };
     state.report = auditedOk;
     html = renderFixture();
-    expect(html).toContain('aria-label="Manual OK');
+    expect(html).toContain('aria-label="Integração API BBRO (manual) Check');
     expect(html).toContain('style="background-color:#e8f4ef;color:#145645"');
   });
 
@@ -401,7 +414,7 @@ describe("manual and lead status colors", () => {
 
     expect(effectiveManualOk(cell)).toBe(false);
     const html = renderFixture();
-    expect(html).toContain('aria-label="Manual Pendente');
+    expect(html).toContain('aria-label="Integração API BBRO (manual) --');
     expect(html).not.toContain('style="background-color:#e8f4ef');
     expect(html).not.toContain('style="background-color:#17624f');
   });
@@ -415,7 +428,7 @@ describe("manual and lead status colors", () => {
     state.report = report;
 
     const html = renderFixture();
-    expect(html).toContain("OK registrado · Vol. Lead · 0");
+    expect(html).toContain("Check registrado · Vol. Lead · 0");
     expect(html).toContain('style="background-color:#17624f"');
     expect(html).toContain(">0</span>");
     expect(html).not.toContain("Volume indisponível na base de Leads");

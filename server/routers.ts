@@ -28,10 +28,16 @@ import {
   requireAdministrator,
   requireManualValidator,
   dashboardForClient,
+  dashboardForOverviewClient,
   dispatchForClient,
   controlForCRM,
   genericClientDataError,
 } from "./v2Permissions";
+import {
+  canAccessDispatch,
+  canAccessMediaPlan,
+  canExportLeads,
+} from "../shared/accountRoles";
 import {
   listV2Accounts,
   createV2Account,
@@ -114,7 +120,7 @@ const password = z
   .string()
   .min(8, "A senha deve ter ao menos 8 caracteres.")
   .max(200);
-const role = z.enum(["admin", "client", "bbro"]);
+const role = z.enum(["admin", "client", "client_admin", "bbro"]);
 const v2Procedure = publicProcedure.use(async ({ ctx, next }) => {
   const identity = await readV2Session(ctx.req);
   if (!identity)
@@ -131,6 +137,30 @@ const adminProcedure = v2Procedure.use(({ ctx, next }) => {
 });
 const manualProcedure = v2Procedure.use(({ ctx, next }) => {
   requireManualValidator(ctx.v2User);
+  return next({ ctx });
+});
+const mediaPlanReadProcedure = v2Procedure.use(({ ctx, next }) => {
+  if (!canAccessMediaPlan(ctx.v2User.role))
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Seu perfil acessa somente a Visão Geral.",
+    });
+  return next({ ctx });
+});
+const dispatchReadProcedure = v2Procedure.use(({ ctx, next }) => {
+  if (!canAccessDispatch(ctx.v2User.role))
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Seu perfil acessa somente a Visão Geral.",
+    });
+  return next({ ctx });
+});
+const exportReadProcedure = v2Procedure.use(({ ctx, next }) => {
+  if (!canExportLeads(ctx.v2User.role))
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Seu perfil acessa somente a Visão Geral.",
+    });
   return next({ ctx });
 });
 const ownerProcedure = adminProcedure.use(({ ctx, next }) => {
@@ -186,7 +216,7 @@ export const appRouter = router({
       .mutation(({ ctx, input }) => resetV2AccountPassword(input, ctx.v2User)),
   }),
   mediaPlan: router({
-    plans: v2Procedure.query(async ({ ctx }) => {
+    plans: mediaPlanReadProcedure.query(async ({ ctx }) => {
       try {
         return await readPlansWithProjections();
       } catch (error) {
@@ -238,7 +268,7 @@ export const appRouter = router({
       ),
   }),
   dispatch: router({
-    reports: v2Procedure.query(async ({ ctx }) => {
+    reports: dispatchReadProcedure.query(async ({ ctx }) => {
       const data = await listDispatchReports();
       return ctx.v2User.role === "admin"
         ? data
@@ -251,7 +281,7 @@ export const appRouter = router({
     report: adminProcedure
       .input(z.object({ reportId: z.number().int().positive() }))
       .query(({ input }) => getDispatchReport(input.reportId)),
-    leadControl: v2Procedure
+    leadControl: dispatchReadProcedure
       .input(z.object({ reportId: z.number().int().positive(), filters }))
       .query(async ({ ctx, input }) => {
         try {
@@ -390,13 +420,16 @@ export const appRouter = router({
     dashboard: v2Procedure.input(filters).query(async ({ ctx, input }) => {
       try {
         const data = await getV2Dashboard(input);
-        return ctx.v2User.role === "admin" ? data : dashboardForClient(data);
+        if (ctx.v2User.role === "admin") return data;
+        return ctx.v2User.role === "client"
+          ? dashboardForOverviewClient(data)
+          : dashboardForClient(data);
       } catch (error) {
         if (ctx.v2User.role !== "admin") genericClientDataError();
         throw error;
       }
     }),
-    exportCSV: v2Procedure
+    exportCSV: exportReadProcedure
       .input(filters.and(z.object({ clientMode: z.boolean().optional() })))
       .mutation(async ({ ctx, input }) => {
         try {

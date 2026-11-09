@@ -116,9 +116,14 @@ function normalizeRole(
   fallback: UserRole = "client"
 ): UserRole {
   if (value === undefined) return fallback;
-  if (value !== "admin" && value !== "client" && value !== "bbro")
+  if (
+    value !== "admin" &&
+    value !== "client" &&
+    value !== "client_admin" &&
+    value !== "bbro"
+  )
     invalidInput("Perfil de usuário inválido.");
-  return value;
+  return value as UserRole;
 }
 
 function normalizeId(value: unknown): number {

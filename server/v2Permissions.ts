@@ -1,12 +1,18 @@
-import { canValidateCRM } from "../shared/accountRoles";
+import {
+  canValidateCRM,
+  isAdministrator,
+  type UserRole,
+} from "../shared/accountRoles";
 import { TRPCError } from "@trpc/server";
-import type { UserRole } from "../shared/accountRoles";
 import {
   OFFICIAL_MODELS,
   UNIDENTIFIED_MODEL,
   resolveOfficialModel,
 } from "../shared/modelRegistry";
-import { groupedStateLabel } from "../shared/stateRegistry";
+import {
+  groupedStateLabel,
+  resolveBrazilianState,
+} from "../shared/stateRegistry";
 import type { V2Dashboard } from "../shared/v2Types";
 import {
   CRM_DEALERS,
@@ -17,7 +23,7 @@ import type { DispatchReport } from "../shared/v2Dispatch";
 export function requireAdministrator(
   user: { role?: UserRole } | null | undefined
 ): void {
-  if (user?.role !== "admin")
+  if (!isAdministrator(user?.role))
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "Permissão de administrador necessária.",
@@ -81,6 +87,52 @@ export function dashboardForClient(data: V2Dashboard): V2Dashboard {
     },
   };
 }
+
+/**
+ * Read-only projection for the new Client profile. It deliberately keeps only
+ * aggregate Overview data: options remain available to preserve the existing
+ * filter contract, while individual Leads, dealer rows and restricted-tab
+ * analysis are removed before the response leaves the server.
+ */
+export function dashboardForOverviewClient(data: V2Dashboard): V2Dashboard {
+  const clientData = dashboardForClient(data);
+  const {
+    dealerRegistry: _dealerRegistry,
+    regionalModels: _regionalModels,
+    modelAnalysis: _modelAnalysis,
+    ...withoutRestrictedAnalysis
+  } = clientData;
+  const states = clientData.states
+    .filter(item => resolveBrazilianState(item.label) !== null)
+    .sort(
+      (a, b) => b.count - a.count || a.label.localeCompare(b.label, "pt-BR")
+    )
+    .slice(0, 10);
+
+  return {
+    ...withoutRestrictedAnalysis,
+    // The Overview keeps the aggregate state card only; the parent presents
+    // these as Top 10 states and does not need the Regions matrix/city rows.
+    states,
+    channels: [],
+    cities: [],
+    dealers: [],
+    hours: [],
+    campaigns: [],
+    versions: [],
+    crm: [],
+    recent: { ...clientData.recent, rows: [] },
+    dealerPerformance: {
+      ...clientData.dealerPerformance,
+      rows: [],
+      groupedGoals: undefined,
+      unmapped: [],
+      unreconciledDealers: [],
+      sourceName: null,
+    },
+  };
+}
+
 export function dispatchForClient<T extends DispatchReport>(data: T): T {
   return {
     ...data,

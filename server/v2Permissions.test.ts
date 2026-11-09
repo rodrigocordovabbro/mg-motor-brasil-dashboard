@@ -1,15 +1,17 @@
 import { beforeEach, describe, it, expect, vi } from "vitest";
 import { CRM_DEALERS, OFFICIAL_DEALERS } from "../shared/dealerRegistry";
+import { BRAZILIAN_STATES, UNIDENTIFIED_STATE } from "../shared/stateRegistry";
 import {
   controlForCRM,
   dashboardForClient,
+  dashboardForOverviewClient,
   dispatchForClient,
   requireAdministrator,
 } from "./v2Permissions";
 import type { V2Dashboard } from "../shared/v2Types";
 import type { DispatchReport } from "../shared/v2Dispatch";
 const state = vi.hoisted(() => ({
-  role: "client" as "admin" | "client" | "bbro" | null,
+  role: "client" as "admin" | "client" | "client_admin" | "bbro" | null,
 }));
 vi.mock("./v2Auth", () => ({
   readV2Session: vi.fn(async () =>
@@ -40,11 +42,19 @@ vi.mock("./v2Commercial", () => ({
   readCommercialStatus: vi.fn(),
   removeCommercialSource: vi.fn(),
 }));
+vi.mock("./v2MediaPlanProjections", () => ({
+  readPlansWithProjections: vi.fn(async () => []),
+  readMediaPlanProjections: vi.fn(),
+  updateMediaPlanProjections: vi.fn(),
+}));
 vi.mock("./v2Db", () => ({
   getV2Goal: vi.fn(async () => 16600),
   saveV2Goal: vi.fn(),
 }));
 vi.mock("./v2Leads", () => ({ getV2Dashboard: vi.fn() }));
+vi.mock("./v2LeadsExport", () => ({
+  exportV2LeadsCSV: vi.fn(),
+}));
 vi.mock("./v2Dispatch", () => ({
   listDispatchReports: vi.fn(async () => []),
   getDispatchReport: vi.fn(),
@@ -63,6 +73,9 @@ import { listV2Accounts, createV2Account } from "./v2Accounts";
 import { getDispatchHistory, setDispatchManual } from "./v2Dispatch";
 import { removeCommercialSource } from "./v2Commercial";
 import { prepareLeadControl } from "./v2DispatchLeads";
+import { listDispatchReports } from "./v2Dispatch";
+import { readPlansWithProjections } from "./v2MediaPlanProjections";
+import { exportV2LeadsCSV } from "./v2LeadsExport";
 const filters = { dateFrom: "2026-11-01", dateTo: "2026-11-04" };
 function caller() {
   return appRouter.createCaller({
@@ -294,8 +307,33 @@ describe("permissões na API", () => {
     vi.mocked(getV2Dashboard).mockResolvedValue(d as any);
     expect((await caller().leads.dashboard(filters)).notes).toEqual(d.notes);
   });
-  it("cliente recebe nomes e totais, mas não recebe avisos técnicos", async () => {
+  it("cliente recebe somente agregados da Visão Geral, sem linhas ou análises restritas", async () => {
     const d = dashboard();
+    d.states = BRAZILIAN_STATES.slice(0, 12).map((state, index) => ({
+      label: state.name,
+      count: 12 - index,
+    }));
+    d.states.push({ label: UNIDENTIFIED_STATE, count: 1000 });
+    d.cities = [{ label: "Cidade privada", count: 2 }];
+    d.regionalModels = {
+      models: ["MG 4"],
+      regions: [{ label: "Região privada", total: 2, counts: { "MG 4": 2 } }],
+      states: [{ label: "Estado privado", total: 2, counts: { "MG 4": 2 } }],
+      total: 2,
+      unidentifiedModelCount: 0,
+    } as any;
+    d.modelAnalysis = { unclassified: 0, diagnostics: [] } as any;
+    d.dealerPerformance.rows = [
+      {
+        dealer: "Dealer privado",
+        state: "SP",
+        leads: 2,
+        leadGoal: null,
+        sales: null,
+        salesGoal: null,
+        conversionRate: null,
+      },
+    ];
     vi.mocked(getV2Dashboard).mockResolvedValue(d as any);
     const result = await caller().leads.dashboard(filters);
     expect(result.summary.total).toBe(2);
@@ -303,11 +341,49 @@ describe("permissões na API", () => {
     expect(result.notes).toEqual([]);
     expect(result.dealerPerformance.warnings).toEqual([]);
     expect(result.dealerPerformance.unmapped).toEqual([]);
+    expect(result.recent.rows).toEqual([]);
+    expect(result.dealerPerformance.rows).toEqual([]);
+    expect(result.states).toHaveLength(10);
+    expect(
+      result.states.some(state => state.label === UNIDENTIFIED_STATE)
+    ).toBe(false);
+    expect(result.regionalModels).toBeUndefined();
+    expect(result.modelAnalysis).toBeUndefined();
+    expect(result.cities).toEqual([]);
+    expect(JSON.stringify(result)).not.toContain("Pessoa privada de fixture");
+    expect(JSON.stringify(result)).not.toContain("Contato privado");
+    expect(JSON.stringify(result)).not.toContain("Cidade privada");
+  });
+  it("ADM - Cliente preserva a leitura legada sem receber avisos técnicos", async () => {
+    state.role = "client_admin";
+    const d = dashboard();
+    vi.mocked(getV2Dashboard).mockResolvedValue(d as any);
+    const result = await caller().leads.dashboard(filters);
     expect(JSON.stringify(result)).toContain("Pessoa privada de fixture");
     expect(JSON.stringify(result)).toContain("Contato privado");
     expect(result.recent.rows[0].dealer).toBe("Dealer original");
     expect(result.recent.rows[0].model).toBe(d.recent.rows[0].model);
     expect(result.recent.rows[0].state).toBe("São Paulo");
+  });
+  it("cliente é bloqueado antes de carregar Plano, Controle ou exportação", async () => {
+    const api = caller();
+    await expect(api.mediaPlan.plans()).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(api.dispatch.reports()).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(
+      api.dispatch.leadControl({ reportId: 1, filters })
+    ).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(
+      api.leads.exportCSV({ ...filters, clientMode: true })
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(readPlansWithProjections).not.toHaveBeenCalled();
+    expect(listDispatchReports).not.toHaveBeenCalled();
+    expect(exportV2LeadsCSV).not.toHaveBeenCalled();
   });
   it.each(["client", "bbro"] as const)(
     "%s recebe nomes de loja e responsáveis CRM no controle",

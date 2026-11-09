@@ -1,6 +1,10 @@
 import type { V2Filters } from "./v2Types";
 
-export type LeadsExportInput = V2Filters & { clientMode?: boolean };
+export type LeadsExportLocale = "pt-BR" | "en";
+export type LeadsExportInput = V2Filters & {
+  clientMode?: boolean;
+  locale?: LeadsExportLocale;
+};
 export type LeadsExportResult = {
   fileName: string;
   mimeType: "text/csv;charset=utf-8";
@@ -21,5 +25,6 @@ export function leadsExportFilterKey(input: LeadsExportInput) {
     dealer: input.dealer || "",
     search: input.search || "",
     clientMode: Boolean(input.clientMode),
+    locale: input.locale || "pt-BR",
   });
 }

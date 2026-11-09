@@ -42,12 +42,41 @@ const STICKY_COLUMNS = [
 ] as const;
 
 const DAILY_COLUMNS = [
-  { key: "syonet", label: "SYONET", width: 100 },
-  { key: "manual", label: "Manual", width: 220 },
-  { key: "volume", label: "Vol. Lead", width: 105 },
+  { key: "syonet", width: 100 },
+  { key: "manual", width: 220 },
+  { key: "volume", width: 105 },
 ] as const;
 
 type ManualFilter = "all" | "pending" | "ok";
+export type V2DispatchLocale = "pt-BR" | "en";
+
+type Locale = V2DispatchLocale;
+
+function t(locale: Locale, portuguese: string, english: string) {
+  return locale === "en" ? english : portuguese;
+}
+
+function intlLocale(locale: Locale) {
+  return locale === "en" ? "en-US" : "pt-BR";
+}
+
+function dailyColumnLabel(
+  key: (typeof DAILY_COLUMNS)[number]["key"],
+  locale: Locale
+) {
+  if (key === "syonet") return "SYONET";
+  if (key === "manual")
+    return t(
+      locale,
+      "Integração API BBRO (manual)",
+      "BBRO API integration (manual)"
+    );
+  return t(locale, "Vol. Lead", "Lead Vol.");
+}
+
+function availabilityLabel(locale: Locale) {
+  return t(locale, "N/D", "N/A");
+}
 
 type V2DispatchControlProps = {
   authenticated?: boolean;
@@ -56,26 +85,47 @@ type V2DispatchControlProps = {
   embedded?: boolean;
   filters?: V2Filters;
   onPeriodChange?: (dateFrom: string, dateTo: string) => void;
+  locale?: Locale;
 };
 
-function numberFormat(value: number | null) {
+function numberFormat(value: number | null, locale: Locale = "pt-BR") {
   if (value === null) return "—";
-  return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 }).format(
-    value
-  );
+  return new Intl.NumberFormat(intlLocale(locale), {
+    maximumFractionDigits: 0,
+  }).format(value);
 }
 
-function timestampFormat(value: string) {
+function timestampFormat(value: string, locale: Locale = "pt-BR") {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
-  return new Intl.DateTimeFormat("pt-BR", {
+  return new Intl.DateTimeFormat(intlLocale(locale), {
     dateStyle: "short",
     timeStyle: "short",
     timeZone: "America/Sao_Paulo",
   }).format(parsed);
 }
 
-function errorMessage(error: unknown, exposeDetails = true) {
+function calendarDateFormat(value: string, locale: Locale = "pt-BR") {
+  const parsed = new Date(`${value}T12:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat(intlLocale(locale), {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: "America/Sao_Paulo",
+  }).format(parsed);
+}
+
+function errorMessage(
+  error: unknown,
+  exposeDetails = true,
+  locale: Locale = "pt-BR"
+) {
+  if (locale === "en") {
+    return exposeDetails
+      ? "The operation could not be completed. Try again."
+      : "Unable to load the data. Try again.";
+  }
   if (!exposeDetails)
     return "Não foi possível carregar os dados. Tente novamente.";
   if (error instanceof Error && error.message) return error.message;
@@ -119,23 +169,31 @@ function ReportSelector({
   onChange,
   isFetching,
   onRefresh,
+  locale,
 }: {
   summaries: DispatchReportSummary[];
   selectedReportId: number | null;
   onChange: (reportId: number) => void;
   isFetching: boolean;
   onRefresh: () => void;
+  locale: Locale;
 }) {
   return (
     <div className="flex flex-wrap items-end gap-3">
       <label className="min-w-[260px] flex-1 sm:flex-none">
-        <span className="v2-label">Seleção do relatório</span>
+        <span className="v2-label">
+          {t(locale, "Seleção do relatório", "Report selection")}
+        </span>
         <select
           className="v2-input"
           value={selectedReportId ?? ""}
           onChange={event => onChange(Number(event.target.value))}
           disabled={!summaries.length || isFetching}
-          aria-label="Seleção do relatório de envios"
+          aria-label={t(
+            locale,
+            "Seleção do relatório de envios",
+            "Dispatch report selection"
+          )}
         >
           {summaries.map(summary => (
             <option key={summary.id} value={summary.id}>
@@ -149,11 +207,19 @@ function ReportSelector({
         onClick={onRefresh}
         disabled={isFetching}
         className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-wait disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
-        title="Atualizar lista de relatórios"
-        aria-label="Atualizar lista de relatórios"
+        title={t(
+          locale,
+          "Atualizar lista de relatórios",
+          "Refresh report list"
+        )}
+        aria-label={t(
+          locale,
+          "Atualizar lista de relatórios",
+          "Refresh report list"
+        )}
       >
         <RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
-        Atualizar
+        {t(locale, "Atualizar", "Refresh")}
       </button>
     </div>
   );
@@ -166,6 +232,7 @@ function FilterBar({
   onManualFilter,
   rowCount,
   clientMode,
+  locale,
 }: {
   search: string;
   onSearch: (value: string) => void;
@@ -173,12 +240,19 @@ function FilterBar({
   onManualFilter: (value: ManualFilter) => void;
   rowCount: string;
   clientMode: boolean;
+  locale: Locale;
 }) {
   return (
     <div className="flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,0.04)] sm:flex-row sm:items-end sm:justify-between">
       <label className="min-w-0 flex-1">
         <span className="v2-label">
-          {clientMode ? "Buscar loja" : "Buscar loja ou responsável CRM"}
+          {clientMode
+            ? t(locale, "Buscar loja", "Search stores")
+            : t(
+                locale,
+                "Buscar loja ou responsável CRM",
+                "Search stores or CRM owner"
+              )}
         </span>
         <span className="relative block">
           <Search
@@ -189,26 +263,40 @@ function FilterBar({
             className="v2-input pl-9"
             value={search}
             onChange={event => onSearch(event.target.value)}
-            placeholder="Buscar sem alterar os nomes da fonte"
+            placeholder={t(
+              locale,
+              "Buscar sem alterar os nomes da fonte",
+              "Search without changing source names"
+            )}
             aria-label={
               clientMode
-                ? "Buscar por loja"
-                : "Buscar por loja ou responsável CRM"
+                ? t(locale, "Buscar por loja", "Search by store")
+                : t(
+                    locale,
+                    "Buscar por loja ou responsável CRM",
+                    "Search by store or CRM owner"
+                  )
             }
           />
         </span>
       </label>
       <label className="sm:w-48">
-        <span className="v2-label">Status Manual</span>
+        <span className="v2-label">
+          {t(locale, "Conferência BBRO", "BBRO check status")}
+        </span>
         <select
           className="v2-input"
           value={manualFilter}
           onChange={event => onManualFilter(event.target.value as ManualFilter)}
-          aria-label="Filtrar status Manual"
+          aria-label={t(
+            locale,
+            "Filtrar conferência BBRO",
+            "Filter BBRO check status"
+          )}
         >
-          <option value="all">Todos</option>
-          <option value="pending">Com pendências</option>
-          <option value="ok">Com OK</option>
+          <option value="all">{t(locale, "Todos", "All")}</option>
+          <option value="pending">--</option>
+          <option value="ok">Check</option>
         </select>
       </label>
       <p className="shrink-0 pb-2 text-xs font-semibold text-slate-500">
@@ -223,26 +311,37 @@ function ManualHistory({
   isLoading,
   error,
   canManage,
+  locale,
 }: {
   entries: DispatchAuditEntry[] | undefined;
   isLoading: boolean;
   error: unknown;
   canManage: boolean;
+  locale: Locale;
 }) {
   if (isLoading) {
-    return <p className="text-xs text-slate-500">Carregando histórico…</p>;
+    return (
+      <p className="text-xs text-slate-500">
+        {t(locale, "Carregando histórico…", "Loading history…")}
+      </p>
+    );
   }
   if (error) {
     return (
       <p role="alert" className="text-xs leading-5 text-red-700">
-        Erro ao carregar histórico: {errorMessage(error, canManage)}
+        {t(locale, "Erro ao carregar histórico:", "Error loading history:")}{" "}
+        {errorMessage(error, canManage, locale)}
       </p>
     );
   }
   if (!entries?.length) {
     return (
       <p className="text-xs leading-5 text-slate-500">
-        Sem alterações auditadas para esta célula.
+        {t(
+          locale,
+          "Sem alterações auditadas para esta célula.",
+          "No audited changes for this cell."
+        )}
       </p>
     );
   }
@@ -255,18 +354,23 @@ function ManualHistory({
         >
           <div className="flex items-start justify-between gap-3">
             <p className="text-xs font-bold text-slate-800">
-              {entry.isOk ? "Marcou OK" : "Desmarcou"}
+              {entry.isOk
+                ? t(locale, "Marcou Check", "Marked Check")
+                : t(locale, "Desmarcou", "Unchecked")}
             </p>
             <span className="shrink-0 text-[10px] text-slate-400">
               v{entry.version}
             </span>
           </div>
           <p className="mt-1 text-[11px] leading-4 text-slate-500">
-            Por {entry.changedBy || "usuário autenticado"} ·{" "}
-            {timestampFormat(entry.createdAt)}
+            {t(locale, "Por", "By")}{" "}
+            {entry.changedBy ||
+              t(locale, "usuário autenticado", "authenticated user")}{" "}
+            · {timestampFormat(entry.createdAt, locale)}
           </p>
           <p className="mt-1 text-[11px] leading-4 text-slate-500">
-            Responsável: {entry.reviewerLabel || "Wini"}
+            {t(locale, "Responsável:", "Reviewer:")}{" "}
+            {entry.reviewerLabel || "Wini"}
           </p>
         </li>
       ))}
@@ -285,6 +389,7 @@ function ManualCell({
   historyOpen,
   onHistoryOpenChange,
   historyQuery,
+  locale,
 }: {
   cell: DispatchCell;
   storeName: string;
@@ -300,19 +405,22 @@ function ManualCell({
     isLoading: boolean;
     error: unknown;
   };
+  locale: Locale;
 }) {
   const validation = currentManualValidation(cell);
   const isOk = manualIsOk(cell);
   const sourceIsCurrent =
     validation === null && Boolean(cell.sourceManualImportedAt);
+  const importedSourceLabel = t(locale, "Arquivo", "File");
   const responsible =
-    validation?.reviewerLabel || (sourceIsCurrent ? "Arquivo" : "Wini");
-  const statusLabel = isOk ? "OK" : "Pendente";
+    validation?.reviewerLabel ||
+    (sourceIsCurrent ? importedSourceLabel : "Wini");
+  const statusLabel = isOk ? "Check" : "--";
   const statusTitle = validation
-    ? `${statusLabel}. Atualizado por ${validation.updatedBy || "usuário autenticado"} em ${timestampFormat(validation.updatedAt)}. Responsável: ${responsible}.`
+    ? `${statusLabel}. ${t(locale, "Atualizado por", "Updated by")} ${validation.updatedBy || t(locale, "usuário autenticado", "authenticated user")} ${t(locale, "em", "on")} ${timestampFormat(validation.updatedAt, locale)}. ${t(locale, "Responsável:", "Reviewer:")} ${responsible}.`
     : sourceIsCurrent
-      ? `${statusLabel}. Origem: Arquivo${cell.sourceManualImportedAt ? `, importado em ${timestampFormat(cell.sourceManualImportedAt)}` : ""}. Histórico auditado anterior preservado.`
-      : "Pendente. Ainda não há validação manual persistida; responsável pela conferência: Wini.";
+      ? `${statusLabel}. ${t(locale, "Origem:", "Source:")} ${importedSourceLabel}${cell.sourceManualImportedAt ? `, ${t(locale, "importado em", "imported on")} ${timestampFormat(cell.sourceManualImportedAt, locale)}` : ""}. ${t(locale, "Histórico auditado anterior preservado.", "Previous audited history preserved.")}`
+      : `${statusLabel}. ${t(locale, "Ainda não há validação manual persistida; responsável pela conferência:", "No persisted Manual validation yet; reviewer:")} Wini.`;
 
   return (
     <div className="flex min-w-0 items-center justify-between gap-1">
@@ -327,7 +435,7 @@ function ManualCell({
           checked={isOk}
           onChange={event => onToggle(cell, event.target.checked)}
           disabled={!canEditManual || saving || cell.id < 1}
-          aria-label={`Manual ${statusLabel} · ${storeName} · ${cell.date}`}
+          aria-label={`${dailyColumnLabel("manual", locale)} ${statusLabel} · ${storeName} · ${cell.date}`}
           className={`h-5 w-5 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 ${
             isOk ? "accent-emerald-700" : "accent-[#1F3864]"
           }`}
@@ -349,10 +457,18 @@ function ManualCell({
               disabled={!canEditManual || cell.id < 1}
               title={
                 cell.id < 1
-                  ? "Use Atualizar para preparar esta célula"
-                  : "Abrir histórico desta célula"
+                  ? t(
+                      locale,
+                      "Use Atualizar para preparar esta célula",
+                      "Use Refresh to prepare this cell"
+                    )
+                  : t(
+                      locale,
+                      "Abrir histórico desta célula",
+                      "Open this cell's history"
+                    )
               }
-              aria-label={`Histórico Manual · ${storeName} · ${cell.date}`}
+              aria-label={`${t(locale, "Histórico Manual", "Manual history")} · ${storeName} · ${cell.date}`}
             >
               <Clock3 className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
@@ -367,11 +483,14 @@ function ManualCell({
                 id={`manual-history-${cell.id}`}
                 className="text-xs font-bold text-slate-900"
               >
-                Histórico do Manual
+                {t(locale, "Histórico do Manual", "Manual history")}
               </p>
               <p className="mt-1 text-[11px] leading-4 text-slate-500">
-                {storeName} · {cell.date} · responsável: {responsible}
-                {sourceIsCurrent ? " · origem: Arquivo" : ""}
+                {storeName} · {cell.date} ·{" "}
+                {t(locale, "responsável:", "reviewer:")} {responsible}
+                {sourceIsCurrent
+                  ? ` · ${t(locale, "origem:", "source:")} ${importedSourceLabel}`
+                  : ""}
               </p>
             </div>
             <ManualHistory
@@ -379,13 +498,14 @@ function ManualCell({
               isLoading={historyQuery.isLoading}
               error={historyQuery.error}
               canManage={canManage}
+              locale={locale}
             />
           </PopoverContent>
         </Popover>
       </div>
       {saved ? (
         <span className="sr-only" role="status">
-          Salvo
+          {t(locale, "Salvo", "Saved")}
         </span>
       ) : null}
     </div>
@@ -404,6 +524,7 @@ function DispatchTable({
   historyCellId,
   onHistoryCellChange,
   historyQuery,
+  locale,
 }: {
   report: DispatchReport;
   rows: DispatchRow[];
@@ -420,6 +541,7 @@ function DispatchTable({
     isLoading: boolean;
     error: unknown;
   };
+  locale: Locale;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -448,7 +570,9 @@ function DispatchTable({
   }, [expanded]);
   const tableMinWidth = 840 + report.days.length * 425;
   const crmResponsibleLabel = (row: DispatchRow) =>
-    clientMode ? "Restrito" : row.crmResponsible || "Sem cadastro CRM";
+    clientMode
+      ? t(locale, "Restrito", "Restricted")
+      : row.crmResponsible || t(locale, "Sem cadastro CRM", "No CRM record");
   const visibleVolumeByDate = report.days.map(day => {
     const cells = rows
       .map(row => sourceCellForDate(row, day.date))
@@ -464,7 +588,13 @@ function DispatchTable({
       role={expanded ? "dialog" : undefined}
       aria-modal={expanded ? true : undefined}
       aria-label={
-        expanded ? "Planilha expandida de controle de envios" : undefined
+        expanded
+          ? t(
+              locale,
+              "Planilha expandida de controle de envios",
+              "Expanded dispatch control sheet"
+            )
+          : undefined
       }
       tabIndex={expanded ? -1 : undefined}
       className={
@@ -482,7 +612,11 @@ function DispatchTable({
       >
         <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-xs text-slate-500">
           <span>
-            Deslize a tabela para consultar os dias. Os checks ficam em Manual.
+            {t(
+              locale,
+              "Deslize a tabela para consultar os dias. As conferências ficam em Integração API BBRO (manual).",
+              "Scroll the table to review the days. Checks are kept in BBRO API integration (manual)."
+            )}
           </span>
           <div className="flex shrink-0 items-center gap-2">
             <button
@@ -493,7 +627,7 @@ function DispatchTable({
                   scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
               }}
             >
-              Ir ao último dia
+              {t(locale, "Ir ao último dia", "Go to last day")}
             </button>
             <button
               ref={expandButtonRef}
@@ -501,9 +635,19 @@ function DispatchTable({
               className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 font-semibold text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
               onClick={() => setExpanded(current => !current)}
               aria-label={
-                expanded ? "Fechar planilha expandida" : "Expandir planilha"
+                expanded
+                  ? t(
+                      locale,
+                      "Fechar planilha expandida",
+                      "Close expanded sheet"
+                    )
+                  : t(locale, "Expandir planilha", "Expand dispatch sheet")
               }
-              title={expanded ? "Fechar planilha" : "Expandir planilha"}
+              title={
+                expanded
+                  ? t(locale, "Fechar planilha", "Close sheet")
+                  : t(locale, "Expandir planilha", "Expand dispatch sheet")
+              }
             >
               {expanded ? (
                 <X className="h-4 w-4" aria-hidden="true" />
@@ -511,7 +655,9 @@ function DispatchTable({
                 <Maximize2 className="h-4 w-4" aria-hidden="true" />
               )}
               <span className="hidden sm:inline">
-                {expanded ? "Fechar" : "Expandir planilha"}
+                {expanded
+                  ? t(locale, "Fechar", "Close")
+                  : t(locale, "Expandir planilha", "Expand sheet")}
               </span>
             </button>
           </div>
@@ -525,7 +671,11 @@ function DispatchTable({
           }
           tabIndex={0}
           role="region"
-          aria-label="Tabela de controle por loja e dia"
+          aria-label={t(
+            locale,
+            "Tabela de controle por loja e dia",
+            "Store and day control table"
+          )}
         >
           <table
             className="dispatch-table border-separate border-spacing-0 text-left text-xs"
@@ -536,8 +686,11 @@ function DispatchTable({
             }}
           >
             <caption className="sr-only">
-              LEADs Status por loja, responsável CRM, integrações e dia de
-              despacho.
+              {t(
+                locale,
+                "LEADs Status por loja, responsável CRM, integrações e dia de despacho.",
+                "LEAD status by store, CRM owner, integrations, and dispatch day."
+              )}
             </caption>
             <colgroup>
               {STICKY_COLUMNS.map((column, index) => (
@@ -570,7 +723,7 @@ function DispatchTable({
                     className="border-b border-r border-slate-300 px-2 py-2 text-center text-xs font-bold text-slate-800"
                     style={{ backgroundColor: GROUP_GRAY }}
                   >
-                    LEADs Status
+                    {t(locale, "LEADs Status", "LEAD status")}
                   </th>
                 ))}
               </tr>
@@ -582,7 +735,7 @@ function DispatchTable({
                     scope="colgroup"
                     className="border-b border-r border-slate-300 px-2 py-2 text-center text-xs font-bold text-slate-800"
                     style={{ backgroundColor: DATE_GRAY }}
-                    title={`Data de despacho ${day.date}`}
+                    title={`${t(locale, "Data de despacho", "Dispatch date")} ${day.date}`}
                   >
                     {day.label}
                   </th>
@@ -590,10 +743,10 @@ function DispatchTable({
               </tr>
               <tr>
                 {[
-                  "NOME DA LOJA",
-                  "Responsável por CRM",
-                  "Integração Syonet",
-                  "Integração API BBRO",
+                  t(locale, "NOME DA LOJA", "STORE NAME"),
+                  t(locale, "Responsável por CRM", "CRM owner"),
+                  t(locale, "Integração Syonet", "Syonet integration"),
+                  t(locale, "Integração API BBRO", "BBRO API integration"),
                 ].map((label, index) => (
                   <th
                     key={label}
@@ -620,7 +773,7 @@ function DispatchTable({
                         backgroundColor: EXCEL_BLUE,
                       }}
                     >
-                      {column.label}
+                      {dailyColumnLabel(column.key, locale)}
                     </th>
                   ))
                 )}
@@ -645,9 +798,13 @@ function DispatchTable({
                           title={row.rawDealers.join(" · ")}
                         >
                           {row.rawDealers.length > 1
-                            ? `${row.rawDealers.length} nomes originais vinculados`
+                            ? `${row.rawDealers.length} ${t(
+                                locale,
+                                "nomes originais vinculados",
+                                "original names linked"
+                              )}`
                             : row.rawDealers[0] !== row.storeName
-                              ? `Base: ${row.rawDealers[0]}`
+                              ? `${t(locale, "Base:", "Source:")} ${row.rawDealers[0]}`
                               : ""}
                         </span>
                       ) : null}
@@ -658,7 +815,11 @@ function DispatchTable({
                       style={{ ...stickyStyle(1), backgroundColor: "#ffffff" }}
                       title={
                         clientMode
-                          ? "Responsável por CRM oculto no modo cliente"
+                          ? t(
+                              locale,
+                              "Responsável por CRM oculto no modo cliente",
+                              "CRM owner hidden in client mode"
+                            )
                           : row.crmResponsible
                       }
                     >
@@ -670,20 +831,20 @@ function DispatchTable({
                       data-freeze="meta"
                       className="sticky z-20 border-b border-r border-slate-200 px-2 py-2.5 align-top text-center text-[10px] text-slate-600 group-hover:bg-slate-50"
                       style={{ ...stickyStyle(2), backgroundColor: "#ffffff" }}
-                      title={row.syonetIntegration || "N/D"}
+                      title={row.syonetIntegration || availabilityLabel(locale)}
                     >
                       <span className="whitespace-pre-wrap break-words">
-                        {row.syonetIntegration || "N/D"}
+                        {row.syonetIntegration || availabilityLabel(locale)}
                       </span>
                     </td>
                     <td
                       data-freeze="meta"
                       className="sticky z-20 border-b border-r border-slate-200 px-2 py-2.5 align-top text-center text-[10px] text-slate-600 group-hover:bg-slate-50"
                       style={{ ...stickyStyle(3), backgroundColor: "#ffffff" }}
-                      title={row.bbroIntegration || "N/D"}
+                      title={row.bbroIntegration || availabilityLabel(locale)}
                     >
                       <span className="whitespace-pre-wrap break-words">
-                        {row.bbroIntegration || "N/D"}
+                        {row.bbroIntegration || availabilityLabel(locale)}
                       </span>
                     </td>
                     {report.days.flatMap(day => {
@@ -716,10 +877,17 @@ function DispatchTable({
                         <td
                           key={`${cell.id}-syonet`}
                           className="border-b border-r border-slate-200 px-2 py-2.5 text-center text-xs text-slate-600"
-                          title={`SYONET · ${cell.syonet || (cell.volume === null ? "Aguardando" : "—")}`}
+                          title={`SYONET · ${
+                            cell.syonet ||
+                            (cell.volume === null
+                              ? t(locale, "Aguardando", "Pending")
+                              : "—")
+                          }`}
                         >
                           {cell.syonet ||
-                            (cell.volume === null ? "Aguardando" : "—")}
+                            (cell.volume === null
+                              ? t(locale, "Aguardando", "Pending")
+                              : "—")}
                         </td>,
                         <td
                           key={`${cell.id}-manual`}
@@ -748,6 +916,7 @@ function DispatchTable({
                               onHistoryCellChange(cell.id, open)
                             }
                             historyQuery={historyQuery}
+                            locale={locale}
                           />
                         </td>,
                         <td
@@ -762,10 +931,21 @@ function DispatchTable({
                           }
                           title={
                             volumeIsOk
-                              ? `OK registrado · Vol. Lead · ${numberFormat(cell.volume)}`
+                              ? `${t(locale, "Check registrado", "Check recorded")} · ${t(
+                                  locale,
+                                  "Vol. Lead",
+                                  "Lead Vol."
+                                )} · ${numberFormat(cell.volume, locale)}`
                               : cell.volume === null
-                                ? "Volume indisponível na base de Leads"
-                                : `Vol. Lead · ${cell.volume}`
+                                ? t(
+                                    locale,
+                                    "Volume indisponível na base de Leads",
+                                    "Lead volume unavailable from the Leads source"
+                                  )
+                                : `${t(locale, "Vol. Lead", "Lead Vol.")} · ${numberFormat(
+                                    cell.volume,
+                                    locale
+                                  )}`
                           }
                         >
                           {volumeIsOk ? (
@@ -774,10 +954,10 @@ function DispatchTable({
                                 className="h-3.5 w-3.5 shrink-0"
                                 aria-hidden="true"
                               />
-                              <span>{numberFormat(cell.volume)}</span>
+                              <span>{numberFormat(cell.volume, locale)}</span>
                             </span>
                           ) : (
-                            numberFormat(cell.volume)
+                            numberFormat(cell.volume, locale)
                           )}
                         </td>,
                       ];
@@ -790,7 +970,11 @@ function DispatchTable({
                     colSpan={4 + report.days.length * 3}
                     className="border-b border-slate-200 px-4 py-10 text-center text-xs text-slate-500"
                   >
-                    Nenhuma das linhas da fonte corresponde aos filtros atuais.
+                    {t(
+                      locale,
+                      "Nenhuma das linhas da fonte corresponde aos filtros atuais.",
+                      "No source rows match the current filters."
+                    )}
                   </td>
                 </tr>
               )}
@@ -809,7 +993,11 @@ function DispatchTable({
                     backgroundColor: GROUP_GRAY,
                   }}
                 >
-                  Total das lojas exibidas
+                  {t(
+                    locale,
+                    "Total das lojas exibidas",
+                    "Total displayed stores"
+                  )}
                 </th>
                 {report.days.flatMap((day, index) => [
                   <td
@@ -830,9 +1018,13 @@ function DispatchTable({
                     key={`${day.date}-source-volume`}
                     className="border-r border-t border-slate-300 px-1 py-3 text-center text-[11px] font-bold text-slate-800"
                     style={{ backgroundColor: "#fafafa" }}
-                    title={`Total de Vol. Lead nas lojas exibidas em ${day.date}`}
+                    title={`${t(
+                      locale,
+                      "Total de Vol. Lead nas lojas exibidas em",
+                      "Total Lead Vol. in displayed stores on"
+                    )} ${day.date}`}
                   >
-                    {numberFormat(visibleVolumeByDate[index])}
+                    {numberFormat(visibleVolumeByDate[index], locale)}
                   </td>,
                 ])}
               </tr>
@@ -840,13 +1032,17 @@ function DispatchTable({
           </table>
         </div>
         <div className="border-t border-slate-100 px-4 py-3 text-[11px] leading-5 text-slate-500">
-          Totais no rodapé representam somente as lojas exibidas. Vol. Lead é
-          quantidade de registros criados no dia, não volume de envio ao CRM.
-          SYONET e Vol. Lead são somente leitura; apenas o check Manual grava
-          uma validação.
+          {t(
+            locale,
+            "Totais no rodapé representam somente as lojas exibidas. Vol. Lead é quantidade de registros criados no dia, não volume de envio ao CRM. SYONET e Vol. Lead são somente leitura; apenas Integração API BBRO (manual) grava uma validação.",
+            "Footer totals include only displayed stores. Lead Vol. is the number of records created that day, not the volume sent to the CRM. SYONET and Lead Vol. are read-only; only BBRO API integration (manual) records a validation."
+          )}
           <p className="mt-1">
-            Verde: Manual OK registrado. Vol. Lead é quantidade criada, não
-            comprovante de entrega
+            {t(
+              locale,
+              "Verde: Check registrado. Vol. Lead é quantidade criada, não comprovante de entrega",
+              "Green: Check is recorded. Lead Vol. is the created count, not proof of delivery"
+            )}
           </p>
         </div>
       </div>
@@ -854,14 +1050,20 @@ function DispatchTable({
   );
 }
 
-function AuthenticationRequired() {
+function AuthenticationRequired({ locale }: { locale: Locale }) {
   return (
     <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
       <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
       <div>
-        <p className="font-bold">Login necessário</p>
+        <p className="font-bold">
+          {t(locale, "Login necessário", "Login required")}
+        </p>
         <p className="mt-1 text-xs leading-5">
-          Os relatórios de envios só são consultados depois da autenticação.
+          {t(
+            locale,
+            "Os relatórios de envios só são consultados depois da autenticação.",
+            "Dispatch reports are available only after authentication."
+          )}
         </p>
       </div>
     </div>
@@ -880,10 +1082,12 @@ function ErrorPanel({
   error,
   onRetry,
   canManage = false,
+  locale,
 }: {
   error: unknown;
   onRetry: () => void;
   canManage?: boolean;
+  locale: Locale;
 }) {
   return (
     <div
@@ -893,8 +1097,14 @@ function ErrorPanel({
       <div className="flex items-start gap-2">
         <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
         <p>
-          <span className="font-bold">Erro ao consultar envios:</span>{" "}
-          {errorMessage(error, canManage)}
+          <span className="font-bold">
+            {t(
+              locale,
+              "Erro ao consultar envios:",
+              "Error loading dispatch reports:"
+            )}
+          </span>{" "}
+          {errorMessage(error, canManage, locale)}
         </p>
       </div>
       <button
@@ -903,7 +1113,7 @@ function ErrorPanel({
         className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-3 text-xs font-bold text-red-800 transition hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
       >
         <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-        Tentar novamente
+        {t(locale, "Tentar novamente", "Try again")}
       </button>
     </div>
   );
@@ -916,6 +1126,7 @@ export default function V2DispatchControl({
   embedded = false,
   filters,
   onPeriodChange,
+  locale = "pt-BR",
 }: V2DispatchControlProps = {}) {
   const effectiveClientMode = !canManage || clientMode;
   const [selectedReportId, setSelectedReportId] = useState<number | null>(null);
@@ -1053,14 +1264,14 @@ export default function V2DispatchControl({
       });
       if (result.added)
         setUpdateNotice(
-          `Células do controle preparadas até ${result.date.split("-").reverse().join("/")}. Vol. Lead calculado da mesma base e filtros do dashboard; checks anteriores preservados.`
+          `${t(locale, "Células do controle preparadas até", "Control cells prepared through")} ${calendarDateFormat(result.date, locale)}. ${t(locale, "Vol. Lead calculado da mesma base e filtros do dashboard; checks anteriores preservados.", "Lead Vol. calculated from the same dashboard source and filters; previous checks preserved.")}`
         );
       preparedKey.current = requestKey;
       return result;
     } catch (error) {
       preparedKey.current = null;
       setUpdateNotice(null);
-      setUpdateError(errorMessage(error));
+      setUpdateError(errorMessage(error, canManage, locale));
       return null;
     } finally {
       setPreparing(false);
@@ -1133,7 +1344,13 @@ export default function V2DispatchControl({
         reportQuery.refetch(),
       ]);
       if (results.some(result => result.error))
-        setUpdateError("Não foi possível carregar os dados. Tente novamente.");
+        setUpdateError(
+          t(
+            locale,
+            "Não foi possível carregar os dados. Tente novamente.",
+            "Unable to load the data. Try again."
+          )
+        );
       return;
     }
     const prepared = await preparePreviousDay();
@@ -1145,20 +1362,28 @@ export default function V2DispatchControl({
     if (results.some(result => result.error)) {
       setUpdateNotice(null);
       setUpdateError(
-        "Dia preparado, mas não foi possível recarregar os dados. Use Atualizar novamente."
+        t(
+          locale,
+          "Dia preparado, mas não foi possível recarregar os dados. Use Atualizar novamente.",
+          "The day was prepared, but the data could not be reloaded. Use Refresh again."
+        )
       );
     }
   };
   const filteredRows = useMemo(() => {
     if (!visibleReport) return [];
-    const normalizedSearch = search.trim().toLocaleLowerCase("pt-BR");
+    const normalizedSearch = search
+      .trim()
+      .toLocaleLowerCase(intlLocale(locale));
     return visibleReport.rows.filter(row => {
       const matchesSearch =
         !normalizedSearch ||
-        row.storeName.toLocaleLowerCase("pt-BR").includes(normalizedSearch) ||
+        row.storeName
+          .toLocaleLowerCase(intlLocale(locale))
+          .includes(normalizedSearch) ||
         (showCrm &&
           row.crmResponsible
-            .toLocaleLowerCase("pt-BR")
+            .toLocaleLowerCase(intlLocale(locale))
             .includes(normalizedSearch));
       if (!matchesSearch) return false;
       const syonet = row.syonetIntegration.trim().toUpperCase();
@@ -1177,7 +1402,7 @@ export default function V2DispatchControl({
         ? hasOk
         : row.cells.some(cell => !manualIsOk(cell));
     });
-  }, [showCrm, manualFilter, visibleReport, search, integrationFilter]);
+  }, [showCrm, manualFilter, visibleReport, search, integrationFilter, locale]);
 
   const onToggle = async (cell: DispatchCell, isOk: boolean) => {
     if (!canEditManual) return;
@@ -1223,16 +1448,28 @@ export default function V2DispatchControl({
       void utils.dispatch.history.invalidate({ cellId: cell.id });
       setSavedCellId(cell.id);
       setManualNotice(
-        `Manual ${isOk ? "marcado como OK" : "desmarcado"} e salvo.`
+        `${t(locale, "Manual", "Manual")} ${
+          isOk
+            ? t(locale, "marcado como OK", "marked as OK")
+            : t(locale, "desmarcado", "unchecked")
+        } ${t(locale, "e salvo.", "and saved.")}`
       );
       const refreshed = await reportQuery.refetch();
       if (refreshed.error)
         setManualError(
-          "Validação salva, mas não foi possível atualizar o relatório. Use Atualizar para recarregar os dados."
+          t(
+            locale,
+            "Validação salva, mas não foi possível atualizar o relatório. Use Atualizar para recarregar os dados.",
+            "Validation was saved, but the report could not be refreshed. Use Refresh to reload the data."
+          )
         );
     } catch (error) {
       setManualError(
-        `Não foi possível salvar a célula ${cell.id}: ${errorMessage(error)}`
+        `${t(locale, "Não foi possível salvar a célula", "Unable to save cell")} ${cell.id}: ${errorMessage(
+          error,
+          canManage,
+          locale
+        )}`
       );
     } finally {
       activeRequests.current.delete(cell.id);
@@ -1244,10 +1481,18 @@ export default function V2DispatchControl({
     }
   };
 
-  if (!authenticated) return <AuthenticationRequired />;
+  if (!authenticated) return <AuthenticationRequired locale={locale} />;
 
   if (reportsQuery.isLoading && !reportsQuery.data) {
-    return <LoadingPanel label="Carregando relatórios de envios…" />;
+    return (
+      <LoadingPanel
+        label={t(
+          locale,
+          "Carregando relatórios de envios…",
+          "Loading dispatch reports…"
+        )}
+      />
+    );
   }
   if (reportsQuery.error && !summaries.length) {
     return (
@@ -1255,13 +1500,18 @@ export default function V2DispatchControl({
         error={reportsQuery.error}
         onRetry={() => void reportsQuery.refetch()}
         canManage={canManage}
+        locale={locale}
       />
     );
   }
   if (!summaries.length) {
     return (
       <div className="rounded-2xl border border-slate-200 bg-white px-5 py-8 text-center text-sm text-slate-500">
-        Nenhum relatório de envios disponível para esta sessão.
+        {t(
+          locale,
+          "Nenhum relatório de envios disponível para esta sessão.",
+          "No dispatch reports are available for this session."
+        )}
       </div>
     );
   }
@@ -1272,6 +1522,7 @@ export default function V2DispatchControl({
           error={new Error(updateError)}
           onRetry={() => void preparePreviousDay()}
           canManage={canManage}
+          locale={locale}
         />
       </div>
     );
@@ -1289,9 +1540,16 @@ export default function V2DispatchControl({
             onChange={setSelectedReportId}
             isFetching={reportsQuery.isFetching}
             onRefresh={() => void reportsQuery.refetch()}
+            locale={locale}
           />
         ) : null}
-        <LoadingPanel label="Carregando a fotografia importada…" />
+        <LoadingPanel
+          label={t(
+            locale,
+            "Carregando a fotografia importada…",
+            "Loading the imported snapshot…"
+          )}
+        />
       </div>
     );
   }
@@ -1305,18 +1563,28 @@ export default function V2DispatchControl({
             onChange={setSelectedReportId}
             isFetching={reportsQuery.isFetching}
             onRefresh={() => void reportsQuery.refetch()}
+            locale={locale}
           />
         ) : null}
         <ErrorPanel
           error={reportQuery.error}
           onRetry={() => void reportQuery.refetch()}
           canManage={canManage}
+          locale={locale}
         />
       </div>
     );
   }
   if (!report) {
-    return <LoadingPanel label="Aguardando o relatório selecionado…" />;
+    return (
+      <LoadingPanel
+        label={t(
+          locale,
+          "Aguardando o relatório selecionado…",
+          "Waiting for the selected report…"
+        )}
+      />
+    );
   }
 
   return (
@@ -1325,23 +1593,35 @@ export default function V2DispatchControl({
         <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#e2212d]">
-              Envios · conferência operacional
+              {t(
+                locale,
+                "Envios · conferência operacional",
+                "Dispatches · operational review"
+              )}
             </p>
             <h1 className="mt-1 text-xl font-bold tracking-tight text-slate-950">
               {embedded
-                ? "Lojas & CRM — controle de envios"
-                : "Controle de Envios"}
+                ? t(
+                    locale,
+                    "Lojas & CRM — controle de envios",
+                    "Stores & CRM — dispatch control"
+                  )
+                : t(locale, "Controle de Envios", "Dispatch Control")}
             </h1>
             <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-500">
-              Vol. Lead vem da mesma base do dashboard, por dealer e dia de
-              criação. Cadastro e integrações são referências de CRM; Manual é a
-              conferência operacional. Corte D-1 em São Paulo.
+              {t(
+                locale,
+                "Vol. Lead vem da mesma base do dashboard, por dealer e dia de criação. Cadastro e integrações são referências de CRM; Manual é a conferência operacional. Corte D-1 em São Paulo.",
+                "Lead Vol. comes from the same dashboard source, by dealer and creation day. Registration and integrations are CRM references; Manual is the operational review. D-1 cutoff in São Paulo."
+              )}
             </p>
           </div>
           <div className="shrink-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs text-slate-600 lg:text-right">
-            <p className="font-bold text-slate-800">Período D-1</p>
+            <p className="font-bold text-slate-800">
+              {t(locale, "Período D-1", "D-1 period")}
+            </p>
             <p className="mt-0.5">
-              Até {cutoff.split("-").reverse().join("/")}
+              {t(locale, "Até", "Through")} {calendarDateFormat(cutoff, locale)}
             </p>
           </div>
         </div>
@@ -1353,9 +1633,13 @@ export default function V2DispatchControl({
               onClick={() => setAdvancedOpen(current => !current)}
               className="flex min-h-11 w-full items-center justify-between gap-3 px-4 py-3 text-left text-xs font-bold text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
             >
-              <span>Configuração do controle</span>
+              <span>
+                {t(locale, "Configuração do controle", "Control settings")}
+              </span>
               <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                {advancedOpen ? "Recolher" : "Expandir"}
+                {advancedOpen
+                  ? t(locale, "Recolher", "Collapse")
+                  : t(locale, "Expandir", "Expand")}
               </span>
             </button>
             {advancedOpen ? (
@@ -1370,10 +1654,13 @@ export default function V2DispatchControl({
                     preparing
                   }
                   onRefresh={() => void refreshDaily()}
+                  locale={locale}
                 />
                 <div className="flex flex-wrap items-end gap-3">
                   <label>
-                    <span className="v2-label">Envios de</span>
+                    <span className="v2-label">
+                      {t(locale, "Envios de", "Dispatch from")}
+                    </span>
                     <input
                       type="date"
                       className="v2-input"
@@ -1391,7 +1678,9 @@ export default function V2DispatchControl({
                     />
                   </label>
                   <label>
-                    <span className="v2-label">Até ontem (D-1)</span>
+                    <span className="v2-label">
+                      {t(locale, "Até ontem (D-1)", "Through yesterday (D-1)")}
+                    </span>
                     <input
                       type="date"
                       className="v2-input"
@@ -1410,7 +1699,13 @@ export default function V2DispatchControl({
                     />
                   </label>
                   <label>
-                    <span className="v2-label">Integração cadastrada</span>
+                    <span className="v2-label">
+                      {t(
+                        locale,
+                        "Integração cadastrada",
+                        "Registered integration"
+                      )}
+                    </span>
                     <select
                       className="v2-input"
                       value={integrationFilter}
@@ -1418,10 +1713,30 @@ export default function V2DispatchControl({
                         setIntegrationFilter(event.target.value)
                       }
                     >
-                      <option value="all">Todas as lojas</option>
-                      <option value="syonet-ok">Syonet integrado (OK)</option>
-                      <option value="syonet-no">Syonet não integrado</option>
-                      <option value="bbro-ok">API BBRO integrada (OK)</option>
+                      <option value="all">
+                        {t(locale, "Todas as lojas", "All stores")}
+                      </option>
+                      <option value="syonet-ok">
+                        {t(
+                          locale,
+                          "Syonet integrado (OK)",
+                          "Syonet integrated (OK)"
+                        )}
+                      </option>
+                      <option value="syonet-no">
+                        {t(
+                          locale,
+                          "Syonet não integrado",
+                          "Syonet not integrated"
+                        )}
+                      </option>
+                      <option value="bbro-ok">
+                        {t(
+                          locale,
+                          "API BBRO integrada (OK)",
+                          "BBRO API integrated (OK)"
+                        )}
+                      </option>
                     </select>
                   </label>
                   <label className="flex min-h-11 items-center gap-2 text-xs text-slate-600">
@@ -1431,7 +1746,7 @@ export default function V2DispatchControl({
                       onChange={event => setShowCrm(event.target.checked)}
                       className="h-4 w-4 accent-[#e2212d]"
                     />{" "}
-                    Mostrar responsáveis CRM
+                    {t(locale, "Mostrar responsáveis CRM", "Show CRM owners")}
                   </label>
                 </div>
                 <FilterBar
@@ -1439,13 +1754,16 @@ export default function V2DispatchControl({
                   onSearch={setSearch}
                   manualFilter={manualFilter}
                   onManualFilter={setManualFilter}
-                  rowCount={`${filteredRows.length} de ${report.rows.length} linhas`}
+                  rowCount={`${filteredRows.length} ${t(locale, "de", "of")} ${report.rows.length} ${t(locale, "linhas", "rows")}`}
                   clientMode={!showCrm}
+                  locale={locale}
                 />
                 <p className="text-xs leading-5 text-slate-500">
-                  Atualizar recalcula Vol. Lead diretamente da base do
-                  dashboard. A planilha não alimenta o volume; Manual é uma
-                  conferência separada.
+                  {t(
+                    locale,
+                    "Atualizar recalcula Vol. Lead diretamente da base do dashboard. A planilha não alimenta o volume; Manual é uma conferência separada.",
+                    "Refresh recalculates Lead Vol. directly from the dashboard source. The sheet does not feed the volume; Manual is a separate review."
+                  )}
                 </p>
               </div>
             ) : null}
@@ -1459,7 +1777,11 @@ export default function V2DispatchControl({
           aria-live="polite"
         >
           <RefreshCw className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-          Atualizando dados protegidos…
+          {t(
+            locale,
+            "Atualizando dados protegidos…",
+            "Refreshing protected data…"
+          )}
         </div>
       ) : null}
       {reportsQuery.error ? (
@@ -1467,8 +1789,12 @@ export default function V2DispatchControl({
           role="alert"
           className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
         >
-          Não foi possível atualizar a lista de relatórios:{" "}
-          {errorMessage(reportsQuery.error, canManage)}
+          {t(
+            locale,
+            "Não foi possível atualizar a lista de relatórios:",
+            "Unable to refresh the report list:"
+          )}{" "}
+          {errorMessage(reportsQuery.error, canManage, locale)}
         </div>
       ) : null}
       {reportQuery.error && report ? (
@@ -1476,6 +1802,7 @@ export default function V2DispatchControl({
           error={reportQuery.error}
           onRetry={() => void reportQuery.refetch()}
           canManage={canManage}
+          locale={locale}
         />
       ) : null}
       {updateError ? (
@@ -1497,7 +1824,9 @@ export default function V2DispatchControl({
       <section className="rounded-2xl border border-slate-200 bg-white p-4">
         <div className="flex flex-wrap items-end gap-3">
           <label>
-            <span className="v2-label">Envios de</span>
+            <span className="v2-label">
+              {t(locale, "Envios de", "Dispatch from")}
+            </span>
             <input
               type="date"
               className="v2-input"
@@ -1512,7 +1841,9 @@ export default function V2DispatchControl({
             />
           </label>
           <label>
-            <span className="v2-label">Até ontem (D-1)</span>
+            <span className="v2-label">
+              {t(locale, "Até ontem (D-1)", "Through yesterday (D-1)")}
+            </span>
             <input
               type="date"
               className="v2-input"
@@ -1529,16 +1860,30 @@ export default function V2DispatchControl({
             />
           </label>
           <label>
-            <span className="v2-label">Integração cadastrada</span>
+            <span className="v2-label">
+              {t(locale, "Integração cadastrada", "Registered integration")}
+            </span>
             <select
               className="v2-input"
               value={integrationFilter}
               onChange={event => setIntegrationFilter(event.target.value)}
             >
-              <option value="all">Todas as lojas</option>
-              <option value="syonet-ok">Syonet integrado (OK)</option>
-              <option value="syonet-no">Syonet não integrado</option>
-              <option value="bbro-ok">API BBRO integrada (OK)</option>
+              <option value="all">
+                {t(locale, "Todas as lojas", "All stores")}
+              </option>
+              <option value="syonet-ok">
+                {t(locale, "Syonet integrado (OK)", "Syonet integrated (OK)")}
+              </option>
+              <option value="syonet-no">
+                {t(locale, "Syonet não integrado", "Syonet not integrated")}
+              </option>
+              <option value="bbro-ok">
+                {t(
+                  locale,
+                  "API BBRO integrada (OK)",
+                  "BBRO API integrated (OK)"
+                )}
+              </option>
             </select>
           </label>
           <label className="flex min-h-11 items-center gap-2 text-xs text-slate-600">
@@ -1548,14 +1893,15 @@ export default function V2DispatchControl({
               onChange={event => setShowCrm(event.target.checked)}
               className="h-4 w-4 accent-[#e2212d]"
             />{" "}
-            Mostrar responsáveis CRM
+            {t(locale, "Mostrar responsáveis CRM", "Show CRM owners")}
           </label>
         </div>
         <p className="mt-3 text-xs leading-5 text-slate-500">
-          Atualizar recalcula os volumes diretamente da base do dashboard, com
-          os mesmos filtros. A planilha não alimenta Vol. Lead. Integração
-          cadastrada não comprova entrega diária; Manual é uma conferência
-          separada.
+          {t(
+            locale,
+            "Atualizar recalcula os volumes diretamente da base do dashboard, com os mesmos filtros. A planilha não alimenta Vol. Lead. Integração cadastrada não comprova entrega diária; Manual é uma conferência separada.",
+            "Refresh recalculates volumes directly from the dashboard source with the same filters. The sheet does not feed Lead Vol. Registered integration does not prove daily delivery; Manual is a separate review."
+          )}
         </p>
       </section>
       {manualError ? (
@@ -1579,8 +1925,11 @@ export default function V2DispatchControl({
 
       {!visibleReport?.days.length ? (
         <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
-          Nenhum dia nesse intervalo. Ajuste o período ou use Atualizar para
-          preparar D-1.
+          {t(
+            locale,
+            "Nenhum dia nesse intervalo. Ajuste o período ou use Atualizar para preparar D-1.",
+            "No days in this range. Adjust the period or use Refresh to prepare D-1."
+          )}
         </div>
       ) : (
         <DispatchTable
@@ -1597,13 +1946,16 @@ export default function V2DispatchControl({
             setHistoryCellId(open ? cellId : null)
           }
           historyQuery={historyQuery}
+          locale={locale}
         />
       )}
 
       <p className="px-1 text-[11px] leading-5 text-slate-500">
-        Vol. Lead vem da mesma base do dashboard, por dealer e data de criação.
-        SYONET e integrações são referências de CRM, não inferidas dos volumes.
-        Manual registra a conferência, sem disparar envio ou operação de CRM.
+        {t(
+          locale,
+          "Vol. Lead vem da mesma base do dashboard, por dealer e data de criação. SYONET e integrações são referências de CRM, não inferidas dos volumes. Manual registra a conferência, sem disparar envio ou operação de CRM.",
+          "Lead Vol. comes from the same dashboard source, by dealer and creation date. SYONET and integrations are CRM references, not inferred from volumes. Manual records the review without triggering dispatch or CRM operations."
+        )}
       </p>
     </div>
   );

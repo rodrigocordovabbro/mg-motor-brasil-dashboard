@@ -499,7 +499,7 @@ it("desabilita preset, campos e busca enquanto a sincronização administrativa 
   await reload;
 });
 
-it("retira modelos da inicial e mantém canais, estados e concessionárias", () => {
+it("retira modelos da inicial e mantém os agregados de canal e estado", () => {
   const channels = [{ label: "Meta", count: 7 }];
   mock.query.mockReturnValue({
     data: {
@@ -529,24 +529,11 @@ it("retira modelos da inicial e mantém canais, estados e concessionárias", () 
       element => element.props.title === "Distribuição por modelo"
     )
   ).toBeNull();
-  for (const title of [
-    "Distribuição por canal",
-    "Distribuição por estado",
-    "Distribuição por concessionária",
-  ]) {
+  for (const title of ["Distribuição por canal", "Top 10 estados"]) {
     expect(
       findElement(body, element => element.props.title === title)
     ).not.toBeNull();
   }
-  const heading = findElement(
-    body,
-    element => element.props.title === "Distribuição por canal"
-  );
-  const card = findElement(
-    body,
-    element => element.props.children?.[0] === heading
-  );
-  expect(card.props.className).toContain("lg:col-span-2");
 });
 
 it("posiciona um único total por dia na última barra empilhada, não em cada canal", () => {
@@ -756,6 +743,7 @@ it.each([true, false])(
       ...versionedDashboard(),
       historicalPace: history,
       channels: [{ label: "Meta", count: 3 }],
+      states: [],
       daily: [
         {
           date: "2026-11-01",

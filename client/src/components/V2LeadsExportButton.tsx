@@ -5,6 +5,7 @@ import {
   leadsExportFilterKey,
   type LeadsExportInput,
   type LeadsExportResult,
+  type LeadsExportLocale,
 } from "@shared/leadsExport";
 import type { V2Filters } from "@shared/v2Types";
 
@@ -13,6 +14,7 @@ type Props = {
   count: number;
   clientMode: boolean;
   disabled?: boolean;
+  locale?: LeadsExportLocale;
 };
 
 export function V2LeadsExportButton({
@@ -20,6 +22,7 @@ export function V2LeadsExportButton({
   count,
   clientMode,
   disabled = false,
+  locale = "pt-BR",
 }: Props) {
   const utils = trpc.useUtils();
   const [busy, setBusy] = useState(false);
@@ -27,7 +30,12 @@ export function V2LeadsExportButton({
   const [failed, setFailed] = useState(false);
   const locked = useRef(false);
   const mounted = useRef(true);
-  const input: LeadsExportInput = { ...filters, page: undefined, clientMode };
+  const input: LeadsExportInput = {
+    ...filters,
+    page: undefined,
+    clientMode,
+    ...(locale === "en" ? { locale } : {}),
+  };
   const filterKey = leadsExportFilterKey(input);
   const currentKey = useRef(filterKey);
   currentKey.current = filterKey;
@@ -63,11 +71,11 @@ export function V2LeadsExportButton({
       if (!mounted.current) return;
       if (currentKey.current !== requestedKey) {
         setFailed(true);
-        setFeedback("Os filtros mudaram. Exporte novamente o recorte atual.");
+        setFeedback(locale === "en" ? "Filters changed. Export the current view again." : "Os filtros mudaram. Exporte novamente o recorte atual.");
         return;
       }
       if (!result.count) {
-        setFeedback("Nenhum Lead encontrado para exportar com esses filtros.");
+        setFeedback(locale === "en" ? "No Lead found to export with these filters." : "Nenhum Lead encontrado para exportar com esses filtros.");
         return;
       }
       if (
@@ -75,7 +83,7 @@ export function V2LeadsExportButton({
         result.period.dateTo !== snapshot.dateTo ||
         (snapshot.clientMode && !result.nameMasked)
       ) {
-        throw new Error("O arquivo não corresponde ao recorte autorizado.");
+        throw new Error(locale === "en" ? "The file does not match the authorized view." : "O arquivo não corresponde ao recorte autorizado.");
       }
       const blob = new Blob([result.csv], { type: result.mimeType });
       const url = URL.createObjectURL(blob);
@@ -98,13 +106,15 @@ export function V2LeadsExportButton({
       }, 1000);
       downloads.current.set(url, timer);
       setFeedback(
-        `${new Intl.NumberFormat("pt-BR").format(result.count)} Leads exportados com os filtros aplicados.`
+        `${new Intl.NumberFormat(locale === "en" ? "en-US" : "pt-BR").format(result.count)} Leads ${locale === "en" ? "exported with the applied filters." : "exportados com os filtros aplicados."}`
       );
     } catch {
       if (!mounted.current || currentKey.current !== requestedKey) return;
       setFailed(true);
       setFeedback(
-        "Não foi possível exportar. Confira o acesso e tente novamente; para recortes muito grandes, reduza o período."
+        locale === "en"
+          ? "Unable to export. Check access and try again; for very large views, reduce the period."
+          : "Não foi possível exportar. Confira o acesso e tente novamente; para recortes muito grandes, reduza o período."
       );
     } finally {
       locked.current = false;
@@ -119,7 +129,7 @@ export function V2LeadsExportButton({
         onClick={exportLeads}
         disabled={disabled || busy || count < 1}
         aria-busy={busy}
-        title="Exportar todos os Leads dos filtros aplicados, não apenas a página atual"
+        title={locale === "en" ? "Export all Leads from the applied filters, not just the current page" : "Exportar todos os Leads dos filtros aplicados, não apenas a página atual"}
         className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-200 disabled:cursor-not-allowed disabled:opacity-45"
       >
         {busy ? (
@@ -127,10 +137,10 @@ export function V2LeadsExportButton({
         ) : (
           <Download className="h-4 w-4" aria-hidden="true" />
         )}
-        {busy ? "Exportando…" : "Exportar CSV"}
+        {busy ? (locale === "en" ? "Exporting…" : "Exportando…") : locale === "en" ? "Download CSV" : "Exportar CSV"}
       </button>
       <p className="text-right text-[11px] text-slate-500">
-        Todos os registros do recorte aplicado
+        {locale === "en" ? "All records in the applied view" : "Todos os registros do recorte aplicado"}
       </p>
       {feedback ? (
         <p

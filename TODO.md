@@ -298,3 +298,33 @@ Evidência: conferência normalizada por aliases, com diferenças relatadas em v
 - [x] Exportação autenticada e por perfil, com snapshot do recorte aplicado, quantidade e feedback de processamento, sem cliques duplicados ou retorno de filtros antigos/unmount. Desabilitar em consulta pendente, vazio ou fonte indisponível; liberar depois e permitir nova tentativa em erro, limpar URL de download. Não sincronizar nem alterar Leads/metas/CRM/V1 ou publicar automaticamente.
 
 Evidência: cinco regressões de cores e 15 de curvas/barras; oito regressões de CSV/backend e 34 de botão/filtros. TypeScript, suíte completa de 398 testes/49 arquivos, build e revisão somente leitura aprovados. Recorte real de 04/11/MG 4 em memória comprovou 252 exportados e 252 na tabela contra 50 na página, com nomes mascarados e BOM UTF-8; nenhum CSV foi salvo no servidor. Endpoint sem sessão retorna HTTP 401; health/manifesto HTTP 200. Não houve sincronização, alteração de Leads/metas/CRM ou publicação automática.
+
+## Simplificar Visão Geral para Cliente — 09/11/2026
+
+- [x] Estimativa histórica vira Base últimos 3 meses na janela padrão; Plano histórico vira Planejado do mês no gráfico/legenda/tooltip. Remover Esperado até o corte, Necessário por dia e o KPI Ritmo; métricas restantes em uma única linha, legível e responsiva sem aumentar a largura da página. Preservar números, curva, zero/nulos, plano/meta e opções de janela sem rotular último mês como três meses.
+- [x] Para papéis Cliente e modo de apresentação Cliente, ocultar Meses de referência, Tabela diária para auditoria e distribuição por canal. Remover o card de distribuição por concessionária da inicial; entre distribuições da visão Cliente deixar somente Top 10 estados reais, ordenados por volume, com filtros atuais. A orientação comercial posterior mantém acompanhamento por loja para perfis completos; o novo Cliente restrito recebe só os agregados. Administrador em operação e BBRO mantêm tabelas e canal; não ampliar permissões nem alterar CRM, dados originais, de-para, exportação ou D-1. Salvar no projeto Manus existente sem publicação automática.
+
+## Resumo comercial em dois blocos — 09/11/2026
+
+- [x] Primeiro bloco com cor própria e ordem Meta de Leads → Leads entregues. Segundo bloco abaixo, cor distinta/moderada e ordem Meta de vendas → Vendas totais (MTD Registration) → Retail, com fonte/data e explicação sem Test Drive e Direct Sales. Registration 90 e Retail 84 vêm do arquivo ativo, sem hardcode, soma indevida ou substituição de um pelo outro; futuros uploads atualizam cada campo real.
+- [x] Manter acompanhamento comercial/tabela por concessionária da nova referência para os perfis completos, com filtros, totais globais aplicáveis, conversão baseada em Retail e ausências N/D preservados; novo Cliente restrito recebe somente os dois blocos agregados. A remoção pedida antes é do card de distribuição por concessionária, não do acompanhamento comercial exibido na orientação mais recente. Sem reimportação, edição de metas, Leads, CRM ou dados originais; salvar no mesmo projeto e separar publicação.
+
+## Ordem do menu de Leads — 09/11/2026
+
+- [x] Menu na ordem Visão Geral → Lojas & CRM → Regiões → Leads, com mesmos destinos e seleção, mantendo Modelos ocultado, sem nova rota, respeitando menu fixo e responsividade.
+
+## ADM - Cliente e Cliente somente Visão Geral — 09/11/2026
+
+- [x] Novo papel ADM - Cliente mantém o acesso de leitura do antigo Cliente; novo Cliente acessa somente Visão Geral, sem Regiões/Lojas & CRM/Leads/Plano/Controle no menu, rotas diretas ou APIs. Não devolver registros individuais ou análises das abas restritas via dashboard. Administrador e BBRO mantêm capacidades; ADM - Cliente não vira administrador e não ganha edição/validação/importação.
+- [x] Migrar uma única vez clientes existentes para ADM - Cliente preservando contas, senhas e estado, com auditoria e marcador idempotente; novos Cliente recebem acesso reduzido. Criar/editar os dois perfis na gestão só para Administrador. Não criar usuários, mudar senhas ou concessões não pedidas, nem dados de Leads/metas/CRM. Falhar fechado em papel desconhecido e preservar revogação de sessão por troca de papel.
+- [x] Interface em inglês para Cliente e ADM - Cliente; Administrador/BBRO em português. Localizar menus, rótulos, filtros, métricas/gráficos, vazios/avisos, resumo comercial, exportação e demais áreas permitidas, preservando nomes/dados originais e D-1 São Paulo. Migração validada, testes sem escrita real e código salvo no Manus; publicação separada.
+
+## Rótulos de conferência BBRO — 09/11/2026
+
+- [x] No grupo diário do controle, Manual passa a Integração API BBRO (manual) / BBRO API integration (manual). Estado não marcado mostra --, marcado mostra Check; não trocar os dados de integração/SYONET nem mascarar origem do check ou histórico. Mesma cor dos volumes confirmados, somente rótulos, com teste PT/EN e permissões preservadas.
+
+## Leads por modelo na visão do Administrador — 09/11/2026
+
+- [x] Visão Geral operacional do Administrador inclui Leads por modelo do mesmo filtro aplicado, com volumes reais e aliases exatos já conciliados. Mostrar não identificado separado e indisponibilidade/vazio honestos. Não exibir para Cliente, ADM - Cliente, BBRO ou modo de apresentação, não criar nova aba nem alterar Leads, filtros ou despacho CRM.
+
+Evidência final: TypeScript, 430 testes/54 arquivos e build aprovados; revisão corrigiu o símbolo indefinido do resumo no novo Cliente. Autorização, rotas, Top 10 válido, inglês, blocos comerciais, Check/--, modelos administrativos e exportação por papel testados. Migração real de duas contas foi idempotente e confirmou senhas/status, Administrador/BBRO, Leads e checks/auditoria CRM preservados; sem criação de usuário ou nova carga. Leitura final manteve Registration 90/Retail 84. Health e manifesto HTTP 200 (seis rotas); scripts de aplicação e dados fora do Git. Salvamento no Manus separado de publicação automática desativada.

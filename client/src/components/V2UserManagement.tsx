@@ -173,7 +173,8 @@ export default function V2UserManagement({
             </h1>
             <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">
               Crie contas, altere perfil/status e redefina senhas sem exibir ou
-              transportar hashes para a interface.
+              transportar hashes para a interface. Cliente começa com acesso
+              somente à Visão Geral; ADM - Cliente preserva a leitura completa.
             </p>
           </div>
           <button
@@ -230,7 +231,10 @@ export default function V2UserManagement({
               onChange={event => setRole(event.target.value as UserRole)}
               disabled={busy}
             >
-              <option value="client">Cliente</option>
+              <option value="client">Cliente — Visão Geral</option>
+              <option value="client_admin">
+                ADM - Cliente — Leitura completa
+              </option>
               <option value="bbro">BBRO</option>
               <option value="admin">Administrador</option>
             </select>
@@ -314,7 +318,10 @@ export default function V2UserManagement({
                         disabled={busy}
                         aria-label={`Perfil de ${account.username}`}
                       >
-                        <option value="client">Cliente</option>
+                        <option value="client">Cliente — Visão Geral</option>
+                        <option value="client_admin">
+                          ADM - Cliente — Leitura completa
+                        </option>
                         <option value="bbro">BBRO</option>
                         <option value="admin">Administrador</option>
                       </select>

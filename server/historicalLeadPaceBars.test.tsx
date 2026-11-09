@@ -48,7 +48,7 @@ vi.mock("react", async () => {
 
 vi.mock("recharts", () => rechartsMocks);
 
-import { Bar, LabelList, Line } from "recharts";
+import { Bar, LabelList, Line, Tooltip } from "recharts";
 import V2HistoricalLeadPaceCard, {
   buildHistoricalPaceChartRows,
 } from "../client/src/components/V2HistoricalLeadPaceCard";
@@ -166,8 +166,19 @@ function findNodes(
   return matches;
 }
 
-function renderCard(data: HistoricalLeadPace) {
-  return V2HistoricalLeadPaceCard({ data });
+function textContent(tree: unknown): string {
+  if (Array.isArray(tree)) return tree.map(textContent).join("");
+  if (typeof tree === "string" || typeof tree === "number") return String(tree);
+  if (!isObject(tree)) return "";
+  const props = isObject(tree.props) ? tree.props : null;
+  return props && "children" in props ? textContent(props.children) : "";
+}
+
+function renderCard(
+  data: HistoricalLeadPace,
+  locale: "pt-BR" | "en" = "pt-BR"
+) {
+  return V2HistoricalLeadPaceCard({ data, locale });
 }
 
 describe("V2HistoricalLeadPaceCard: barra real e séries acumuladas", () => {
@@ -195,7 +206,7 @@ describe("V2HistoricalLeadPaceCard: barra real e séries acumuladas", () => {
     );
     expect(planLine?.props).toMatchObject({
       dataKey: "plan",
-      name: "Plano histórico",
+      name: "Planejado do mês",
     });
     expect(projectionLine?.props).toMatchObject({
       dataKey: "projection",
@@ -223,6 +234,59 @@ describe("V2HistoricalLeadPaceCard: barra real e séries acumuladas", () => {
     expect(typeof formatter).toBe("function");
     expect((formatter as (value: number | null) => unknown)(null)).toBe("");
     expect((formatter as (value: number | null) => unknown)(0)).toBe("0");
+  });
+
+  it("mantém a janela padrão e calcula a janela de último mês quando selecionada", () => {
+    reactMocks.useState.mockClear();
+    const defaultTree = renderCard(fixture());
+    expect(textContent(defaultTree)).toContain(
+      "Média sintética dos últimos 3 meses"
+    );
+    expect(reactMocks.useState.mock.calls.map(call => call[0])).toEqual([
+      "last3Months",
+      false,
+    ]);
+
+    reactMocks.useState.mockClear();
+    reactMocks.useState.mockImplementationOnce(
+      () => ["lastMonth", vi.fn()] as const
+    );
+    const lastMonthTree = renderCard(fixture());
+    expect(textContent(lastMonthTree)).toContain("Último mês sintético");
+  });
+
+  it("passa locale ao tooltip e mostra detalhes EN sem perder zero real", () => {
+    reactMocks.useState.mockClear();
+    const tree = renderCard(fixture(), "en");
+    const tooltip = findByType(tree, Tooltip)[0];
+    const content = tooltip?.props?.content as TreeNode | undefined;
+    expect(content?.props).toMatchObject({ locale: "en" });
+
+    const renderTooltip = content?.type as
+      | ((props: Record<string, unknown>) => unknown)
+      | undefined;
+    const details = renderTooltip?.({
+      active: true,
+      label: 8,
+      locale: "en",
+      payload: [
+        {
+          name: "Cumulative actuals",
+          value: 0,
+          color: "#e2212d",
+          payload: { real: 0, dailyReal: 0, gapToPlan: 0 },
+        },
+      ],
+    });
+    const detailsText = textContent(details);
+    expect(detailsText).toContain("Day 8");
+    expect(detailsText).toContain("0 Leads");
+    expect(detailsText).toContain("Leads for the day:");
+    expect(detailsText).toContain(
+      "Cumulative difference vs. Planned this month:"
+    );
+    expect(detailsText).not.toContain("Dia");
+    expect(detailsText).not.toContain("Diferença");
   });
 
   it("mantém plano/projeção e calcula real, delta diário e gap sem fabricar futuro", () => {
@@ -312,7 +376,7 @@ describe("V2HistoricalLeadPaceCard: barra real e séries acumuladas", () => {
       tree,
       node =>
         node.props?.["aria-label"] ===
-        "Barras de Leads realizados acumulados comparadas ao plano histórico e à projeção de fechamento"
+        "Barras de Leads realizados acumulados comparadas ao Planejado do mês e à projeção de fechamento"
     )[0];
     const scrollable =
       chartRegion &&
