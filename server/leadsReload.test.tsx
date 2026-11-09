@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   describeLeadsReload,
+  LEADS_RELOAD_VERSION_NOT_CONFIRMED,
   type LeadsReloadResult,
 } from "../shared/leadsReload";
 
@@ -36,6 +37,7 @@ vi.mock("react", async importOriginal => {
   };
 });
 import { V2LeadsReloadButton } from "../client/src/components/V2LeadsReloadButton";
+import { V2LeadsReloadDialog } from "../client/src/components/V2LeadsReloadDialog";
 
 function fixture(change: Partial<LeadsReloadResult> = {}): LeadsReloadResult {
   return {
@@ -64,6 +66,9 @@ function view(
     syncExternal,
     showFeedback,
   });
+}
+function popup(tree: any) {
+  return tree.props.children[2];
 }
 function deferred() {
   let resolve!: (value: LeadsReloadResult) => void;
@@ -177,5 +182,143 @@ describe("consulta da base de Leads", () => {
     await pending.promise;
     await Promise.resolve();
     expect(hooks.values[1]).toBeNull();
+  });
+});
+
+describe("popup da atualização da base de Leads", () => {
+  it("abre imediatamente, acompanha os estágios e só mostra sucesso após resolver", async () => {
+    const pending = deferred();
+    let notifyStage: ((stage: "syncing" | "refreshing") => void) | undefined;
+    const reload = vi.fn(
+      (onStage?: (stage: "syncing" | "refreshing") => void) => {
+        notifyStage = onStage;
+        return pending.promise;
+      }
+    );
+
+    view(reload, "2026-11", true, false).props.children[0].props.onClick();
+    let current = popup(view(reload, "2026-11", true, false));
+    expect(current.props.open).toBe(true);
+    expect(current.props.busy).toBe(true);
+    expect(current.props.stage).toBe("syncing");
+    expect(current.props.outcome).toBeNull();
+
+    notifyStage?.("refreshing");
+    current = popup(view(reload, "2026-11", true, false));
+    expect(current.props.stage).toBe("refreshing");
+    expect(current.props.outcome).toBeNull();
+
+    pending.resolve(fixture());
+    await pending.promise;
+    await Promise.resolve();
+    current = popup(view(reload, "2026-11", true, false));
+    expect(current.props.busy).toBe(false);
+    expect(current.props.outcome).toMatchObject({
+      type: "success",
+      result: { total: 120, monthlyTotal: 150 },
+    });
+  });
+
+  it("mantém erro de versão não confirmada honesto e permite fechar para tentar de novo", async () => {
+    const pending = deferred();
+    const reload = vi.fn(() => pending.promise);
+    view(reload, "2026-11", true, false).props.children[0].props.onClick();
+    pending.reject({ code: LEADS_RELOAD_VERSION_NOT_CONFIRMED });
+    await pending.promise.catch(() => {});
+    await Promise.resolve();
+
+    const current = popup(view(reload, "2026-11", true, false));
+    expect(current.props.open).toBe(true);
+    expect(current.props.outcome).toMatchObject({
+      type: "error",
+      code: LEADS_RELOAD_VERSION_NOT_CONFIRMED,
+    });
+    expect(current.props.outcome.message).toContain(
+      "ainda não confirmou a nova versão"
+    );
+    expect(current.props.outcome.message).not.toContain(
+      "dados anteriores foram mantidos"
+    );
+
+    current.props.onClose();
+    expect(popup(view(reload, "2026-11", true, false)).props.open).toBe(false);
+  });
+
+  it("mantém a tela final aberta até Fechar e permite uma nova tentativa", async () => {
+    const first = deferred();
+    const second = deferred();
+    const reload = vi
+      .fn()
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+
+    view(reload).props.children[0].props.onClick();
+    first.resolve(fixture());
+    await first.promise;
+    await Promise.resolve();
+
+    const completed = popup(view(reload));
+    expect(completed.props.open).toBe(true);
+    expect(completed.props.outcome.result.monthlyTotal).toBe(150);
+    expect(completed.props.outcome.result.total).toBe(120);
+
+    completed.props.onClose();
+    expect(popup(view(reload)).props.open).toBe(false);
+    view(reload).props.children[0].props.onClick();
+    expect(reload).toHaveBeenCalledTimes(2);
+    second.resolve(fixture({ monthlyTotal: 151 }));
+    await second.promise;
+    await Promise.resolve();
+  });
+
+  it("não permite escape ou clique externo enquanto ocupado nem usa percentual falso", () => {
+    const onClose = vi.fn();
+    const loading = V2LeadsReloadDialog({
+      open: true,
+      busy: true,
+      stage: "refreshing",
+      outcome: null,
+      onClose,
+    });
+    const content = loading.props.children;
+    const preventDefault = vi.fn();
+    loading.props.onOpenChange(false);
+    content.props.onEscapeKeyDown({ preventDefault });
+    content.props.onPointerDownOutside({ preventDefault });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(content.props.showCloseButton).toBe(false);
+    expect(preventDefault).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(loading)).not.toContain("%");
+
+    const completed = V2LeadsReloadDialog({
+      open: true,
+      busy: false,
+      stage: "refreshing",
+      outcome: {
+        type: "success",
+        result: fixture(),
+        description: describeLeadsReload(fixture()),
+      },
+      onClose,
+    });
+    completed.props.onOpenChange(false);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("não aplica setters assíncronos depois do unmount", async () => {
+    const pending = deferred();
+    const reload = vi.fn(() => pending.promise);
+    const tree = view(reload);
+    const setup = hooks.effects.at(-1);
+    const cleanup = setup?.() as (() => void) | undefined;
+    tree.props.children[0].props.onClick();
+    const busyMessage = hooks.values[1];
+    cleanup?.();
+
+    pending.resolve(fixture());
+    await pending.promise;
+    await Promise.resolve();
+    expect(hooks.values[1]).toBe(busyMessage);
+    expect(hooks.values[0]).toBe(true);
   });
 });

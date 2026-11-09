@@ -12,6 +12,11 @@ export class LeadsReloadVersionNotConfirmedError extends Error {
   }
 }
 
+export type LeadsReloadStage = "syncing" | "refreshing";
+export type LeadsReloadHandler = (
+  onStage?: (stage: LeadsReloadStage) => void
+) => Promise<LeadsReloadResult>;
+
 export type LeadsReloadResult = {
   competence: string;
   total: number;

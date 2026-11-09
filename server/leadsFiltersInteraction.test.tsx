@@ -363,10 +363,16 @@ it("aguarda o sync administrativo antes de invalidar/refazer a leitura e confirm
     refetch,
   });
 
-  const result = await findOverview(true).props.onReloadMonth();
+  const result = await findOverview(true).props.onReloadMonth(
+    (stage: string) => {
+      events.push(`phase ${stage}`);
+    }
+  );
 
   expect(events).toEqual([
+    "phase syncing",
     "sync",
+    "phase refreshing",
     "invalidate leads",
     "invalidate crm",
     "refetch",

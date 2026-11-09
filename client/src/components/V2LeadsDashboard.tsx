@@ -2,6 +2,7 @@ import {
   describeLeadsReload,
   LeadsReloadVersionNotConfirmedError,
   type LeadsReloadResult,
+  type LeadsReloadHandler,
 } from "@shared/leadsReload";
 import type { LeadsSyncResult } from "@shared/leadsSync";
 import { showDealerInCommercialTable } from "@shared/dealerPresentation";
@@ -2058,7 +2059,7 @@ export default function V2LeadsDashboard({
     setApplied(current => ({ ...current, page }));
   };
   const refresh = () => void dashboardQuery.refetch();
-  const reloadMonthlyBase = (): Promise<LeadsReloadResult> => {
+  const reloadMonthlyBase: LeadsReloadHandler = onStage => {
     const activeReload = activeReloadLock.current;
     if (activeReload) return activeReload;
     const request = reloadSequence.current + 1;
@@ -2079,6 +2080,7 @@ export default function V2LeadsDashboard({
       let syncFailureNotice: string | null = null;
       try {
         if (canManage) {
+          onStage?.("syncing");
           try {
             syncResult = await syncBaseMutation.mutateAsync();
           } catch (error) {
@@ -2093,6 +2095,7 @@ export default function V2LeadsDashboard({
             throw error;
           }
         }
+        onStage?.("refreshing");
         // Mark related views stale without immediately issuing duplicate requests.
         await Promise.all([
           queryUtils.leads.dashboard.invalidate(undefined, {

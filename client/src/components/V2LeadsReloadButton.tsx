@@ -1,10 +1,16 @@
 import { RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+
 import {
   describeLeadsReload,
   LEADS_RELOAD_VERSION_NOT_CONFIRMED,
-  type LeadsReloadResult,
+  type LeadsReloadHandler,
+  type LeadsReloadStage,
 } from "@shared/leadsReload";
+import {
+  V2LeadsReloadDialog,
+  type LeadsReloadDialogOutcome,
+} from "./V2LeadsReloadDialog";
 
 export function V2LeadsReloadButton({
   competence,
@@ -13,28 +19,53 @@ export function V2LeadsReloadButton({
   showFeedback = true,
 }: {
   competence: string;
-  onReload: () => Promise<LeadsReloadResult>;
+  onReload: LeadsReloadHandler;
   syncExternal?: boolean;
   showFeedback?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const [stage, setStage] = useState<LeadsReloadStage>(
+    syncExternal ? "syncing" : "refreshing"
+  );
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [outcome, setOutcome] = useState<LeadsReloadDialogOutcome | null>(null);
   const locked = useRef(false);
   const sequence = useRef(0);
+  const mounted = useRef(true);
+
   useEffect(() => {
+    mounted.current = true;
     sequence.current += 1;
+    setBusy(false);
     setMessage(null);
     setFailed(false);
+    setStage(syncExternal ? "syncing" : "refreshing");
+    setDialogOpen(false);
+    setOutcome(null);
     return () => {
+      mounted.current = false;
       sequence.current += 1;
+      locked.current = false;
     };
-  }, [competence]);
+  }, [competence, syncExternal]);
+
+  const closeDialog = () => {
+    if (busy) return;
+    setDialogOpen(false);
+    setOutcome(null);
+  };
+
   const reload = async () => {
-    if (locked.current) return;
+    if (locked.current || !mounted.current) return;
     locked.current = true;
     const request = sequence.current;
+    const isCurrent = () => mounted.current && request === sequence.current;
     setBusy(true);
+    setDialogOpen(true);
+    setOutcome(null);
+    setStage(syncExternal ? "syncing" : "refreshing");
     setMessage(
       syncExternal
         ? "Lendo planilha-base e importando. Aguarde a confirmação; a base anterior permanece disponível."
@@ -42,16 +73,26 @@ export function V2LeadsReloadButton({
     );
     setFailed(false);
     try {
-      const result = await onReload();
-      if (request !== sequence.current || result.competence !== competence)
+      const result = await onReload(nextStage => {
+        if (isCurrent()) setStage(nextStage);
+      });
+      if (!isCurrent()) return;
+      if (result.competence !== competence) {
+        const mismatchMessage =
+          "A atualização retornou outra competência e não foi confirmada no painel. Tente novamente.";
+        setFailed(true);
+        setMessage(mismatchMessage);
+        setOutcome({ type: "error", message: mismatchMessage });
         return;
-      setMessage(describeLeadsReload(result));
+      }
+      const description = describeLeadsReload(result);
+      setMessage(description);
+      setOutcome({ type: "success", result, description });
     } catch (error) {
-      if (request !== sequence.current) return;
+      if (!isCurrent()) return;
       const authError = error as { data?: { code?: string }; code?: string };
       const code = authError?.data?.code ?? authError?.code;
-      setFailed(true);
-      setMessage(
+      const failureMessage =
         code === "FORBIDDEN"
           ? "Apenas administradores podem importar a planilha-base. Nenhuma permissão foi alterada; os dados anteriores foram mantidos."
           : code === "UNAUTHORIZED"
@@ -60,13 +101,17 @@ export function V2LeadsReloadButton({
               ? "Conexão Google pendente. Configure a conta de serviço no cartão seguro e dê acesso de Leitor à planilha-base. Nenhum dado foi alterado."
               : code === LEADS_RELOAD_VERSION_NOT_CONFIRMED
                 ? "A planilha foi importada, mas o painel ainda não confirmou a nova versão. Atualize os indicadores."
-                : "Não foi possível atualizar a base. Os dados anteriores foram mantidos; tente novamente."
-      );
+                : "Não foi possível atualizar a base. Os dados anteriores foram mantidos; tente novamente.";
+      setFailed(true);
+      setMessage(failureMessage);
+      setOutcome({ type: "error", message: failureMessage, code });
     } finally {
+      if (!isCurrent()) return;
       locked.current = false;
       setBusy(false);
     }
   };
+
   return (
     <div className="min-w-0">
       <button
@@ -102,6 +147,13 @@ export function V2LeadsReloadButton({
           {message}
         </p>
       ) : null}
+      <V2LeadsReloadDialog
+        open={dialogOpen}
+        busy={busy}
+        stage={stage}
+        outcome={outcome}
+        onClose={closeDialog}
+      />
     </div>
   );
 }
