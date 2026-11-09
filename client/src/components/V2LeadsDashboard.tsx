@@ -1965,31 +1965,13 @@ function OverviewTab({
           />
         </Card>
       </div>
-      {overviewOnly ? (
-        <V2CommercialSummary
-          performance={data.dealerPerformance}
-          competence={data.pacing.competence}
-          canManage={false}
-          onUpdated={onGoalUpdated}
-          locale={locale}
-          generalComparable={
-            !filters.model &&
-            !filters.channel &&
-            !filters.campaign &&
-            !filters.dealer &&
-            !filters.search &&
-            filters.dateFrom.slice(0, 7) === filters.dateTo.slice(0, 7)
-          }
-        />
-      ) : (
-        <DealerPerformanceCard
-          data={data}
-          onUpdated={onGoalUpdated}
-          canManage={canManage}
-          filters={filters}
-          locale={locale}
-        />
-      )}
+      <DealerPerformanceCard
+        data={data}
+        onUpdated={onGoalUpdated}
+        canManage={overviewOnly ? false : canManage}
+        filters={filters}
+        locale={locale}
+      />
       {data.notes.length ? <Notes notes={data.notes} locale={locale} /> : null}
     </div>
   );

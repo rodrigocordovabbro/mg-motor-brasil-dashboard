@@ -307,7 +307,7 @@ describe("permissões na API", () => {
     vi.mocked(getV2Dashboard).mockResolvedValue(d as any);
     expect((await caller().leads.dashboard(filters)).notes).toEqual(d.notes);
   });
-  it("cliente recebe somente agregados da Visão Geral, sem linhas ou análises restritas", async () => {
+  it("cliente recebe dealers agregados na Visão Geral, sem Leads individuais ou análises restritas", async () => {
     const d = dashboard();
     d.states = BRAZILIAN_STATES.slice(0, 12).map((state, index) => ({
       label: state.name,
@@ -325,7 +325,7 @@ describe("permissões na API", () => {
     d.modelAnalysis = { unclassified: 0, diagnostics: [] } as any;
     d.dealerPerformance.rows = [
       {
-        dealer: "Dealer privado",
+        dealer: "Sinal Av. Europa",
         state: "SP",
         leads: 2,
         leadGoal: null,
@@ -342,7 +342,7 @@ describe("permissões na API", () => {
     expect(result.dealerPerformance.warnings).toEqual([]);
     expect(result.dealerPerformance.unmapped).toEqual([]);
     expect(result.recent.rows).toEqual([]);
-    expect(result.dealerPerformance.rows).toEqual([]);
+    expect(result.dealerPerformance.rows).toEqual(d.dealerPerformance.rows);
     expect(result.states).toHaveLength(10);
     expect(
       result.states.some(state => state.label === UNIDENTIFIED_STATE)
@@ -353,6 +353,67 @@ describe("permissões na API", () => {
     expect(JSON.stringify(result)).not.toContain("Pessoa privada de fixture");
     expect(JSON.stringify(result)).not.toContain("Contato privado");
     expect(JSON.stringify(result)).not.toContain("Cidade privada");
+  });
+  it("preserva zero, nulos e metas coletivas sem rateio ou detalhes privados nas linhas", () => {
+    const d = dashboard();
+    const rows = [
+      {
+        dealer: "Sinal Av. Europa",
+        state: "SP",
+        leads: 2,
+        leadGoal: null,
+        sales: 0,
+        salesGoal: null,
+        conversionRate: 0,
+      },
+      {
+        dealer: "Dealer registrado por arquivo",
+        state: "RJ",
+        leads: 0,
+        leadGoal: null,
+        sales: null,
+        salesGoal: null,
+        conversionRate: null,
+      },
+    ];
+    d.dealerPerformance.rows = rows.map(row => ({
+      ...row,
+      privateLeadName: "Nome pessoal que não deve ser exposto",
+    }));
+    d.dealerRegistry = [{ name: "Dealer registrado por arquivo", state: "RJ" }];
+    d.dealerPerformance.groupedGoals = [
+      {
+        kind: "lead-goals",
+        key: "Chave de arquivo privada",
+        sourceLabel: "Nome de arquivo privado.xlsx",
+        dealers: rows.map(row => row.dealer),
+        value: 30,
+        leads: 2,
+      },
+    ];
+    const before = JSON.stringify(d);
+    const result = dashboardForOverviewClient(d);
+
+    expect(result.dealerPerformance.rows).toEqual(rows);
+    expect(result.dealerRegistry).toEqual(d.dealerRegistry);
+    expect(result.dealerPerformance.groupedGoals).toEqual([
+      {
+        kind: "lead-goals",
+        key: "collective-1",
+        sourceLabel: "Collective network goal",
+        dealers: rows.map(row => row.dealer),
+        value: 30,
+        leads: 2,
+      },
+    ]);
+    expect(result.dealerPerformance.sourceName).toBeNull();
+    expect(result.recent.rows).toEqual([]);
+    expect(JSON.stringify(result)).not.toContain(
+      "Nome pessoal que não deve ser exposto"
+    );
+    expect(JSON.stringify(result)).not.toContain("Nome de arquivo privado");
+    expect(JSON.stringify(result)).not.toContain("Chave de arquivo privada");
+    expect(JSON.stringify(d)).toBe(before);
   });
   it("ADM - Cliente preserva a leitura legada sem receber avisos técnicos", async () => {
     state.role = "client_admin";

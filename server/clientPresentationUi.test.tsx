@@ -137,7 +137,7 @@ function dashboardFixture(): V2Dashboard {
       models: ["MG 4", "MG Urban"],
       channels: ["Meta"],
       campaigns: ["Canonical campaign"],
-      dealers: ["MG São Paulo"],
+      dealers: ["Sinal Av. Europa"],
     },
     summary: {
       total: 1234,
@@ -211,7 +211,7 @@ function dashboardFixture(): V2Dashboard {
       unmapped: [],
       rows: [
         {
-          dealer: "MG São Paulo",
+          dealer: "Sinal Av. Europa",
           state: "SP",
           leads: 1234,
           leadGoal: 1600,
@@ -302,8 +302,20 @@ describe("client presentation UI", () => {
     expect(metricValue(html, "v2-commercial-summary-retail")).toBe("84");
     expect(html).not.toContain('data-testid="admin-model-delivery"');
     expect(html).not.toContain("Channel distribution");
-    expect(html).not.toContain("Sales and goals by dealer");
-    expect(html).not.toContain("<table");
+    expect(html).toContain("Sales and goals by dealer");
+    expect(html).toContain("Dealer / source");
+    expect(html).toContain("Lead goal · unit");
+    expect(html).toContain("Sales goal · unit");
+    expect(html).toContain("Conversion");
+    expect(html).toContain("Sinal Av. Europa");
+    expect(html).toContain(">1,600<");
+    expect(html).toContain(">84<");
+    expect(html).toContain(">100<");
+    expect(html).toContain(">6.8%<");
+    expect(html).not.toContain("Update source");
+    expect(html).not.toContain("Update goals");
+    expect(html).not.toContain("Upload");
+    expect(html).toContain("<table");
   });
 
   it("localizes the dashboard filter shell in English without translating source field values", () => {

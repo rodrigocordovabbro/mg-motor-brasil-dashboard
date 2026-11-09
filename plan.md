@@ -260,3 +260,7 @@ Substituir a barra única diária de todos os modelos por barras agrupadas, uma 
 ## Corrigir persistência de abas ADM - Cliente e restringir MG — 09/11/2026
 
 A normalização de abas confundia ausência de acesso à análise administrativa por modelo com acesso somente Overview, fechando Stores & CRM, Regions e Leads de ADM - Cliente/BBRO. Corrigir só a guarda de normalização: quatro abas permitidas permanecem abertas; análise por modelo continua exclusiva de Administrador. Thiago permanece client_admin, com leitura de Leads, Media plan e Dispatch/CRM. A conta MG (`mgmotor`) passa a client/Overview pela atualização auditada existente, preservando senha/status e invalidando sua sessão anterior; `mgsales`, Thiago, Administrador e BBRO ficam inalterados. Conferência de APIs não sincroniza dados nem cria CSVs.
+
+## Visão de dealers para Cliente no Overview — 09/11/2026
+
+Exibir o acompanhamento comercial de dealers também no Overview do perfil Cliente, reaproveitando a tabela existente em inglês e modo somente leitura. API Overview passa a fornecer seus agregados de dealer e metas coletivas já conciliados, sem linhas pessoais, diagnósticos, arquivos privados ou nova leitura de abas. Manter Leads/Overview como única navegação de mgmotor; Stores & CRM, Regions, exportação, importação, edição e análise administrativa continuam bloqueados. Preservar Top 10 estados, resumo Leads/Sales, filtros/D-1, de-para explícito, nomes originais no banco, valores e distinção de meta coletiva versus individual. Sem reimportação, atualização de conta ou publicação automática.

@@ -91,7 +91,7 @@ export function dashboardForClient(data: V2Dashboard): V2Dashboard {
 /**
  * Read-only projection for the new Client profile. It deliberately keeps only
  * aggregate Overview data: options remain available to preserve the existing
- * filter contract, while individual Leads, dealer rows and restricted-tab
+ * filter contract and dealer performance is aggregate-only. Individual Leads and restricted-tab
  * analysis are removed before the response leaves the server.
  */
 export function dashboardForOverviewClient(data: V2Dashboard): V2Dashboard {
@@ -111,6 +111,10 @@ export function dashboardForOverviewClient(data: V2Dashboard): V2Dashboard {
 
   return {
     ...withoutRestrictedAnalysis,
+    dealerRegistry: clientData.dealerRegistry?.map(dealer => ({
+      name: dealer.name,
+      state: dealer.state,
+    })),
     // The Overview keeps the aggregate state card only; the parent presents
     // these as Top 10 states and does not need the Regions matrix/city rows.
     states,
@@ -124,8 +128,23 @@ export function dashboardForOverviewClient(data: V2Dashboard): V2Dashboard {
     recent: { ...clientData.recent, rows: [] },
     dealerPerformance: {
       ...clientData.dealerPerformance,
-      rows: [],
-      groupedGoals: undefined,
+      rows: clientData.dealerPerformance.rows.map(row => ({
+        dealer: row.dealer,
+        state: row.state,
+        leads: row.leads,
+        leadGoal: row.leadGoal,
+        sales: row.sales,
+        salesGoal: row.salesGoal,
+        conversionRate: row.conversionRate,
+      })),
+      groupedGoals: clientData.dealerPerformance.groupedGoals?.map(group => ({
+        kind: group.kind,
+        key: group.key,
+        sourceLabel: "Collective network goal",
+        dealers: [...group.dealers],
+        value: group.value,
+        leads: group.leads,
+      })),
       unmapped: [],
       unreconciledDealers: [],
       sourceName: null,
