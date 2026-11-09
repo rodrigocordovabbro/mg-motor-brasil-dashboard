@@ -46,11 +46,14 @@ type Preview = {
   total: number | null;
   warnings: string[];
   availableDealers: string[];
+  retailMtd?: number | null;
+  retailAsOf?: string | null;
 };
 
 type Draft = {
   fileName: string;
   base64: string;
+  readProgress: number | null;
   asOf: string;
   sourceWeek: number;
   preview: Preview | null;
@@ -130,6 +133,7 @@ function emptyDraft(kind: UploadKind, month: string): Draft {
   return {
     fileName: "",
     base64: "",
+    readProgress: null,
     asOf:
       kind === "sales" ? defaultSalesDate(month, getDashboardCutoffDate()) : "",
     sourceWeek:
@@ -198,7 +202,9 @@ function SourceCard({
   const unlinkedRows = preview
     ? preview.rows.filter(row => !(draft.mappings[row.key] ?? []).length).length
     : 0;
-  const hasCurrentFile = Boolean(draft.base64 && draft.fileName);
+  const hasCurrentFile = Boolean(
+    draft.base64 && draft.fileName && draft.readProgress === 100
+  );
 
   return (
     <article className="min-w-0 rounded-2xl border border-slate-200/80 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
@@ -234,6 +240,39 @@ function SourceCard({
             className="block w-full rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-red-50 file:px-3 file:py-2 file:text-xs file:font-bold file:text-[#b41b26]"
           />
         </label>
+        {draft.readProgress !== null ? (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+            <div
+              className="mb-2 flex items-center justify-between gap-3 text-xs font-semibold text-slate-700"
+              role="status"
+              aria-live="polite"
+            >
+              <span>
+                {reading
+                  ? "Preparando arquivo"
+                  : "Arquivo pronto para pré-visualizar"}
+              </span>
+              <span className="tabular-nums">{draft.readProgress}%</span>
+            </div>
+            <div
+              role="progressbar"
+              aria-label="Leitura e preparação do arquivo XLSX"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={draft.readProgress}
+              className="h-2 overflow-hidden rounded-full bg-slate-200"
+            >
+              <div
+                className="h-full rounded-full bg-[#e2212d] transition-[width] duration-150"
+                style={{ width: `${draft.readProgress}%` }}
+              />
+            </div>
+            <p className="mt-2 text-[11px] leading-4 text-slate-500">
+              Progresso real de leitura no navegador. A gravação no dashboard
+              ocorre somente após pré-visualizar e confirmar.
+            </p>
+          </div>
+        ) : null}
         {reading ? (
           <p
             role="status"
@@ -369,9 +408,15 @@ function SourceCard({
           </p>
           <p>
             {status
-              ? `Total: ${numberFormat(status.total)} · ${dateTimeFormat(status.importedAt)}`
+              ? `${status.retailMtd !== undefined ? "Total Retail" : "Total"}: ${numberFormat(status.retailMtd !== undefined ? status.retailMtd : status.total)} · ${dateTimeFormat(status.importedAt)}`
               : "Total: Indisponível"}
           </p>
+          {status?.retailAsOf ? (
+            <p>
+              Referência Retail MTD: {status.retailAsOf} · sem Test Drive e
+              Direct Sales
+            </p>
+          ) : null}
           {status?.asOf ? <p>Data de corte: {status.asOf}</p> : null}
           {status?.sourceWeek ? (
             <p>Coluna ativa: W{status.sourceWeek}_Reg</p>
@@ -415,8 +460,19 @@ function SourceCard({
                   Prévia da fonte
                 </p>
                 <p className="mt-1 text-sm font-bold text-slate-900">
-                  Total: {numberFormat(preview.total)}
+                  {preview.retailMtd !== undefined ? "Total Retail" : "Total"}:{" "}
+                  {numberFormat(
+                    preview.retailMtd !== undefined
+                      ? preview.retailMtd
+                      : preview.total
+                  )}
                 </p>
+                {preview.retailAsOf ? (
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Referência Retail: {preview.retailAsOf} · não alocado
+                    automaticamente às lojas
+                  </p>
+                ) : null}
               </div>
               <p className="text-[11px] text-slate-500">
                 {preview.rows.length} linhas ·{" "}
@@ -537,9 +593,19 @@ export default function V2CommercialUploads({
     initialDrafts(competence)
   );
   const [readingKind, setReadingKind] = useState<UploadKind | null>(null);
+  const [combinedBusy, setCombinedBusy] = useState(false);
   const [removalTarget, setRemovalTarget] =
     useState<CommercialStatusFile | null>(null);
   const monthTouched = useRef(false);
+  const activeReader = useRef<FileReader | null>(null);
+  const operationLocked = useRef(false);
+  const mounted = useRef(true);
+  const reportCombinedBusy = useMemo(
+    () => (next: boolean) => {
+      if (mounted.current) setCombinedBusy(next);
+    },
+    []
+  );
   const cutoff = useMemo(() => getDashboardCutoffDate(), []);
   const utils = trpc.useUtils();
   const statusQuery = trpc.commercial.status.useQuery(
@@ -554,23 +620,37 @@ export default function V2CommercialUploads({
   const previewMutation = trpc.commercial.preview.useMutation();
   const commitMutation = trpc.commercial.commit.useMutation();
   const removeMutation = trpc.commercial.remove.useMutation();
-  const busy =
+  const ownBusy =
     readingKind !== null ||
     previewMutation.isPending ||
     commitMutation.isPending ||
     removeMutation.isPending;
+  const busy = ownBusy || combinedBusy;
   const files = statusQuery.data?.files ?? [];
 
   useEffect(() => {
     if (!monthTouched.current) setSelectedMonth(competence);
   }, [competence]);
 
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      const reader = activeReader.current;
+      activeReader.current = null;
+      operationLocked.current = false;
+      reader?.abort();
+    };
+  }, []);
+
   const updateDraft = (kind: UploadKind, update: (draft: Draft) => Draft) => {
+    if (!mounted.current) return;
     setDrafts(current => ({ ...current, [kind]: update(current[kind]) }));
   };
 
   const changeMonth = (nextMonth: string) => {
-    if (busy || !MONTH_PATTERN.test(nextMonth)) return;
+    if (busy || operationLocked.current || !MONTH_PATTERN.test(nextMonth))
+      return;
     monthTouched.current = true;
     setSelectedMonth(nextMonth);
     setDrafts(current => {
@@ -606,7 +686,7 @@ export default function V2CommercialUploads({
   };
 
   const readFile = (kind: UploadKind, file: File | undefined) => {
-    if (!file) return;
+    if (!file || busy || operationLocked.current) return;
     if (!file.name.toLocaleLowerCase().endsWith(".xlsx")) {
       updateDraft(kind, () => ({
         ...emptyDraft(kind, selectedMonth),
@@ -621,11 +701,20 @@ export default function V2CommercialUploads({
       }));
       return;
     }
+    if (file.size === 0) {
+      updateDraft(kind, () => ({
+        ...emptyDraft(kind, selectedMonth),
+        error: "O arquivo está vazio. Selecione um XLSX válido.",
+      }));
+      return;
+    }
+    operationLocked.current = true;
     setReadingKind(kind);
     updateDraft(kind, draft => ({
       ...draft,
       fileName: file.name,
       base64: "",
+      readProgress: 0,
       preview: null,
       mappings: {},
       error: null,
@@ -634,43 +723,86 @@ export default function V2CommercialUploads({
       warnings: [],
     }));
     const reader = new FileReader();
-    reader.onerror = () => {
+    activeReader.current = reader;
+    const finishRead = () => {
+      activeReader.current = null;
+      operationLocked.current = false;
       setReadingKind(null);
+    };
+    const failRead = (message: string) => {
+      if (activeReader.current !== reader) return;
+      finishRead();
       updateDraft(kind, draft => ({
         ...draft,
         fileName: "",
         base64: "",
-        error: "Não foi possível ler o arquivo no navegador.",
+        readProgress: null,
+        error: message,
         errorAction: null,
       }));
     };
+    reader.onerror = () =>
+      failRead(
+        "Não foi possível ler o arquivo no navegador. Selecione novamente."
+      );
+    reader.onabort = () =>
+      failRead("Leitura cancelada. Selecione o arquivo novamente.");
+    reader.onprogress = event => {
+      if (
+        activeReader.current !== reader ||
+        !event.lengthComputable ||
+        event.total <= 0
+      )
+        return;
+      const percent = Math.min(
+        99,
+        Math.max(0, Math.floor((event.loaded / event.total) * 100))
+      );
+      updateDraft(kind, draft => ({
+        ...draft,
+        readProgress: Math.max(draft.readProgress ?? 0, percent),
+      }));
+    };
     reader.onload = () => {
+      if (activeReader.current !== reader) return;
       const dataUrl = typeof reader.result === "string" ? reader.result : "";
       const separator = dataUrl.indexOf(",");
-      const base64 = separator >= 0 ? dataUrl.slice(separator + 1) : dataUrl;
+      const base64 =
+        separator >= 0 && /;base64$/i.test(dataUrl.slice(0, separator))
+          ? dataUrl.slice(separator + 1)
+          : "";
       if (!base64) {
-        updateDraft(kind, draft => ({
-          ...draft,
-          fileName: "",
-          error: "O arquivo não pôde ser convertido para envio.",
-          errorAction: null,
-        }));
+        failRead("O arquivo não pôde ser convertido para envio.");
       } else {
         updateDraft(kind, draft => ({
           ...draft,
           base64,
+          readProgress: 100,
           error: null,
           errorAction: null,
         }));
+        finishRead();
       }
-      setReadingKind(null);
     };
-    reader.readAsDataURL(file);
+    try {
+      reader.readAsDataURL(file);
+    } catch {
+      failRead(
+        "Não foi possível iniciar a leitura do arquivo. Selecione novamente."
+      );
+    }
   };
 
   const previewSource = async (kind: UploadKind) => {
     const draft = drafts[kind];
-    if (!draft.base64 || !draft.fileName) return;
+    if (
+      busy ||
+      operationLocked.current ||
+      draft.readProgress !== 100 ||
+      !draft.base64 ||
+      !draft.fileName
+    )
+      return;
     const requestMonth = selectedMonth;
     if (kind === "sales") {
       if (
@@ -688,6 +820,7 @@ export default function V2CommercialUploads({
         return;
       }
     }
+    operationLocked.current = true;
     updateDraft(kind, current => ({
       ...current,
       error: null,
@@ -723,12 +856,22 @@ export default function V2CommercialUploads({
         errorAction: "preview",
         notice: null,
       }));
+    } finally {
+      operationLocked.current = false;
     }
   };
 
   const commitSource = async (kind: UploadKind) => {
     const draft = drafts[kind];
-    if (!draft.preview || !draft.base64 || !draft.fileName) return;
+    if (
+      busy ||
+      operationLocked.current ||
+      draft.readProgress !== 100 ||
+      !draft.preview ||
+      !draft.base64 ||
+      !draft.fileName
+    )
+      return;
     const duplicateOwners = new Map<string, string[]>();
     for (const config of SOURCE_CONFIGS.filter(
       config => config.kind === kind
@@ -757,6 +900,7 @@ export default function V2CommercialUploads({
       return;
     }
     const savedMonth = selectedMonth;
+    operationLocked.current = true;
     updateDraft(kind, current => ({
       ...current,
       error: null,
@@ -781,6 +925,7 @@ export default function V2CommercialUploads({
         ...current,
         fileName: "",
         base64: "",
+        readProgress: null,
         preview: null,
         mappings: {},
         warnings: result.warnings,
@@ -793,7 +938,7 @@ export default function V2CommercialUploads({
           utils.commercial.status.invalidate({ competence: savedMonth }),
           utils.leads.dashboard.invalidate(),
           utils.leads.goal.invalidate({ competence: savedMonth }),
-          Promise.resolve(onUpdated()),
+          Promise.resolve(mounted.current ? onUpdated() : undefined),
         ]);
       } catch {
         updateDraft(kind, current => ({
@@ -808,6 +953,8 @@ export default function V2CommercialUploads({
         errorAction: "commit",
         notice: null,
       }));
+    } finally {
+      operationLocked.current = false;
     }
   };
 
@@ -847,7 +994,7 @@ export default function V2CommercialUploads({
           utils.commercial.status.invalidate({ competence: selectedMonth }),
           utils.leads.dashboard.invalidate(),
           utils.leads.goal.invalidate({ competence: selectedMonth }),
-          Promise.resolve(onUpdated()),
+          Promise.resolve(mounted.current ? onUpdated() : undefined),
         ]);
       } catch {
         updateDraft(target.kind, current => ({
@@ -917,6 +1064,8 @@ export default function V2CommercialUploads({
           competence={selectedMonth}
           canManage={canManage}
           onUpdated={onUpdated}
+          externalBusy={ownBusy}
+          onBusyChange={reportCombinedBusy}
           statusFiles={files}
           onRemove={status => {
             if (status.id != null) setRemovalTarget(status);

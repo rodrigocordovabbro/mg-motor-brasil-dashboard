@@ -28,6 +28,10 @@ export type ParsedCommercialWorkbook = {
   registrationMtd?: number | null;
   /** File-label date for the general registration snapshot, when trusted. */
   registrationAsOf?: string | null;
+  /** General MTD Retail snapshot; never allocated to dealer rows. */
+  retailMtd?: number | null;
+  /** File-label date for the general Retail snapshot, when trusted. */
+  retailAsOf?: string | null;
   /** Fixed source sheet for the optional registration snapshot. */
   sourceSheet?: string;
 };
@@ -425,6 +429,9 @@ const REGISTRATION_HEADER_ALIASES = new Set([
   "mtdregistrations",
 ]);
 
+/** Only the plain DAILY_FUP `Retail` header is an active general Retail source. */
+const RETAIL_HEADER_ALIASES = new Set(["retail"]);
+
 function findDailyFupRegistrationHeader(
   worksheet: ExcelJS.Worksheet
 ): { rowNumber: number; registrationColumn: number } | null {
@@ -446,6 +453,31 @@ function findDailyFupRegistrationHeader(
     }
     if (hasCurrentMonth && registrationColumn != null)
       return { rowNumber, registrationColumn };
+  }
+  return null;
+}
+
+function findDailyFupRetailHeader(
+  worksheet: ExcelJS.Worksheet
+): { rowNumber: number; retailColumn: number } | null {
+  // The current-month block is deliberately restricted to the first eight
+  // rows. `MTD Retail` and later model tables are not Retail snapshots.
+  for (
+    let rowNumber = 1;
+    rowNumber <= Math.min(8, worksheet.rowCount);
+    rowNumber++
+  ) {
+    const row = worksheet.getRow(rowNumber);
+    let hasCurrentMonth = false;
+    let retailColumn: number | null = null;
+    for (let column = 1; column <= worksheet.columnCount; column++) {
+      const label = compact(cellValue(row.getCell(column)));
+      if (label === "currentmonth") hasCurrentMonth = true;
+      if (RETAIL_HEADER_ALIASES.has(label) && retailColumn == null)
+        retailColumn = column;
+    }
+    if (hasCurrentMonth && retailColumn != null)
+      return { rowNumber, retailColumn };
   }
   return null;
 }
@@ -547,6 +579,131 @@ export function readRegistrationMtd(
   };
 }
 
+export type RetailReadResult = {
+  retailMtd: number | null;
+  retailAsOf: string | null;
+  sourceSheet?: string;
+  sourceKind: "plain" | "legacy-alias" | "missing" | "absent";
+  warnings: string[];
+};
+
+const LEGACY_RETAIL_HEADER_ALIASES = new Set(["mtdretail", "retailmtd"]);
+
+function hasDailyFupLegacyRetailHeader(worksheet: ExcelJS.Worksheet): boolean {
+  for (
+    let rowNumber = 1;
+    rowNumber <= Math.min(8, worksheet.rowCount);
+    rowNumber++
+  ) {
+    const row = worksheet.getRow(rowNumber);
+    let hasCurrentMonth = false;
+    let hasLegacyRetail = false;
+    for (let column = 1; column <= worksheet.columnCount; column++) {
+      const label = compact(cellValue(row.getCell(column)));
+      if (label === "currentmonth") hasCurrentMonth = true;
+      if (LEGACY_RETAIL_HEADER_ALIASES.has(label)) hasLegacyRetail = true;
+    }
+    if (hasCurrentMonth && hasLegacyRetail) return true;
+  }
+  return false;
+}
+
+function retailDateFromFileName(
+  fileName: string,
+  competence: string,
+  warnings: string[]
+): string | null {
+  const tokens = [...fileName.matchAll(/(?:^|[^0-9])(\d{6})(?!\d)/g)].map(
+    match => match[1]
+  );
+  if (!tokens.length) {
+    warnings.push(
+      `A data de referência do Retail MTD não pôde ser derivada do nome ${fileName}; retailAsOf permanece nulo.`
+    );
+    return null;
+  }
+
+  for (const token of tokens) {
+    const year = 2000 + Number(token.slice(0, 2));
+    const month = Number(token.slice(2, 4));
+    const day = Number(token.slice(4, 6));
+    const date = new Date(Date.UTC(year, month - 1, day));
+    const isValid =
+      date.getUTCFullYear() === year &&
+      date.getUTCMonth() === month - 1 &&
+      date.getUTCDate() === day;
+    if (!isValid) {
+      warnings.push(
+        `A data ${token} no nome ${fileName} é inválida; retailAsOf permanece nulo.`
+      );
+      continue;
+    }
+    const isoDate = date.toISOString().slice(0, 10);
+    if (isoDate.slice(0, 7) !== competence) {
+      warnings.push(
+        `A data do Retail MTD (${isoDate}) não pertence à competência ${competence}; retailAsOf permanece nulo.`
+      );
+      continue;
+    }
+    return isoDate;
+  }
+  return null;
+}
+
+/**
+ * Read the general Retail value from the top DAILY_FUP block. The file-label
+ * date intentionally remains independent from the weekly D-1 `asOf`, just as
+ * the MTD Registration metadata does.
+ */
+export function readRetailMtd(
+  workbook: ExcelJS.Workbook,
+  fileName: string,
+  competence: string,
+  _asOf?: string
+): RetailReadResult {
+  const warnings: string[] = [];
+  const retailAsOf = retailDateFromFileName(fileName, competence, warnings);
+  const daily = findDailyFupSheet(workbook);
+  if (!daily) {
+    warnings.push(
+      "A aba DAILY_FUP não foi encontrada; Retail MTD permanece nulo."
+    );
+    return { retailMtd: null, retailAsOf, sourceKind: "absent", warnings };
+  }
+
+  const header = findDailyFupRetailHeader(daily);
+  if (!header) {
+    warnings.push(
+      "O bloco Current Month + Retail não foi encontrado nas linhas 1-8 da aba DAILY_FUP; Retail MTD permanece nulo."
+    );
+    return {
+      retailMtd: null,
+      retailAsOf,
+      sourceSheet: daily.name,
+      sourceKind: hasDailyFupLegacyRetailHeader(daily)
+        ? "legacy-alias"
+        : "missing",
+      warnings,
+    };
+  }
+
+  const retailMtd = parseInteger(
+    cellValue(daily.getCell(header.rowNumber + 1, header.retailColumn)),
+    `Retail na aba ${daily.name}, linha ${header.rowNumber + 1}`
+  );
+  if (retailMtd == null)
+    warnings.push(
+      `O valor de Retail na aba ${daily.name}, linha ${header.rowNumber + 1}, está vazio; Retail MTD permanece nulo.`
+    );
+  return {
+    retailMtd,
+    retailAsOf,
+    sourceSheet: daily.name,
+    sourceKind: "plain",
+    warnings,
+  };
+}
+
 function findWeeklyRegSheet(
   workbook: ExcelJS.Workbook
 ): ExcelJS.Worksheet | null {
@@ -559,35 +716,13 @@ function findWeeklyRegSheet(
 function dailyFupReferenceWarning(workbook: ExcelJS.Workbook): string | null {
   const daily = findDailyFupSheet(workbook);
   if (!daily) return null;
-  const header = findHeader(daily, [
-    ["current month"],
-    ["mtd retail", "retail mtd", "retailmtd"],
-  ]);
+  const header = findDailyFupRegistrationHeader(daily);
   if (!header) return null;
-  const retailColumn = firstColumn(header, [
-    "mtd retail",
-    "retail mtd",
-    "retailmtd",
-  ]);
-  const registrationColumn = firstColumn(header, [
-    "mtd registration",
-    "registration mtd",
-    "mtd registrations",
-    "registration",
-  ]);
-  if (!retailColumn && !registrationColumn) return null;
-  const retail = retailColumn
-    ? textOf(
-        cellValue(daily.getCell(header.rowNumber + 1, retailColumn))
-      ).trim()
-    : "N/A";
-  const registration = registrationColumn
-    ? textOf(
-        cellValue(daily.getCell(header.rowNumber + 1, registrationColumn))
-      ).trim()
-    : "N/A";
-  if (!retail && !registration) return null;
-  return `Referências DAILY_FUP (não utilizadas como vendas ativas): MTD Retail = ${retail || "N/A"}; MTD Registration = ${registration || "N/A"}.`;
+  const registration = textOf(
+    cellValue(daily.getCell(header.rowNumber + 1, header.registrationColumn))
+  ).trim();
+  if (!registration) return null;
+  return `Referência DAILY_FUP: MTD Registration = ${registration}; emplacamentos não substituem o total Retail.`;
 }
 
 function parseWeeklyRegSales(
@@ -933,6 +1068,23 @@ export async function parseCommercialWorkbook(
           parsedAsOf ?? undefined
         )
       : undefined;
+  const retail =
+    kind === "sales"
+      ? readRetailMtd(workbook, fileName, competence, parsedAsOf ?? undefined)
+      : undefined;
+  const importedTotal =
+    retail?.sourceKind === "plain"
+      ? (retail.retailMtd ?? null)
+      : retail?.sourceKind === "missing"
+        ? null
+        : result.total;
+  const retailTotalWarning =
+    retail?.sourceKind === "plain" &&
+    retail.retailMtd != null &&
+    result.total != null &&
+    retail.retailMtd !== result.total
+      ? `Total geral Retail MTD = ${retail.retailMtd}; soma conhecida de WEEKLY_REG = ${result.total} permanece somente como referência por loja.`
+      : null;
   return {
     kind,
     competence,
@@ -941,14 +1093,21 @@ export async function parseCommercialWorkbook(
     fileName,
     fileSha256: createHash("sha256").update(buffer).digest("hex"),
     rows: result.rows,
-    total: result.total,
-    warnings: [...result.warnings, ...(registration?.warnings ?? [])],
+    total: importedTotal,
+    warnings: [
+      ...result.warnings,
+      ...(registration?.warnings ?? []),
+      ...(retail?.warnings ?? []),
+      ...(retailTotalWarning ? [retailTotalWarning] : []),
+    ],
     ...(registration
       ? {
           registrationMtd: registration.registrationMtd,
           registrationAsOf: registration.registrationAsOf,
-          ...(registration.sourceSheet
-            ? { sourceSheet: registration.sourceSheet }
+          retailMtd: retail?.retailMtd ?? null,
+          retailAsOf: retail?.retailAsOf ?? null,
+          ...(registration.sourceSheet || retail?.sourceSheet
+            ? { sourceSheet: registration.sourceSheet ?? retail?.sourceSheet }
             : {}),
         }
       : {}),

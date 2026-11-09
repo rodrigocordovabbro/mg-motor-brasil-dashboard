@@ -113,6 +113,12 @@ export type V2Dashboard = {
       sourceSheet: "DAILY_FUP";
       label: "MTD Registration";
     } | null;
+    generalRetailMTD?: {
+      value: number;
+      asOf: string | null;
+      sourceSheet: "DAILY_FUP";
+      label: "Retail";
+    } | null;
     warnings?: string[];
     unmapped?: Array<{
       kind: "lead-goals" | "sales-goals" | "sales";

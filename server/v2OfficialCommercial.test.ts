@@ -198,7 +198,7 @@ describe("official commercial performance", () => {
     expect(performance.rows).toHaveLength(42); // 41 official units + one unmatched raw unit.
     expect(performance.totals.leads).toBe(10);
     expect(performance.totals.leadGoal).toBe(722);
-    expect(performance.totals.sales).toBe(0);
+    expect(performance.totals.sales).toBeNull();
     expect(performance.totals.salesGoal).toBe(2);
 
     const savol = performance.rows.find(

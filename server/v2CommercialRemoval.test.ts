@@ -61,6 +61,33 @@ describe("commercial source removal", () => {
     ]);
   });
 
+  it("canonicalizes a legacy DAILY_FUP reference warning without changing stored data", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      [
+        {
+          ...storedRow("sales", 20),
+          registrationMtd: 90,
+          registrationAsOf: "2026-11-05",
+          retailMtd: 84,
+          retailAsOf: "2026-11-08",
+          warningsJson: JSON.stringify([
+            "Referências DAILY_FUP (não utilizadas como vendas ativas): MTD Retail = 84; MTD Registration = 90.",
+          ]),
+        },
+      ],
+      [],
+    ]);
+    vi.mocked(getV2Pool).mockReturnValue({ execute } as never);
+
+    const status = await readCommercialStatus("2026-11");
+    expect(status.files.find(file => file.kind === "sales")).toMatchObject({
+      warnings: [
+        "Referência DAILY_FUP: MTD Registration = 90; emplacamentos não substituem o total Retail.",
+      ],
+    });
+    expect(execute).toHaveBeenCalledOnce();
+  });
+
   it("soft-removes only the expected current version and appends an audit event", async () => {
     const beginTransaction = vi.fn().mockResolvedValue(undefined);
     const commit = vi.fn().mockResolvedValue(undefined);

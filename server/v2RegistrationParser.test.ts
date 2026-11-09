@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   parseCommercialWorkbook,
   readRegistrationMtd,
+  readRetailMtd,
 } from "./v2CommercialParser";
 
 async function workbookBase64(
@@ -175,4 +176,149 @@ it("rejects DAILY_FUP plus an unrelated generic dealer-sales sheet without WEEKL
       base64
     )
   ).rejects.toThrow("WEEKLY_REG");
+});
+
+function addDailyRetailBlock(
+  workbook: ExcelJS.Workbook,
+  retail: number | null | { formula: string; result?: number },
+  registration = 90,
+  includeLegacyRetail = true
+): void {
+  const daily = workbook.addWorksheet("DAILY_FUP");
+  daily.getCell("B2").value = "Current Month";
+  daily.getCell("E2").value = "MTD Registration";
+  daily.getCell("F2").value = "Retail";
+  daily.getCell("G2").value = "Test Drive";
+  daily.getCell("H2").value = "Direct Sales";
+  if (includeLegacyRetail) daily.getCell("I2").value = "MTD Retail";
+  daily.getCell("B3").value = "Volume";
+  daily.getCell("E3").value = registration;
+  daily.getCell("F3").value = retail as never;
+  daily.getCell("G3").value = 2;
+  daily.getCell("H3").value = 4;
+  if (includeLegacyRetail) daily.getCell("I3").value = 61;
+}
+
+function addWeeklyRetailRows(workbook: ExcelJS.Workbook): void {
+  const weekly = workbook.addWorksheet("WEEKLY_REG");
+  weekly.addRow(["CUSTOMER_NAME", "W1_Reg"]);
+  weekly.addRow(["Dealer A", 0]);
+  weekly.addRow(["Dealer B", 0]);
+}
+
+describe("general Retail parser", () => {
+  it("uses plain Retail as the imported total and ignores MTD Retail/Test Drive/Direct Sales", async () => {
+    const base64 = await workbookBase64(workbook => {
+      addDailyRetailBlock(workbook, 84);
+      addWeeklyRetailRows(workbook);
+    });
+    const parsed = await parseCommercialWorkbook(
+      "sales",
+      "2026-11",
+      "2026-11-07",
+      "pasted_file_EaGegx_261108_Daily_Sales_FUP.xlsx",
+      base64,
+      1
+    );
+
+    expect(parsed.total).toBe(84);
+    expect(parsed.retailMtd).toBe(84);
+    expect(parsed.retailAsOf).toBe("2026-11-08");
+    expect(parsed.registrationMtd).toBe(90);
+    expect(parsed.rows.map(row => row.value)).toEqual([0, 0]);
+    expect(parsed.rows.some(row => row.value === 2 || row.value === 4)).toBe(
+      false
+    );
+    expect(parsed.warnings.join(" ")).toContain(
+      "soma conhecida de WEEKLY_REG = 0"
+    );
+  });
+
+  it("preserves a real zero and a trusted future file date independently of D-1 asOf", async () => {
+    const workbook = new ExcelJS.Workbook();
+    addDailyRetailBlock(workbook, 0, 90, false);
+    const result = readRetailMtd(
+      workbook,
+      "Daily_Sales_FUP_261109.xlsx",
+      "2026-11",
+      "2026-11-07"
+    );
+    expect(result.retailMtd).toBe(0);
+    expect(result.retailAsOf).toBe("2026-11-09");
+  });
+
+  it("returns null for a blank plain Retail cell and does not use MTD Registration as Retail", async () => {
+    const base64 = await workbookBase64(workbook => {
+      addDailyRetailBlock(workbook, null, 90, false);
+      addWeeklyRetailRows(workbook);
+    });
+    const parsed = await parseCommercialWorkbook(
+      "sales",
+      "2026-11",
+      "2026-11-07",
+      "Daily_Sales_FUP_261108.xlsx",
+      base64,
+      1
+    );
+    expect(parsed.retailMtd).toBeNull();
+    expect(parsed.total).toBeNull();
+    expect(parsed.registrationMtd).toBe(90);
+    expect(parsed.warnings.join(" ")).toContain("Retail MTD permanece nulo");
+  });
+
+  it("does not activate the legacy MTD Retail alias", async () => {
+    const base64 = await workbookBase64(workbook => {
+      const daily = workbook.addWorksheet("DAILY_FUP");
+      daily.getCell("B2").value = "Current Month";
+      daily.getCell("E2").value = "MTD Registration";
+      daily.getCell("F2").value = "MTD Retail";
+      daily.getCell("B3").value = "Volume";
+      daily.getCell("E3").value = 90;
+      daily.getCell("F3").value = 61;
+      addWeeklyRetailRows(workbook);
+    });
+    const parsed = await parseCommercialWorkbook(
+      "sales",
+      "2026-11",
+      "2026-11-07",
+      "Daily_Sales_FUP_261108.xlsx",
+      base64,
+      1
+    );
+    expect(parsed.retailMtd).toBeNull();
+    expect(parsed.total).toBe(0);
+  });
+
+  it("rejects negative and decimal Retail values", async () => {
+    for (const value of [-1, 1.5]) {
+      const base64 = await workbookBase64(workbook => {
+        addDailyRetailBlock(workbook, value, 90, false);
+        addWeeklyRetailRows(workbook);
+      });
+      await expect(
+        parseCommercialWorkbook(
+          "sales",
+          "2026-11",
+          "2026-11-07",
+          "Daily_Sales_FUP_261108.xlsx",
+          base64,
+          1
+        )
+      ).rejects.toThrow("inteiro seguro");
+    }
+  });
+
+  it("reads cached formula results without executing formulas and treats absent cache as null", async () => {
+    const cached = new ExcelJS.Workbook();
+    addDailyRetailBlock(cached, { formula: "40+44", result: 84 }, 90, false);
+    expect(
+      readRetailMtd(cached, "Daily_Sales_FUP_261108.xlsx", "2026-11").retailMtd
+    ).toBe(84);
+
+    const absent = new ExcelJS.Workbook();
+    addDailyRetailBlock(absent, { formula: "40+44" }, 90, false);
+    expect(
+      readRetailMtd(absent, "Daily_Sales_FUP_261108.xlsx", "2026-11").retailMtd
+    ).toBeNull();
+  });
 });

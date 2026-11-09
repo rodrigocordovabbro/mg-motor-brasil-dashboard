@@ -19,6 +19,7 @@ import type {
   CommercialActor,
   CommercialCommitInput,
   CommercialCommitResult,
+  CommercialGeneralRetail,
   CommercialGeneralRegistration,
   CommercialPerformance,
   CommercialPreview,
@@ -74,6 +75,10 @@ export type CommercialStoredImport = {
   registrationMtd?: number | null;
   /** File-label date of the general snapshot; optional for legacy rows. */
   registrationAsOf?: string | null;
+  /** General DAILY_FUP Retail snapshot; NULL on old rows until reimport. */
+  retailMtd?: number | null;
+  /** File-label date of the general Retail snapshot. */
+  retailAsOf?: string | null;
   /** Fixed source label when registration metadata is available. */
   sourceSheet?: string;
   fileName: string;
@@ -384,6 +389,8 @@ export async function previewCommercialUpload(
     availableDealers: suggested.availableDealers,
     registrationMtd: parsed.registrationMtd,
     registrationAsOf: parsed.registrationAsOf,
+    retailMtd: parsed.retailMtd,
+    retailAsOf: parsed.retailAsOf,
     sourceSheet: parsed.sourceSheet,
   };
 }
@@ -509,6 +516,21 @@ function jsonWarnings(value: unknown): string[] {
     : [];
 }
 
+function canonicalStoredWarnings(
+  warnings: string[],
+  registrationMtd: number | null | undefined
+): string[] {
+  if (typeof registrationMtd !== "number" || !Number.isFinite(registrationMtd))
+    return warnings;
+  return warnings.map(warning =>
+    /^Referências DAILY_FUP\s*\(não utilizadas como vendas ativas\):/i.test(
+      warning
+    )
+      ? `Referência DAILY_FUP: MTD Registration = ${registrationMtd}; emplacamentos não substituem o total Retail.`
+      : warning
+  );
+}
+
 function dateTimeIso(value: unknown): string | null {
   if (value == null) return null;
   const date = value instanceof Date ? value : new Date(storedText(value));
@@ -537,6 +559,22 @@ function mapStoredImport(row: RowDataPacket): CommercialStoredImport {
   const registrationAsOf = hasRegistrationMetadata
     ? dateOnly(row.registrationAsOf)
     : undefined;
+  const hasRetailMetadata =
+    Object.prototype.hasOwnProperty.call(row, "retailMtd") ||
+    Object.prototype.hasOwnProperty.call(row, "retailAsOf");
+  const retailMtd = hasRetailMetadata
+    ? row.retailMtd == null
+      ? null
+      : Number(row.retailMtd)
+    : undefined;
+  const retailAsOf = hasRetailMetadata ? dateOnly(row.retailAsOf) : undefined;
+  const sourceSheet =
+    registrationMtd != null ||
+    registrationAsOf != null ||
+    retailMtd != null ||
+    retailAsOf != null
+      ? "DAILY_FUP"
+      : undefined;
   return {
     id: Number(row.id),
     kind,
@@ -547,24 +585,26 @@ function mapStoredImport(row: RowDataPacket): CommercialStoredImport {
       ? {
           registrationMtd,
           registrationAsOf,
-          ...(registrationMtd != null || registrationAsOf != null
-            ? { sourceSheet: "DAILY_FUP" }
-            : {}),
         }
       : {}),
+    ...(hasRetailMetadata ? { retailMtd, retailAsOf } : {}),
+    ...(sourceSheet ? { sourceSheet } : {}),
     fileName: storedText(row.fileName),
     fileSha256: storedText(row.fileSha256),
     total: row.total == null ? null : Number(row.total),
     rowCount: Number(row.rowCount),
     rows: jsonRows(row.rowsJson),
-    warnings: jsonWarnings(row.warningsJson),
+    warnings: canonicalStoredWarnings(
+      jsonWarnings(row.warningsJson),
+      registrationMtd
+    ),
     importedAt: dateTimeIso(row.importedAt),
     removed: row.removedAt != null,
   };
 }
 
 const importSelect =
-  "SELECT i.id,i.kind,i.competence,i.asOf,i.sourceWeek,i.registrationMtd,i.registrationAsOf,i.fileName,i.fileSha256,i.total,i.rowCount,i.rowsJson,i.warningsJson,i.importedAt,s.removedAt FROM v2_commercial_imports i LEFT JOIN v2_commercial_import_state s ON s.importId=i.id WHERE i.competence=?";
+  "SELECT i.id,i.kind,i.competence,i.asOf,i.sourceWeek,i.registrationMtd,i.registrationAsOf,i.retailMtd,i.retailAsOf,i.fileName,i.fileSha256,i.total,i.rowCount,i.rowsJson,i.warningsJson,i.importedAt,s.removedAt FROM v2_commercial_imports i LEFT JOIN v2_commercial_import_state s ON s.importId=i.id WHERE i.competence=?";
 
 async function readLatestImportsFrom(
   executor: QueryExecutor,
@@ -610,10 +650,21 @@ function statusFile(
         importedAt: stored.importedAt,
         rows: stored.rowCount,
         warnings: stored.warnings,
-        ...(stored.registrationMtd !== undefined
+        ...(stored.registrationMtd !== undefined ||
+        stored.retailMtd !== undefined
           ? {
-              registrationMtd: stored.registrationMtd,
-              registrationAsOf: stored.registrationAsOf ?? null,
+              ...(stored.registrationMtd !== undefined
+                ? {
+                    registrationMtd: stored.registrationMtd,
+                    registrationAsOf: stored.registrationAsOf ?? null,
+                  }
+                : {}),
+              ...(stored.retailMtd !== undefined
+                ? {
+                    retailMtd: stored.retailMtd,
+                    retailAsOf: stored.retailAsOf ?? null,
+                  }
+                : {}),
               ...(stored.sourceSheet
                 ? { sourceSheet: stored.sourceSheet }
                 : {}),
@@ -710,7 +761,9 @@ function mappingSha256(
   rows: CommercialSourceRow[],
   sourceWeek: number | null,
   registrationMtd?: number | null,
-  registrationAsOf?: string | null
+  registrationAsOf?: string | null,
+  retailMtd?: number | null,
+  retailAsOf?: string | null
 ): string {
   const hash = createHash("sha256")
     .update(
@@ -731,6 +784,10 @@ function mappingSha256(
         registrationMtd ?? null,
         registrationAsOf ?? null,
       ])
+    );
+  if (retailMtd !== undefined || retailAsOf !== undefined)
+    hash.update(
+      JSON.stringify(["retail", retailMtd ?? null, retailAsOf ?? null])
     );
   return hash.digest("hex");
 }
@@ -801,7 +858,9 @@ async function commitParsedCommercialUpload(
     mapped.rows,
     parsed.sourceWeek ?? null,
     parsed.registrationMtd,
-    parsed.registrationAsOf
+    parsed.registrationAsOf,
+    parsed.retailMtd,
+    parsed.retailAsOf
   );
   let restoredAsNewRevision = false;
   const [existing] = await connection.execute<RowDataPacket[]>(
@@ -811,7 +870,7 @@ async function commitParsedCommercialUpload(
   let selectedExisting: RowDataPacket | undefined = existing[0];
   if (selectedExisting) {
     const [newestRows] = await connection.execute<RowDataPacket[]>(
-      "SELECT i.id,i.fileSha256,i.asOfKey,i.sourceWeek,i.registrationMtd,i.registrationAsOf,i.rowsJson,i.total,i.rowCount,i.warningsJson,s.removedAt FROM v2_commercial_imports i LEFT JOIN v2_commercial_import_state s ON s.importId=i.id WHERE i.kind=? AND i.competence=? ORDER BY i.id DESC LIMIT 1 FOR UPDATE",
+      "SELECT i.id,i.fileSha256,i.asOfKey,i.sourceWeek,i.registrationMtd,i.registrationAsOf,i.retailMtd,i.retailAsOf,i.rowsJson,i.total,i.rowCount,i.warningsJson,s.removedAt FROM v2_commercial_imports i LEFT JOIN v2_commercial_import_state s ON s.importId=i.id WHERE i.kind=? AND i.competence=? ORDER BY i.id DESC LIMIT 1 FOR UPDATE",
       [parsed.kind, parsed.competence]
     );
     const newest = newestRows[0];
@@ -829,6 +888,14 @@ async function commitParsedCommercialUpload(
             : undefined,
           Object.prototype.hasOwnProperty.call(newest, "registrationAsOf")
             ? dateOnly(newest.registrationAsOf)
+            : undefined,
+          Object.prototype.hasOwnProperty.call(newest, "retailMtd")
+            ? newest.retailMtd == null
+              ? null
+              : Number(newest.retailMtd)
+            : undefined,
+          Object.prototype.hasOwnProperty.call(newest, "retailAsOf")
+            ? dateOnly(newest.retailAsOf)
             : undefined
         ) === mappingHash;
       if (sameCurrentContent) selectedExisting = newest;
@@ -876,7 +943,7 @@ async function commitParsedCommercialUpload(
   );
 
   const [inserted] = await connection.execute<ResultSetHeader>(
-    "INSERT INTO v2_commercial_imports (kind,competence,asOf,sourceWeek,asOfKey,fileName,fileSha256,mappingSha256,total,rowCount,rowsJson,warningsJson,importedBy,registrationMtd,registrationAsOf) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    "INSERT INTO v2_commercial_imports (kind,competence,asOf,sourceWeek,asOfKey,fileName,fileSha256,mappingSha256,total,rowCount,rowsJson,warningsJson,importedBy,registrationMtd,registrationAsOf,retailMtd,retailAsOf) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
     [
       parsed.kind,
       parsed.competence,
@@ -893,6 +960,8 @@ async function commitParsedCommercialUpload(
       actor.id,
       parsed.registrationMtd ?? null,
       parsed.registrationAsOf ?? null,
+      parsed.retailMtd ?? null,
+      parsed.retailAsOf ?? null,
     ]
   );
   const importId = Number(inserted.insertId);
@@ -1495,6 +1564,7 @@ export function buildOfficialCommercialPerformance(
       groupedGoals: [],
       unreconciledDealers: [],
       generalRegistrationMTD: null,
+      generalRetailMTD: null,
       salesGoalOrigin: "unavailable",
     };
   }
@@ -1532,13 +1602,30 @@ export function buildOfficialCommercialPerformance(
           label: "MTD Registration",
         }
       : null;
-  if (generalRegistrationMTD) {
+  const retailMetadataPresent = built.salesImport?.retailMtd !== undefined;
+  const generalRetailMTD: CommercialGeneralRetail | null =
+    typeof built.salesImport?.retailMtd === "number"
+      ? {
+          value: built.salesImport.retailMtd,
+          asOf: built.salesImport.retailAsOf ?? null,
+          sourceSheet: "DAILY_FUP",
+          label: "Retail",
+        }
+      : null;
+  if (generalRetailMTD || generalRegistrationMTD) {
     const dealerSalesTotal = built.work.reduce(
       (sum, row) => sum + (row.sales ?? 0),
       0
     );
-    if (dealerSalesTotal !== generalRegistrationMTD.value)
+    if (generalRetailMTD && retailMetadataPresent) {
+      if (dealerSalesTotal !== generalRetailMTD.value)
+        allWarnings.push("Total geral Retail MTD não distribuído entre lojas.");
+    } else if (
+      generalRegistrationMTD &&
+      dealerSalesTotal !== generalRegistrationMTD.value
+    ) {
       allWarnings.push("Total geral MTD não distribuído entre lojas.");
+    }
   }
   const registrationDate = built.salesImport?.registrationAsOf;
   const registrationDateCompatible =
@@ -1575,21 +1662,13 @@ export function buildOfficialCommercialPerformance(
       ? manualSalesGoal!
       : (built.salesGoalImport?.total ?? null)
     : null;
-  const salesTotal =
-    globallyComparable && generalRegistrationMTD != null
-      ? generalRegistrationMTD.value
-      : built.globalScope && built.salesCompatible
-        ? built.salesImport?.registrationMtd !== undefined
-          ? (built.salesImport.registrationMtd ?? null)
-          : (built.salesImport?.total ?? null)
-        : null;
+  const salesTotal = globallyComparable
+    ? (generalRetailMTD?.value ?? null)
+    : null;
   // Requested executive comparison, not a matched-lead/cohort conversion.
   // The FUP file reference remains visible even when it differs from D-1.
   const generalRatioSales = globallyComparable
-    ? (generalRegistrationMTD?.value ??
-      (built.salesImport?.registrationMtd === undefined && conversionCompatible
-        ? salesTotal
-        : null))
+    ? (generalRetailMTD?.value ?? null)
     : null;
   return {
     available: true,
@@ -1616,6 +1695,7 @@ export function buildOfficialCommercialPerformance(
       .filter(row => row.canonical === null && !row.registryExtra)
       .map(row => ({ sourceLabel: row.dealer, leads: row.leads })),
     generalRegistrationMTD,
+    generalRetailMTD,
     salesGoalOrigin: globallyComparable
       ? hasManualSalesGoal
         ? "manual"
@@ -1697,7 +1777,9 @@ export async function reconcileCommercialDealers(
         reconciled.rows,
         stored.sourceWeek,
         stored.registrationMtd,
-        stored.registrationAsOf
+        stored.registrationAsOf,
+        stored.retailMtd,
+        stored.retailAsOf
       );
       const [existing] = await connection.execute<RowDataPacket[]>(
         "SELECT id FROM v2_commercial_imports WHERE kind=? AND competence=? AND fileSha256=? AND asOfKey=? AND mappingSha256=? LIMIT 1 FOR UPDATE",
@@ -1705,7 +1787,7 @@ export async function reconcileCommercialDealers(
       );
       if (existing[0]) continue;
       const [inserted] = await connection.execute<ResultSetHeader>(
-        "INSERT INTO v2_commercial_imports (kind,competence,asOf,sourceWeek,asOfKey,fileName,fileSha256,mappingSha256,total,rowCount,rowsJson,warningsJson,importedBy,registrationMtd,registrationAsOf) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO v2_commercial_imports (kind,competence,asOf,sourceWeek,asOfKey,fileName,fileSha256,mappingSha256,total,rowCount,rowsJson,warningsJson,importedBy,registrationMtd,registrationAsOf,retailMtd,retailAsOf) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         [
           kind,
           competence,
@@ -1722,6 +1804,8 @@ export async function reconcileCommercialDealers(
           actor.id,
           stored.registrationMtd ?? null,
           stored.registrationAsOf ?? null,
+          stored.retailMtd ?? null,
+          stored.retailAsOf ?? null,
         ]
       );
       importIds.push(Number(inserted.insertId));

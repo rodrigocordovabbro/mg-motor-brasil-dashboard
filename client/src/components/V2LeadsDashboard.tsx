@@ -1179,16 +1179,18 @@ function DealerPerformanceCard({
           }
         />
         <SummaryFact
-          label="Vendas gerais (MTD)"
+          label="Vendas Retail (MTD)"
           value={
-            performance.generalRegistrationMTD
-              ? numberFormat(performance.generalRegistrationMTD.value)
+            available && totals.sales != null && performance.generalRetailMTD
+              ? numberFormat(totals.sales)
               : "Indisponível"
           }
           detail={
-            performance.generalRegistrationMTD
-              ? `FUP · ${performance.generalRegistrationMTD.asOf ? fullDate(performance.generalRegistrationMTD.asOf) : "referência da fonte"} · total geral`
-              : "MTD Registration não disponível"
+            available && totals.sales != null && performance.generalRetailMTD
+              ? `Retail · ${performance.generalRetailMTD.asOf ? fullDate(performance.generalRetailMTD.asOf) : "referência da fonte"} · sem Test Drive e Direct Sales`
+              : performance.generalRetailMTD
+                ? "Total geral não comparável a este filtro"
+                : "Retail do resumo DAILY_FUP não disponível"
           }
         />
         <SummaryFact

@@ -1,0 +1,9 @@
+-- General MTD Retail metadata for immutable commercial snapshots.
+-- The explicit runner checks each column with SHOW COLUMNS before applying the
+-- corresponding ALTER TABLE. This file is reviewed/executed manually and is
+-- never imported by the application startup path.
+--
+-- ALTER TABLE v2_commercial_imports
+--   ADD COLUMN retailMtd INT NULL AFTER registrationAsOf;
+-- ALTER TABLE v2_commercial_imports
+--   ADD COLUMN retailAsOf DATE NULL AFTER retailMtd;

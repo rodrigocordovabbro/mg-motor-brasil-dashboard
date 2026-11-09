@@ -55,6 +55,8 @@ export type V2CombinedGoalsUploadProps = {
   competence: string;
   canManage?: boolean;
   onUpdated: () => void | Promise<void>;
+  externalBusy?: boolean;
+  onBusyChange?: (busy: boolean) => void;
   statusFiles: ReadonlyArray<CommercialStatusFile>;
   onRemove: (file: CommercialStatusFile) => void;
 };
@@ -114,17 +116,25 @@ export default function V2CombinedGoalsUpload({
   competence,
   canManage = false,
   onUpdated,
+  externalBusy = false,
+  onBusyChange,
   statusFiles,
   onRemove,
 }: V2CombinedGoalsUploadProps) {
   const [draft, setDraft] = useState<Draft>(() => emptyDraft());
   const [reading, setReading] = useState(false);
+  const mounted = useRef(true);
+  const readingRef = useRef(false);
+  const activeReader = useRef<FileReader | null>(null);
   const readSequence = useRef(0);
   const operationSequence = useRef(0);
+  const operationLocked = useRef(false);
   const utils = trpc.useUtils();
   const previewMutation = trpc.commercial.previewGoals.useMutation();
   const commitMutation = trpc.commercial.commitGoals.useMutation();
-  const busy = reading || previewMutation.isPending || commitMutation.isPending;
+  const ownBusy =
+    reading || previewMutation.isPending || commitMutation.isPending;
+  const busy = ownBusy || externalBusy;
   const preview = draft.preview;
   const hasCurrentFile = Boolean(draft.fileName && draft.base64);
   const leadStatus = statusFiles.find(file => file.kind === "lead-goals");
@@ -152,18 +162,53 @@ export default function V2CombinedGoalsUpload({
   }, [preview]);
 
   useEffect(() => {
+    onBusyChange?.(ownBusy);
+  }, [onBusyChange, ownBusy]);
+
+  useEffect(() => {
     readSequence.current += 1;
     operationSequence.current += 1;
+    const reader = activeReader.current;
+    if (reader) {
+      activeReader.current = null;
+      readingRef.current = false;
+      operationLocked.current = false;
+      try {
+        reader.abort();
+      } catch {
+        // The local reader is already being torn down.
+      }
+    }
+    if (!mounted.current) return;
     setDraft(emptyDraft());
     setReading(false);
   }, [competence]);
 
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      readSequence.current += 1;
+      operationSequence.current += 1;
+      const reader = activeReader.current;
+      activeReader.current = null;
+      readingRef.current = false;
+      operationLocked.current = false;
+      try {
+        reader?.abort();
+      } catch {
+        // Do not cancel an already submitted preview/commit operation.
+      }
+    };
+  }, []);
+
   const updateDraft = (update: (current: Draft) => Draft) => {
+    if (!mounted.current) return;
     setDraft(current => update(current));
   };
 
   const readFile = (file: File | undefined) => {
-    if (!file) return;
+    if (!file || busy || operationLocked.current) return;
     if (!file.name.toLocaleLowerCase().endsWith(".xlsx")) {
       setDraft({
         ...emptyDraft(),
@@ -179,45 +224,71 @@ export default function V2CombinedGoalsUpload({
       return;
     }
 
+    operationLocked.current = true;
     const sequence = ++readSequence.current;
+    readingRef.current = true;
     setReading(true);
     setDraft({
       ...emptyDraft(),
       fileName: file.name,
     });
     const reader = new FileReader();
-    reader.onerror = () => {
-      if (sequence !== readSequence.current) return;
-      setReading(false);
+    activeReader.current = reader;
+    const finishRead = () => {
+      if (activeReader.current !== reader) return false;
+      activeReader.current = null;
+      readingRef.current = false;
+      operationLocked.current = false;
+      if (mounted.current) setReading(false);
+      return true;
+    };
+    const failRead = (message: string) => {
+      if (!finishRead()) return;
+      if (!mounted.current || sequence !== readSequence.current) return;
       setDraft({
         ...emptyDraft(),
-        error: "Não foi possível ler o arquivo no navegador.",
+        error: message,
       });
     };
+    reader.onerror = () => {
+      failRead("Não foi possível ler o arquivo no navegador.");
+    };
+    reader.onabort = () => {
+      failRead("Leitura cancelada. Selecione o arquivo novamente.");
+    };
     reader.onload = () => {
-      if (sequence !== readSequence.current) return;
+      if (activeReader.current !== reader) return;
       const dataUrl = typeof reader.result === "string" ? reader.result : "";
       const separator = dataUrl.indexOf(",");
       const base64 = separator >= 0 ? dataUrl.slice(separator + 1) : dataUrl;
-      setReading(false);
       if (!base64) {
-        setDraft({
-          ...emptyDraft(),
-          error: "O arquivo não pôde ser convertido para envio.",
-        });
+        failRead("O arquivo não pôde ser convertido para envio.");
         return;
       }
+      if (!finishRead()) return;
+      if (!mounted.current || sequence !== readSequence.current) return;
       setDraft({
         ...emptyDraft(),
         fileName: file.name,
         base64,
       });
     };
-    reader.readAsDataURL(file);
+    try {
+      reader.readAsDataURL(file);
+    } catch {
+      failRead("Não foi possível iniciar a leitura do arquivo no navegador.");
+    }
   };
 
   const previewGoals = async () => {
-    if (!hasCurrentFile || !MONTH_PATTERN.test(competence)) return;
+    if (
+      busy ||
+      operationLocked.current ||
+      !hasCurrentFile ||
+      !MONTH_PATTERN.test(competence)
+    )
+      return;
+    operationLocked.current = true;
     const requestCompetence = competence;
     const requestFileName = draft.fileName;
     const requestBase64 = draft.base64;
@@ -235,6 +306,7 @@ export default function V2CombinedGoalsUpload({
         base64: requestBase64,
       });
       if (
+        !mounted.current ||
         requestCompetence !== competence ||
         requestOperation !== operationSequence.current ||
         readSequence.current <= 0
@@ -260,19 +332,26 @@ export default function V2CombinedGoalsUpload({
         };
       });
     } catch (error) {
-      if (requestOperation !== operationSequence.current) return;
+      if (
+        !mounted.current ||
+        requestOperation !== operationSequence.current
+      )
+        return;
       updateDraft(current => ({
         ...current,
         error: errorMessage(error),
         errorAction: "preview",
         notice: null,
       }));
+    } finally {
+      operationLocked.current = false;
     }
   };
 
   const commitGoals = async () => {
     const currentPreview = draft.preview;
-    if (!currentPreview || !hasCurrentFile) return;
+    if (busy || operationLocked.current || !currentPreview || !hasCurrentFile)
+      return;
     if (
       currentPreview.competence !== competence ||
       currentPreview.fileName !== draft.fileName
@@ -287,6 +366,7 @@ export default function V2CombinedGoalsUpload({
       return;
     }
 
+    operationLocked.current = true;
     const savedCompetence = competence;
     const savedFileName = draft.fileName;
     const mappings = draft.mappings;
@@ -309,16 +389,18 @@ export default function V2CombinedGoalsUpload({
         ...(result.sales?.warnings ?? []),
       ];
       if (
+        !mounted.current ||
         requestOperation !== operationSequence.current ||
         savedCompetence !== competence
       ) {
+        if (!mounted.current) return;
         try {
           await Promise.all([
             utils.commercial.status.invalidate({ competence: savedCompetence }),
             utils.leads.dashboard.invalidate(),
             utils.leads.goal.invalidate({ competence: savedCompetence }),
-            Promise.resolve(onUpdated()),
           ]);
+          if (mounted.current) await onUpdated();
         } catch {
           // A newer competence is already on screen; do not surface a stale
           // refresh error in that newer draft.
@@ -341,9 +423,10 @@ export default function V2CombinedGoalsUpload({
           utils.commercial.status.invalidate({ competence: savedCompetence }),
           utils.leads.dashboard.invalidate(),
           utils.leads.goal.invalidate({ competence: savedCompetence }),
-          Promise.resolve(onUpdated()),
         ]);
+        if (mounted.current) await onUpdated();
       } catch {
+        if (!mounted.current) return;
         updateDraft(current => ({
           ...current,
           notice:
@@ -352,6 +435,7 @@ export default function V2CombinedGoalsUpload({
       }
     } catch (error) {
       if (
+        !mounted.current ||
         requestOperation !== operationSequence.current ||
         savedCompetence !== competence
       )
@@ -362,6 +446,8 @@ export default function V2CombinedGoalsUpload({
         errorAction: "commit",
         notice: null,
       }));
+    } finally {
+      operationLocked.current = false;
     }
   };
 

@@ -90,7 +90,10 @@ function dashboardFixture(leads = 1353): V2Dashboard {
   };
 }
 
-function sourceSalesImport(registrationMtd = 43): CommercialStoredImport {
+function sourceSalesImport(
+  registrationMtd = 43,
+  retailMtd?: number | null
+): CommercialStoredImport {
   const row: CommercialSourceRow = {
     key: "sales:barigui-curitiba",
     sourceLabel: "Barigui Curitiba",
@@ -114,17 +117,60 @@ function sourceSalesImport(registrationMtd = 43): CommercialStoredImport {
     rows: [row],
     warnings: [],
     importedAt: "2026-11-05T00:00:00.000Z",
+    ...(retailMtd !== undefined
+      ? { retailMtd, retailAsOf: "2026-11-08" }
+      : {}),
   };
 }
 
 function latestSales(
-  registrationMtd = 43
+  registrationMtd = 43,
+  retailMtd?: number | null
 ): ReadonlyMap<CommercialStoredImport["kind"], CommercialStoredImport> {
-  return new Map([["sales", sourceSalesImport(registrationMtd)]]);
+  return new Map([["sales", sourceSalesImport(registrationMtd, retailMtd)]]);
 }
 
 describe("general MTD conversion", () => {
-  it("uses general MTD Registration for the global aggregate despite a 05/11 versus D-1 04/11 date mismatch", () => {
+  it("uses general Retail for the global aggregate while keeping Registration separate and dealer sales weekly", () => {
+    const result = buildOfficialCommercialPerformance(
+      dashboardFixture(),
+      filters,
+      latestSales(90, 84)
+    );
+
+    expect(result.totals.sales).toBe(84);
+    expect(result.totals.conversionRate).toBeCloseTo(84 / 1353, 10);
+    expect(result.generalRegistrationMTD).toEqual({
+      value: 90,
+      asOf: "2026-11-05",
+      sourceSheet: "DAILY_FUP",
+      label: "MTD Registration",
+    });
+    expect(result.generalRetailMTD).toEqual({
+      value: 84,
+      asOf: "2026-11-08",
+      sourceSheet: "DAILY_FUP",
+      label: "Retail",
+    });
+    expect(
+      result.rows.find(row => row.dealer === "Barigui Curitiba")
+    ).toMatchObject({ sales: 0, conversionRate: null });
+  });
+
+  it("keeps global Retail unavailable when the new Retail field is explicitly null", () => {
+    const result = buildOfficialCommercialPerformance(
+      dashboardFixture(),
+      filters,
+      latestSales(90, null)
+    );
+
+    expect(result.generalRegistrationMTD?.value).toBe(90);
+    expect(result.generalRetailMTD).toBeNull();
+    expect(result.totals.sales).toBeNull();
+    expect(result.totals.conversionRate).toBeNull();
+  });
+
+  it("keeps general MTD Registration as a reference without using it as global Retail when the Retail snapshot is absent", () => {
     const dashboard = dashboardFixture();
     const latest = latestSales();
     const beforeDashboard = JSON.parse(JSON.stringify(dashboard));
@@ -137,8 +183,8 @@ describe("general MTD conversion", () => {
     );
 
     expect(result.totals.leads).toBe(1353);
-    expect(result.totals.sales).toBe(43);
-    expect(result.totals.conversionRate).toBeCloseTo(43 / 1353, 10);
+    expect(result.totals.sales).toBeNull();
+    expect(result.totals.conversionRate).toBeNull();
     expect(result.generalRegistrationMTD).toEqual({
       value: 43,
       asOf: "2026-11-05",
@@ -159,14 +205,14 @@ describe("general MTD conversion", () => {
     expect([...latest.entries()]).toEqual(beforeLatest);
   });
 
-  it("returns null for the global conversion rate when there are no leads", () => {
+  it("keeps global sales unavailable when there are no leads and no Retail snapshot", () => {
     const result = buildOfficialCommercialPerformance(
       dashboardFixture(0),
       filters,
       latestSales()
     );
 
-    expect(result.totals.sales).toBe(43);
+    expect(result.totals.sales).toBeNull();
     expect(result.totals.leads).toBe(0);
     expect(result.totals.conversionRate).toBeNull();
     expect(
@@ -178,16 +224,17 @@ describe("general MTD conversion", () => {
     });
   });
 
-  it("keeps a legitimate zero general MTD value and exposes a zero aggregate rate", () => {
+  it("keeps a legitimate zero general Retail value and exposes a zero aggregate rate", () => {
     const result = buildOfficialCommercialPerformance(
       dashboardFixture(),
       filters,
-      latestSales(0)
+      latestSales(0, 0)
     );
 
     expect(result.totals.sales).toBe(0);
     expect(result.totals.conversionRate).toBe(0);
     expect(result.generalRegistrationMTD?.value).toBe(0);
+    expect(result.generalRetailMTD?.value).toBe(0);
     expect(
       result.rows.find(row => row.dealer === "Barigui Curitiba")
     ).toMatchObject({
@@ -213,7 +260,7 @@ describe("general MTD conversion", () => {
     });
   });
 
-  it("preserves a manual sales goal and keeps weekly dealer sales separate from general MTD", () => {
+  it("preserves a manual sales goal and keeps weekly dealer sales separate when Retail is unavailable", () => {
     const result = buildOfficialCommercialPerformance(
       dashboardFixture(),
       filters,
@@ -223,7 +270,8 @@ describe("general MTD conversion", () => {
 
     expect(result.totals.salesGoal).toBe(660);
     expect(result).toMatchObject({ salesGoalOrigin: "manual" });
-    expect(result.totals.sales).toBe(43);
+    expect(result.totals.sales).toBeNull();
+    expect(result.totals.conversionRate).toBeNull();
     expect(result.generalRegistrationMTD?.value).toBe(43);
     expect(
       result.rows.find(row => row.dealer === "Barigui Curitiba")
