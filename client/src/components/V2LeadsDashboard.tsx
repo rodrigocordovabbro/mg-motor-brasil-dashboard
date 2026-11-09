@@ -14,6 +14,7 @@ import {
 } from "@shared/leadPeriodPresets";
 import { V2LeadsReloadButton } from "./V2LeadsReloadButton";
 import { V2HistoricalLeadPaceCard } from "./V2HistoricalLeadPaceCard";
+import { V2LeadsExportButton } from "./V2LeadsExportButton";
 import V2SalesGoalEditor from "./V2SalesGoalEditor";
 import {
   LeadsSectionNavigation,
@@ -1793,11 +1794,13 @@ function StoresCrmTab({
 
 function LeadsTableTab({
   data,
+  filters,
   onPage,
   clientMode,
   isBusy,
 }: {
   data: V2LeadsResponse;
+  filters: V2Filters;
   onPage: (page: number) => void;
   clientMode: boolean;
   isBusy: boolean;
@@ -1814,6 +1817,14 @@ function LeadsTableTab({
         title="Leads recentes"
         description={`${numberFormat(data.recent.total)} registros encontrados com os filtros aplicados.`}
         icon={Users}
+        action={
+          <V2LeadsExportButton
+            filters={filters}
+            count={data.recent.total}
+            clientMode={clientMode}
+            disabled={isBusy || data.status !== "READY"}
+          />
+        }
       />
       <div className="overflow-x-auto">
         <table className="min-w-[1200px] w-full text-left">
@@ -2317,9 +2328,10 @@ export default function V2LeadsDashboard({
                 {activeTab === "Leads" ? (
                   <LeadsTableTab
                     data={data}
+                    filters={applied}
                     onPage={changePage}
                     clientMode={clientMode}
-                    isBusy={refreshBusy}
+                    isBusy={refreshBusy || dashboardQuery.isFetching}
                   />
                 ) : null}
               </>

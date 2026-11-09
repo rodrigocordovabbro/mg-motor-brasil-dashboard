@@ -16,11 +16,11 @@ import type {
   HistoricalLeadPaceReference,
   HistoricalLeadPaceScenario,
 } from "@shared/historicalLeadPace";
+import { getHistoricalMonthStyle } from "./historicalLeadPaceColors";
 
 const RED = "#e2212d";
 const BLUE = "#2563eb";
 const GREEN = "#16a34a";
-const MUTED = "#94a3b8";
 const nf = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
 const pf = new Intl.NumberFormat("pt-BR", {
   minimumFractionDigits: 1,
@@ -575,8 +575,13 @@ export function V2HistoricalLeadPaceCard({ data, actions }: Props) {
                             type="monotone"
                             dataKey={`historical_${i}`}
                             name={month(ref.competence)}
-                            stroke={MUTED}
-                            strokeWidth={1.5}
+                            stroke={
+                              getHistoricalMonthStyle(ref.competence).color
+                            }
+                            strokeDasharray={
+                              getHistoricalMonthStyle(ref.competence).dasharray
+                            }
+                            strokeWidth={2}
                             dot={false}
                             connectNulls={false}
                             isAnimationActive={false}
@@ -613,7 +618,14 @@ export function V2HistoricalLeadPaceCard({ data, actions }: Props) {
                   .filter(ref => ref.available && ref.cumulative.length)
                   .map(ref => (
                     <span key={ref.competence}>
-                      <i className="mr-1 inline-block h-0.5 w-5 border-t border-[#94a3b8] align-middle" />
+                      <i
+                        aria-hidden="true"
+                        className="mr-1 inline-block h-0.5 w-5 border-t-2 border-dashed align-middle"
+                        style={{
+                          borderColor: getHistoricalMonthStyle(ref.competence)
+                            .color,
+                        }}
+                      />
                       {month(ref.competence)} (histórico)
                     </span>
                   ))
@@ -639,9 +651,31 @@ export function V2HistoricalLeadPaceCard({ data, actions }: Props) {
                     <tr
                       key={ref.competence}
                       className="border-t border-slate-100"
+                      style={{
+                        backgroundColor: `${getHistoricalMonthStyle(ref.competence).color}0a`,
+                      }}
                     >
-                      <td className="px-3 py-2 font-medium text-slate-700">
-                        {month(ref.competence)}
+                      <td
+                        className="border-l-[3px] px-3 py-2 font-semibold"
+                        style={{
+                          color: getHistoricalMonthStyle(ref.competence).color,
+                          borderLeftColor: getHistoricalMonthStyle(
+                            ref.competence
+                          ).color,
+                        }}
+                      >
+                        <span className="inline-flex items-center gap-2">
+                          <i
+                            aria-hidden="true"
+                            className="h-2 w-2 shrink-0 rounded-full"
+                            style={{
+                              backgroundColor: getHistoricalMonthStyle(
+                                ref.competence
+                              ).color,
+                            }}
+                          />
+                          {month(ref.competence)}
+                        </span>
                       </td>
                       <td className="px-3 py-2 tabular-nums">
                         {tableUnit(ref.total)}

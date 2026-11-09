@@ -10,6 +10,7 @@ const mock = vi.hoisted(() => ({
   setters: [] as any[],
   query: vi.fn(),
   syncBaseMutation: vi.fn(),
+  exportCSV: vi.fn(),
   invalidateLeads: vi.fn(),
   invalidateCRM: vi.fn(),
 }));
@@ -38,6 +39,7 @@ vi.mock("@/lib/trpc", () => ({
     useUtils: () => ({
       leads: { dashboard: { invalidate: mock.invalidateLeads } },
       dispatch: { leadControl: { invalidate: mock.invalidateCRM } },
+      client: { leads: { exportCSV: { mutate: mock.exportCSV } } },
     }),
     leads: {
       syncBase: { useMutation: () => ({ mutateAsync: mock.syncBaseMutation }) },
@@ -81,6 +83,7 @@ beforeEach(() => {
   mock.values = [];
   mock.setters = [];
   mock.syncBaseMutation.mockReset();
+  mock.exportCSV.mockReset();
   mock.invalidateLeads.mockReset();
   mock.invalidateCRM.mockReset();
   mock.query.mockReset().mockImplementation(filters => ({
@@ -804,3 +807,133 @@ it.each([true, false])(
     ).not.toBeNull();
   }
 );
+
+it("aba Leads exporta os filtros aplicados, ignora a página e bloqueia durante fetch", async () => {
+  const data = {
+    ...versionedDashboard(),
+    status: "READY" as const,
+    recent: { rows: [], total: 12, page: 3, pageSize: 10 },
+  };
+  const refetch = vi.fn();
+  mock.query.mockReturnValue({
+    data,
+    isLoading: false,
+    isFetching: false,
+    refetch,
+  });
+  vi.stubGlobal("window", {
+    location: {
+      href: "https://mgmotors.test/?module=leads",
+      search: "?module=leads",
+    },
+    history: { replaceState: vi.fn() },
+    requestAnimationFrame: vi.fn(),
+    scrollY: 0,
+    scrollTo: vi.fn(),
+  });
+
+  const renderDashboard = () => {
+    mock.index = 0;
+    return Dashboard({
+      authenticated: true,
+      clientMode: false,
+      canManage: false,
+    });
+  };
+  const findExportButton = (dashboard: any) => {
+    const leadsTable = findElement(
+      dashboard,
+      element => element.type?.name === "LeadsTableTab"
+    );
+    const heading = findElement(
+      leadsTable.type(leadsTable.props),
+      element => element.type?.name === "CardHeading"
+    );
+    return findElement(
+      heading.type(heading.props),
+      element => element.type?.name === "V2LeadsExportButton"
+    );
+  };
+  const initial = renderDashboard();
+  const navigation = findElement(
+    initial,
+    element => element.type?.name === "LeadsSectionNavigation"
+  );
+  const leadsTab = findElement(
+    navigation.type(navigation.props),
+    element =>
+      element.type === "button" &&
+      (Array.isArray(element.props.children)
+        ? element.props.children.includes("Leads")
+        : element.props.children === "Leads")
+  );
+  leadsTab.props.onClick();
+
+  let tree = renderDashboard();
+  let filterBar = findElement(
+    tree,
+    element => element.type?.name === "FilterBar"
+  );
+  let exportButton = findExportButton(tree);
+  expect(exportButton.props.filters).toEqual({
+    dateFrom: "2026-11-01",
+    dateTo: "2026-11-04",
+    page: 1,
+  });
+
+  filterBar.props.setDraft({
+    ...filterBar.props.draft,
+    model: "Rascunho não aplicado",
+    page: 9,
+  });
+  tree = renderDashboard();
+  exportButton = findExportButton(tree);
+  expect(exportButton.props.filters.model).toBeUndefined();
+  expect(exportButton.props.filters.page).toBe(1);
+
+  filterBar = findElement(tree, element => element.type?.name === "FilterBar");
+  filterBar.props.onSearch();
+  tree = renderDashboard();
+  exportButton = findExportButton(tree);
+  expect(exportButton.props.filters).toMatchObject({
+    model: "Rascunho não aplicado",
+    page: 1,
+  });
+
+  mock.exportCSV.mockResolvedValue({
+    fileName: "leads.csv",
+    mimeType: "text/csv;charset=utf-8",
+    csv: "\uFEFFid\n",
+    count: 0,
+    nameMasked: false,
+    period: {
+      dateFrom: "2026-11-01",
+      dateTo: "2026-11-04",
+      cutoffDate: "2026-11-04",
+    },
+  });
+  const renderedExportButton = exportButton.type(exportButton.props);
+  const exportControl = findElement(
+    renderedExportButton,
+    element => element.type === "button"
+  );
+  await exportControl.props.onClick();
+  expect(mock.exportCSV).toHaveBeenCalledWith({
+    dateFrom: "2026-11-01",
+    dateTo: "2026-11-04",
+    cutoffDate: "2026-11-04",
+    model: "Rascunho não aplicado",
+    page: undefined,
+    clientMode: false,
+  });
+
+  mock.query.mockReturnValue({
+    data,
+    isLoading: false,
+    isFetching: true,
+    refetch,
+  });
+  tree = renderDashboard();
+  exportButton = findExportButton(tree);
+  expect(exportButton.props.disabled).toBe(true);
+});

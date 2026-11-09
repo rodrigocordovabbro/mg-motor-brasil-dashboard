@@ -17,6 +17,7 @@ import { z } from "zod";
 import { publicProcedure, router } from "./_core/trpc";
 import { loginV2, logoutV2, readV2Session } from "./v2Auth";
 import { getV2Dashboard } from "./v2Leads";
+import { exportV2LeadsCSV } from "./v2LeadsExport";
 import {
   syncLeadsFromGoogle,
   getLeadsSyncConnectionStatus,
@@ -395,6 +396,18 @@ export const appRouter = router({
         throw error;
       }
     }),
+    exportCSV: v2Procedure
+      .input(filters.and(z.object({ clientMode: z.boolean().optional() })))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await exportV2LeadsCSV(input, {
+            groupStates: ctx.v2User.role !== "admin",
+          });
+        } catch (error) {
+          if (ctx.v2User.role !== "admin") genericClientDataError();
+          throw error;
+        }
+      }),
     goal: adminProcedure
       .input(z.object({ competence }))
       .query(async ({ input }) => ({
