@@ -1,5 +1,6 @@
 import type { RegionalModelDistribution } from "./regionalTypes";
 import type { ModelAnalysis } from "./modelAnalysis";
+import type { HistoricalLeadPace } from "./historicalLeadPace";
 
 export type V2Filters = {
   dateFrom: string;
@@ -60,6 +61,7 @@ export type V2Dashboard = {
     mode: "authenticated-import";
     totalRows: number;
     invalidDateRows: number;
+    earliestLeadDate?: string | null;
     latestLeadDate?: string | null;
   };
   period: { dateFrom: string; dateTo: string; cutoffDate: string };
@@ -84,6 +86,7 @@ export type V2Dashboard = {
     peakHour: V2Count | null;
   };
   pacing: V2Pacing;
+  historicalPace?: HistoricalLeadPace;
   daily: {
     date: string;
     total: number | null;

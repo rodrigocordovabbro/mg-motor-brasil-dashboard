@@ -23,6 +23,10 @@ import { readExtraDealerRegistry } from "./v2DealerRegistry";
 import { aggregateModelAnalysis, resolveModelVersion } from "./v2ModelAnalysis";
 import { addIsoDays, resolveDashboardPeriod } from "../shared/dashboardDates";
 import {
+  buildHistoricalLeadPace,
+  historicalLeadPaceWindow,
+} from "./v2HistoricalLeadPace";
+import {
   createLegacyLeadCountingAccumulator,
   isLegacyLeadChannelActive,
 } from "./v2LeadCounting";
@@ -321,6 +325,26 @@ export function aggregateV2Leads(
       input.dealer ||
       input.search
   );
+  const historicalWindow = historicalLeadPaceWindow(input, now);
+  const historicalRows = filterV2LeadRows(
+    all,
+    {
+      ...input,
+      dateFrom: historicalWindow.dateFrom,
+      dateTo: historicalWindow.dateTo,
+    },
+    now,
+    extraDealers
+  );
+  const historicalPace = buildHistoricalLeadPace(
+    all,
+    input,
+    narrowed ? null : goal,
+    source,
+    now,
+    extraDealers,
+    { filteredRows: historicalRows }
+  );
   const pacing = makePacing(
     mtdRows.length,
     narrowed ? null : goal,
@@ -425,6 +449,7 @@ export function aggregateV2Leads(
       peakHour: known(hours)[0] ?? null,
     },
     pacing,
+    historicalPace,
     daily,
     channels,
     models,
@@ -483,12 +508,13 @@ export function aggregateV2Leads(
 }
 
 export async function getV2Dashboard(input: V2Filters) {
-  const period = resolveDashboardPeriod(input.dateFrom, input.dateTo);
-  const monthFrom = `${period.dateTo.slice(0, 7)}-01`;
-  const from = period.dateFrom < monthFrom ? period.dateFrom : monthFrom;
+  const now = new Date();
+  const period = resolveDashboardPeriod(input.dateFrom, input.dateTo, now);
+  const historicalWindow = historicalLeadPaceWindow(input, now);
+  const from = historicalWindow.dateFrom;
   const [[sourceRows], rows, extraDealers, goal] = await Promise.all([
     getV2Pool().query<RowDataPacket[]>(
-      "SELECT name,importedAt,totalRows,invalidDateRows,(SELECT MAX(leadDate) FROM v2_leads) AS latestLeadDate FROM v2_sources WHERE id=1"
+      "SELECT name,importedAt,totalRows,invalidDateRows,(SELECT MIN(leadDate) FROM v2_leads) AS earliestLeadDate,(SELECT MAX(leadDate) FROM v2_leads) AS latestLeadDate FROM v2_sources WHERE id=1"
     ),
     readV2LeadsForPeriod(from, period.dateTo),
     readExtraDealerRegistry(),
@@ -500,6 +526,7 @@ export async function getV2Dashboard(input: V2Filters) {
     mode: "authenticated-import",
     totalRows: 0,
     invalidDateRows: 0,
+    earliestLeadDate: null,
     latestLeadDate: null,
   };
   if (sourceRows[0]) {
@@ -509,6 +536,9 @@ export async function getV2Dashboard(input: V2Filters) {
       : null;
     source.totalRows = Number(sourceRows[0].totalRows);
     source.invalidDateRows = Number(sourceRows[0].invalidDateRows);
+    source.earliestLeadDate = sourceRows[0].earliestLeadDate
+      ? String(sourceRows[0].earliestLeadDate)
+      : null;
     source.latestLeadDate = sourceRows[0].latestLeadDate
       ? String(sourceRows[0].latestLeadDate)
       : null;
@@ -518,7 +548,7 @@ export async function getV2Dashboard(input: V2Filters) {
     input,
     goal,
     source,
-    new Date(),
+    now,
     extraDealers
   );
   return {

@@ -13,6 +13,7 @@ import {
   resolveLeadPeriodPreset,
 } from "@shared/leadPeriodPresets";
 import { V2LeadsReloadButton } from "./V2LeadsReloadButton";
+import { V2HistoricalLeadPaceCard } from "./V2HistoricalLeadPaceCard";
 import V2SalesGoalEditor from "./V2SalesGoalEditor";
 import {
   LeadsSectionNavigation,
@@ -1390,7 +1391,13 @@ function DealerPerformanceCard({
   );
 }
 
-function DailyChart({ daily }: { daily: V2DailyPoint[] }) {
+function DailyChart({
+  daily,
+  showPace = true,
+}: {
+  daily: V2DailyPoint[];
+  showPace?: boolean;
+}) {
   const channelKeys = useMemo(
     () =>
       Array.from(new Set(daily.flatMap(item => Object.keys(item.channels)))),
@@ -1437,10 +1444,12 @@ function DailyChart({ daily }: { daily: V2DailyPoint[] }) {
         <span className="inline-flex items-center gap-1.5">
           <i className="h-2 w-2 rounded-full bg-slate-800" /> Real acumulado
         </span>
-        <span className="inline-flex items-center gap-1.5">
-          <i className="h-2 w-2 rounded-full border border-dashed border-blue-600" />{" "}
-          Pace acumulado
-        </span>
+        {showPace ? (
+          <span className="inline-flex items-center gap-1.5">
+            <i className="h-2 w-2 rounded-full border border-dashed border-blue-600" />{" "}
+            Pace acumulado
+          </span>
+        ) : null}
       </div>
       <div
         className="overflow-x-auto"
@@ -1541,17 +1550,19 @@ function DailyChart({ daily }: { daily: V2DailyPoint[] }) {
                 dot={false}
                 connectNulls={false}
               />
-              <Line
-                yAxisId="lines"
-                type="monotone"
-                dataKey="pace"
-                name="Pace acumulado"
-                stroke="#2563eb"
-                strokeWidth={1.8}
-                strokeDasharray="5 4"
-                dot={false}
-                connectNulls
-              />
+              {showPace ? (
+                <Line
+                  yAxisId="lines"
+                  type="monotone"
+                  dataKey="pace"
+                  name="Pace acumulado"
+                  stroke="#2563eb"
+                  strokeWidth={1.8}
+                  strokeDasharray="5 4"
+                  dot={false}
+                  connectNulls
+                />
+              ) : null}
             </ComposedChart>
           </ResponsiveContainer>
         </div>
@@ -1573,20 +1584,47 @@ function OverviewTab({
 }) {
   return (
     <div className="space-y-4">
-      <PacingCard
-        data={data}
-        onUpdated={onGoalUpdated}
-        onReloadMonth={onReloadMonth}
-        canManage={canManage}
-      />
+      {data.historicalPace ? (
+        <V2HistoricalLeadPaceCard
+          data={data.historicalPace}
+          actions={
+            <div className="flex flex-wrap items-center gap-2">
+              <V2LeadsReloadButton
+                competence={data.pacing.competence}
+                onReload={onReloadMonth}
+                syncExternal={canManage}
+                showFeedback={false}
+              />
+              {canManage ? (
+                <V2MonthlyGoalEditor
+                  competence={data.pacing.competence}
+                  onUpdated={onGoalUpdated}
+                  canManage={canManage}
+                />
+              ) : null}
+            </div>
+          }
+        />
+      ) : (
+        <PacingCard
+          data={data}
+          onUpdated={onGoalUpdated}
+          onReloadMonth={onReloadMonth}
+          canManage={canManage}
+        />
+      )}
       <Card className="overflow-hidden">
         <CardHeading
           eyebrow="Evolução diária"
           title="Leads por dia e canal"
-          description="Barras empilhadas com o real acumulado e o pace retornado pela API."
+          description={
+            data.historicalPace
+              ? "Barras por canal e realizado acumulado do período. O plano e a projeção mensal estão na curva histórica acima."
+              : "Barras empilhadas com o real acumulado e o pace retornado pela API."
+          }
           icon={TrendingUp}
         />
-        <DailyChart daily={data.daily} />
+        <DailyChart daily={data.daily} showPace={!data.historicalPace} />
       </Card>
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="overflow-hidden lg:col-span-2">

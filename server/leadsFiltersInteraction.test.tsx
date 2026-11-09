@@ -744,3 +744,63 @@ it("aguarda a atualização quando todo o período está fora da fonte", () => {
     "Aguardando atualização da fonte para este período"
   );
 });
+
+it.each([true, false])(
+  "prioriza Leads Plan na tela inicial e preserva controles do perfil canManage=%s",
+  canManage => {
+    const history = { competence: "2026-11", asOfDate: "2026-11-04" };
+    const data = {
+      ...versionedDashboard(),
+      historicalPace: history,
+      channels: [{ label: "Meta", count: 3 }],
+      daily: [
+        {
+          date: "2026-11-01",
+          total: 3,
+          cumulative: 3,
+          pace: 10,
+          channels: { Meta: 3 },
+          sourceAvailable: true,
+        },
+      ],
+    };
+    mock.query.mockReturnValue({
+      data,
+      isLoading: false,
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+    const overview = findOverview(canManage);
+    const tree = overview.type(overview.props);
+    const first = tree.props.children[0];
+    expect(first.type.name).toBe("V2HistoricalLeadPaceCard");
+    expect(first.props.data).toBe(history);
+    expect(
+      findElement(tree, element => element.type?.name === "PacingCard")
+    ).toBeNull();
+    const reload = findElement(
+      first.props.actions,
+      element => element.type?.name === "V2LeadsReloadButton"
+    );
+    expect(reload.props.onReload).toBe(overview.props.onReloadMonth);
+    expect(reload.props.syncExternal).toBe(canManage);
+    expect(reload.props.competence).toBe("2026-11");
+    const goals = findElement(
+      first.props.actions,
+      element => element.type?.name === "V2MonthlyGoalEditor"
+    );
+    expect(Boolean(goals)).toBe(canManage);
+    const daily = findElement(
+      tree,
+      element => element.type?.name === "DailyChart"
+    );
+    expect(daily.props.showPace).toBe(false);
+    const dailyTree = daily.type(daily.props);
+    expect(
+      findElement(dailyTree, element => element.props.dataKey === "pace")
+    ).toBeNull();
+    expect(
+      findElement(dailyTree, element => element.props.dataKey === "cumulative")
+    ).not.toBeNull();
+  }
+);
