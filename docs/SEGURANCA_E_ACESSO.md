@@ -1,136 +1,220 @@
-# MG Motor Brasil | Gestão de Leads & Performance — Segurança e Acesso
+# MG Motor Brasil | Segurança e acesso
 
-> **Escopo:** comportamento efetivamente implementado no código desta cópia na raiz do repositório. Os nomes internos `v2*` permanecem nos caminhos e contratos técnicos por compatibilidade; **não** são o título público do produto.
->
-> **Fontes principais:** [`server/v2Auth.ts`](../server/v2Auth.ts), [`server/v2Accounts.ts`](../server/v2Accounts.ts), [`server/v2Permissions.ts`](../server/v2Permissions.ts), [`server/routers.ts`](../server/routers.ts), [`server/_core/cookies.ts`](../server/_core/cookies.ts), [`server/_core/context.ts`](../server/_core/context.ts), [`server/_core/publicConfig.ts`](../server/_core/publicConfig.ts) e [`shared/accountRoles.ts`](../shared/accountRoles.ts).
+> **Estado documental:** 09/11/2026
+> **Escopo:** comportamento efetivamente implementado no código atual desta árvore de trabalho. Este documento não é uma certificação de segurança, não substitui revisão de infraestrutura e não descreve dados correntes do banco.
+
+## 0. Estado da documentação, fontes e versões
+
+### Fonte real desta revisão
+
+A matriz e os controles abaixo foram conferidos diretamente nos arquivos de implementação atuais, principalmente [`shared/accountRoles.ts`](../shared/accountRoles.ts), [`server/routers.ts`](../server/routers.ts), [`server/v2Auth.ts`](../server/v2Auth.ts), [`server/v2Accounts.ts`](../server/v2Accounts.ts), [`server/v2Permissions.ts`](../server/v2Permissions.ts), [`server/v2LeadsExport.ts`](../server/v2LeadsExport.ts), [`server/migrateV2ClientProfiles.ts`](../server/migrateV2ClientProfiles.ts), [`server/v2Dispatch.ts`](../server/v2Dispatch.ts), [`server/v2DispatchLeads.ts`](../server/v2DispatchLeads.ts), [`server/v2AdminModelInsights.ts`](../server/v2AdminModelInsights.ts), [`client/src/pages/Home.tsx`](../client/src/pages/Home.tsx), [`client/src/components/LeadsSectionNavigation.tsx`](../client/src/components/LeadsSectionNavigation.tsx) e [`client/src/components/V2LeadsDashboard.tsx`](../client/src/components/V2LeadsDashboard.tsx). Guias antigos, V1 e repositórios antigos não são fontes desta atualização.
+
+### Repositório e estado de entrega
+
+| Item                            | Estado registrado                                                                                                                                                    |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Repositório canônico confirmado | `https://github.com/rodrigocordovabbro/mg-motor-brasil-dashboard`                                                                                                    |
+| Visibilidade                    | **Privado**; isso não significa repositório público. O repositório também não deve receber segredos ou dados.                                                        |
+| Branch de trabalho              | `dashboard-v2`                                                                                                                                                       |
+| Branch de checkpoints           | `main`                                                                                                                                                               |
+| Publicação automática           | `false`; publicação é uma operação separada.                                                                                                                         |
+| Versão salva/checkpoint         | Consultar as referências Git e o histórico de versões da plataforma; o guia não fixa um SHA corrente. O versionamento documental é separado da revisão estática.     |
+| Versão publicada                | Não verificada. Nenhuma URL, SHA de publicação, ID externo ou métrica corrente é afirmada aqui.                                                                      |
+| Evidência funcional anterior    | A última suíte aprovada registrou **463 testes em 60 arquivos**. Esse número é evidência anterior fornecida para contexto; nenhum teste foi executado nesta revisão. |
+
+Não foram lidos segredos, `.env`, configurações de conectores, planilhas, dados operacionais ou valores atuais do banco. Não há números correntes de Leads, metas, usuários, imports ou tráfego neste guia.
 
 ## 1. Limites de confiança e identidade
 
-A autenticação usada pelas rotas do produto é a sessão própria do dashboard. O `createContext` do tRPC mantém `ctx.user` nulo; a camada de procedimentos v2 lê exclusivamente o cookie `mg_v2_session` e não aceita uma identidade Manus/OAuth/Bearer como atalho para acessar essas rotas. Essa separação está explícita em [`server/_core/context.ts`](../server/_core/context.ts) e no middleware `v2Procedure` de [`server/routers.ts`](../server/routers.ts).
+A API tRPC é montada em [`server/_core/index.ts`](../server/_core/index.ts) sob `/api/trpc`. O contexto comum mantém `ctx.user` nulo em [`server/_core/context.ts`](../server/_core/context.ts). As rotas do dashboard usam a sessão própria V2, lida exclusivamente do cookie `mg_v2_session` pelo middleware `v2Procedure` de [`server/routers.ts`](../server/routers.ts). Uma identidade Manus/OAuth/Bearer não funciona como atalho para essas rotas.
 
-A API tRPC é publicada sob `/api/trpc`. A rota `auth.me` é somente uma leitura da sessão atual; `auth.login` e `auth.logout` são públicas no sentido de não exigirem uma sessão prévia, mas não concedem acesso a dados por si mesmas. Todas as demais rotas v2 passam por `v2Procedure` ou por um procedimento mais restritivo.
+`auth.me`, `auth.login` e `auth.logout` são procedimentos públicos no sentido de não exigirem sessão prévia. `login` só cria uma sessão depois de validar a conta ativa e a senha; `me` apenas lê a sessão; `logout` apenas limpa o cookie. Todas as rotas de dados passam por `v2Procedure`, `adminProcedure`, `manualProcedure`, `ownerProcedure` ou por uma leitura com restrição de papel.
 
-O banco customizado é acessado por [`server/v2Db.ts`](../server/v2Db.ts) usando `DATABASE_URL`. A tabela starter `users`, definida em [`drizzle/schema.ts`](../drizzle/schema.ts), pertence ao fluxo Drizzle/Manus legado e não substitui `v2_accounts` no login deste produto.
+**Normalização de URL não é autorização.** A UI normaliza `module` e `tab`, remove abas incompatíveis e força o perfil `client` para Leads/Overview em [`client/src/pages/Home.tsx`](../client/src/pages/Home.tsx) e [`client/src/components/V2LeadsDashboard.tsx`](../client/src/components/V2LeadsDashboard.tsx). Isso melhora a navegação, mas não protege a API. A autorização efetiva continua sendo a validação de sessão e papel no servidor; chamadas diretas às rotas não devem ser consideradas autorizadas só porque a URL foi corrigida.
 
-## 2. Sessão e token
+## 2. Sessão, cookie e JWT
 
-### 2.1 Cookie
+### 2.1 Cookie de sessão
 
-| Propriedade | Implementação atual |
-|---|---|
-| Nome | `mg_v2_session` |
-| Escopo | `/` |
-| `HttpOnly` | `true` |
-| `Secure` | `true` |
-| `SameSite` | `none` |
-| Duração | 8 horas (`maxAge` de `28.800.000` ms no login) |
-| Limpeza | `logout` usa as mesmas opções e limpa o cookie |
+As opções atuais vêm de [`server/_core/cookies.ts`](../server/_core/cookies.ts):
 
-As opções são fixas em [`server/_core/cookies.ts`](../server/_core/cookies.ts); o request não altera `Secure` nem `SameSite`. Portanto, o navegador precisa estar em HTTPS para persistir a sessão. Em desenvolvimento local por HTTP, o cookie seguro pode não ser armazenado. Como `SameSite=None` permite envio em contexto cross-site, o ingresso de tráfego deve ser protegido por HTTPS, política de origem/CSRF na borda e controles de domínio adequados; não foi identificado um token CSRF explícito no código atual.
+| Propriedade      | Implementação atual                   |
+| ---------------- | ------------------------------------- |
+| Nome             | `mg_v2_session`                       |
+| Caminho          | `/`                                   |
+| `HttpOnly`       | `true`                                |
+| `Secure`         | `true`                                |
+| `SameSite`       | `none`                                |
+| Duração no login | 8 horas (`maxAge` de `28.800.000` ms) |
+| Logout           | `clearCookie` com as mesmas opções    |
 
-### 2.2 JWT
+O cookie é sempre seguro e não escolhe `Secure` ou `SameSite` com base no request. Portanto, a sessão requer HTTPS no navegador. `SameSite=None` permite contexto cross-site, inclusive Preview HTTPS embutido; o ingresso público precisa de HTTPS e de controles de origem/CSRF na borda. O código lido não implementa um token CSRF explícito. Não se deve atribuir proteção CSRF que não está implementada.
 
-O token é assinado com HS256 em [`server/v2Auth.ts`](../server/v2Auth.ts) e contém somente os dados de sessão necessários:
+### 2.2 Token
 
-| Claim | Uso |
-|---|---|
-| `sub` | ID numérico da conta em `v2_accounts` |
-| `scope` | Deve ser exatamente `mg-dashboard-v2` |
-| `appId` | Deve coincidir com `MANUS_PROJECT_ID` |
-| `username` | Identificador da conta usado na leitura da sessão |
-| `v` | `sessionVersion` da conta; ausente é tratado como versão `0` |
-| `iat`/`exp` | Emissão e expiração; o prazo é de 8 horas |
+[`server/v2Auth.ts`](../server/v2Auth.ts) assina o JWT com HS256. A carga contém somente os campos de sessão necessários:
 
-A verificação rejeita assinatura, algoritmo, escopo, projeto, subject ou tipos inválidos. Depois da validação criptográfica, [`readV2Session`](../server/v2Auth.ts) consulta a conta pelo username normalizado, confere ID, `isActive` e `sessionVersion`, e lê o papel atual do banco. Papel ausente ou desconhecido falha fechado para `client` na representação pública.
+| Claim       | Uso                                           |
+| ----------- | --------------------------------------------- |
+| `sub`       | ID numérico da conta em `v2_accounts`         |
+| `scope`     | Deve ser `mg-dashboard-v2`                    |
+| `appId`     | Deve coincidir com `MANUS_PROJECT_ID`         |
+| `username`  | Identificador usado na leitura da conta       |
+| `v`         | `sessionVersion`; ausência é tratada como `0` |
+| `iat`/`exp` | Emissão e expiração; prazo de 8 horas         |
 
-`MANUS_JWT_SECRET` e `MANUS_PROJECT_ID` são obrigatórios para assinar/verificar tokens. Eles não devem ser registrados, copiados para a documentação, colocados no bundle ou enviados pela rota de configuração pública.
+A verificação restringe algoritmo, assinatura, escopo, projeto, subject e tipos. Depois da verificação criptográfica, `readV2Session` consulta a conta pelo username normalizado, confere ID, `isActive` e `sessionVersion`, e lê novamente o papel do banco. Conta ausente, inativa, divergente ou com versão antiga falha fechado. `MANUS_JWT_SECRET` e `MANUS_PROJECT_ID` são necessários para assinar/verificar, mas seus valores não pertencem à documentação, ao bundle ou a uma resposta pública.
 
-### 2.3 Senhas e tentativas
+### 2.3 Senhas, usernames e tentativas
 
 - A senha é armazenada como `scrypt$<salt>$<hash>`, com salt aleatório de 16 bytes, hash de 64 bytes e comparação em tempo constante.
-- A API aceita de 8 a 200 caracteres; o username é normalizado para minúsculas e deve casar com `[a-z0-9._-]{3,64}`.
-- Listagens de contas retornam apenas `id`, `username`, `role`, `isActive` e `createdAt`. Não retornam `passwordHash`.
-- Auditorias de conta gravam conta, ator e ação (`create`, `update`, `reset_password` ou `assign_bbro`), sem senha, hash, token ou payload de requisição.
-- O login mantém um contador **em memória do processo**, indexado por `req.socket.remoteAddress`: no máximo 10 tentativas dentro de uma janela de 15 minutos. A décima tentativa ainda é processada; a próxima é bloqueada com `TOO_MANY_REQUESTS`. Um login válido remove o contador daquele endereço.
-- Esse limite não é persistente nem compartilhado entre réplicas e é perdido no reinício do processo. Não deve ser tratado como substituto de rate limiting no proxy/WAF.
+- A validação aceita de 8 a 200 caracteres. O username é aparado, convertido para minúsculas e limitado a `[a-z0-9._-]{3,64}`.
+- Listagens de contas autorizadas ao Administrador retornam `id`, `username`, `role`, `isActive` e `createdAt`; não retornam `passwordHash` e não são uma API pública sem sessão.
+- A auditoria de conta grava conta, ator e ação (`create`, `update`, `reset_password` ou `assign_bbro`), sem senha, hash, token ou payload da requisição.
+- O login mantém no processo um contador por `req.socket.remoteAddress`: até 10 tentativas na janela de 15 minutos. A décima tentativa ainda é processada; a próxima é bloqueada com `TOO_MANY_REQUESTS`. Um login válido remove o contador daquele endereço.
+- Esse contador não é persistente, não é compartilhado entre réplicas e é perdido no reinício. Ele não substitui rate limiting distribuído no proxy/WAF nem controles de abuso na borda.
 
-## 3. Revogação de sessão e administração de contas
+## 3. Papéis atuais
 
-Alterar papel, desativar/ativar uma conta, redefinir a senha ou atribuir o papel BBRO incrementa `sessionVersion`. A sessão antiga passa a ser rejeitada mesmo antes do vencimento do JWT. A transação de alteração bloqueia os administradores ativos e impede remover o último administrador ativo.
+Os quatro papéis canônicos estão em [`shared/accountRoles.ts`](../shared/accountRoles.ts) e são validados também em [`server/routers.ts`](../server/routers.ts) e [`server/migrateV2Accounts.ts`](../server/migrateV2Accounts.ts):
 
-O gerenciamento de contas é administrativo. A criação inicia a conta como ativa e usa hash scrypt; username duplicado resulta em conflito. O código não retorna credenciais em nenhuma dessas operações.
+| Código         | Rótulo        | Regra resumida                                                                                             |
+| -------------- | ------------- | ---------------------------------------------------------------------------------------------------------- |
+| `admin`        | Administrador | Operação e administração, com restrições adicionais para o proprietário Rodrigo.                           |
+| `client_admin` | ADM - Cliente | Leitura das áreas de cliente ampliado; não administra contas, não importa e não acessa análise por modelo. |
+| `client`       | Cliente       | Somente o Overview agregado whitelisted; sem Leads pessoais, CSV ou módulos de negócio.                    |
+| `bbro`         | BBRO          | Leitura operacional e validação do escopo CRM real; não é administrador.                                   |
 
-Não existe seed geral no caminho de inicialização do servidor. O runner explícito [`server/migrateV2Accounts.ts`](../server/migrateV2Accounts.ts) **não cria conta nem senha**: ele pode promover uma conta existente de username `rodrigo` e, em uma etapa separada, atribuir BBRO à conta já existente cujo username seja `bbro`, sempre com marcadores de migração. A primeira conta precisa ser provisionada por um procedimento operacional controlado; não se deve presumir que iniciar o container cria um administrador.
+Valores ausentes, desconhecidos ou malformados são normalizados para `client`, o perfil de menor privilégio. Essa normalização é uma contingência de leitura; não transforma dados em anônimos e não substitui autenticação, autorização de rota ou revisão de registros legados.
 
-## 4. Perfis e matriz de permissões
+## 4. Matriz completa de autorização
 
-Os papéis válidos são `admin`, `client` e `bbro`, definidos em [`shared/accountRoles.ts`](../shared/accountRoles.ts). A matriz abaixo descreve as rotas e as projeções públicas reais. “Leitura sanitizada” significa que o backend remove avisos/notas técnicas e, quando aplicável, aplica os rótulos de apresentação definidos em [`server/v2Permissions.ts`](../server/v2Permissions.ts); não significa que os dados sejam anônimos.
+A tabela descreve o procedimento atual, não apenas o que a UI mostra. “Sanitizado” significa projeção de apresentação com remoção de notas/diagnósticos ou rótulos técnicos conforme o código; **não significa anonimizado automaticamente**.
 
-| Recurso/rota tRPC | ADMIN | BBRO | CLIENT |
-|---|---|---|---|
-| `auth.me`, `auth.login`, `auth.logout` | Sessão própria | Sessão própria | Sessão própria |
-| `accounts.list/create/update/resetPassword` | **CRUD administrativo** | Sem acesso | Sem acesso |
-| `leads.dashboard` | Leitura completa, incluindo notas e avisos técnicos | Leitura sanitizada | Leitura sanitizada |
-| `leads.goal` / `leads.updateGoal` | Consultar e editar meta de Leads | Sem acesso | Sem acesso |
-| `leads.salesGoal` / `leads.updateSalesGoal` | Somente se também for a conta proprietária `rodrigo` | Sem acesso | Sem acesso |
-| `mediaPlan.plans` | Leitura | Leitura | Leitura |
-| `mediaPlan.projections` / `updateProjections` | Somente a conta proprietária `rodrigo` | Sem acesso | Sem acesso |
-| `dispatch.reports` | Lista completa | Lista de apresentação | Lista de apresentação |
-| `dispatch.report` | Relatório completo | Sem acesso | Sem acesso |
-| `dispatch.leadControl` | Leitura completa | Leitura sanitizada | Leitura sanitizada |
-| `dispatch.setManual` / `history` / `prepareLeadControl` | Pode validar e preparar | Pode validar, consultar histórico e preparar; escopo CRM/D-1 | Sem acesso |
-| `dispatch.prepareDay` / `importWorkbook` | Pode preparar e importar | Sem acesso | Sem acesso |
-| `commercial.status`, previews, commits e `remove` | Pode consultar e alterar snapshots comerciais | Sem acesso | Sem acesso |
+| Recurso/procedimento                                                              | `admin`                                               | `client_admin`                                           | `client`                  | `bbro`                                                               |
+| --------------------------------------------------------------------------------- | ----------------------------------------------------- | -------------------------------------------------------- | ------------------------- | -------------------------------------------------------------------- |
+| `auth.me`, `auth.login`, `auth.logout`                                            | Sessão própria                                        | Sessão própria                                           | Sessão própria            | Sessão própria                                                       |
+| `accounts.list/create/update/resetPassword`                                       | CRUD administrativo                                   | Negado                                                   | Negado                    | Negado                                                               |
+| `leads.dashboard`                                                                 | Leitura completa                                      | Leitura das abas originais, com projeção de apresentação | Somente Overview agregado | Leitura de apresentação e escopo operacional                         |
+| `leads.goal`, `leads.updateGoal`                                                  | Consultar/editar meta de Leads                        | Negado                                                   | Negado                    | Negado                                                               |
+| `leads.salesGoal`, `leads.updateSalesGoal`                                        | Somente Admin cujo username seja exatamente `rodrigo` | Negado                                                   | Negado                    | Negado                                                               |
+| `leads.syncConnection`, `leads.syncBase`                                          | Consultar conexão/importar base                       | Negado                                                   | Negado                    | Negado                                                               |
+| `leads.modelInsights`                                                             | Exclusivo do Admin                                    | Negado                                                   | Negado                    | Negado                                                               |
+| `leads.exportCSV`                                                                 | Permitido; estado de apresentação pode mascarar nomes | Permitido como leitura/exportação, sem gestão            | Negado                    | Permitido como leitura/exportação, sem gestão                        |
+| `mediaPlan.plans`                                                                 | Leitura                                               | Leitura                                                  | Negado                    | Leitura                                                              |
+| `mediaPlan.projections`, `mediaPlan.updateProjections`                            | Somente `admin` com username exatamente `rodrigo`     | Negado                                                   | Negado                    | Negado                                                               |
+| `dispatch.reports`                                                                | Lista completa                                        | Lista de apresentação                                    | Negado                    | Lista de apresentação                                                |
+| `dispatch.report`                                                                 | Relatório completo                                    | Negado                                                   | Negado                    | Negado                                                               |
+| `dispatch.leadControl`                                                            | Projeção `controlForCRM`, não relatório bruto         | Projeção `controlForCRM` com redação de apresentação     | Negado                    | Projeção `controlForCRM` com escopo CRM nas operações de controle    |
+| `dispatch.setManual`, `dispatch.history`                                          | Permitido                                             | Negado                                                   | Negado                    | Permitido somente para CRM/unidade de qualificação e data até D-1    |
+| `dispatch.prepareLeadControl`                                                     | Preparar controle                                     | Negado                                                   | Negado                    | Preparar somente o recorte CRM (`crmOnly`) e dias encerrados até D-1 |
+| `dispatch.prepareDay`, `dispatch.importWorkbook`                                  | Permitido                                             | Negado                                                   | Negado                    | Negado                                                               |
+| `commercial.status`, `previewGoals`, `commitGoals`, `preview`, `commit`, `remove` | Permitido                                             | Negado                                                   | Negado                    | Negado                                                               |
 
-### 4.1 Restrições de proprietário
+`client` ainda pode executar as operações de sessão necessárias ao login/logout; “sem mutations” neste documento significa sem mutações de negócio, importações, gestão, metas, CSV ou controle operacional.
 
-Há duas áreas deliberadamente mais restritas que “ser administrador”:
+### 4.1 O que o `client` realmente recebe
 
-1. **Meta total mensal de vendas:** somente a conta de username exatamente `rodrigo`, com papel `admin`, passa pelo `ownerProcedure` e por `assertV2SalesGoalOwner` em [`server/v2SalesGoal.ts`](../server/v2SalesGoal.ts). A ausência de override retorna `null`; o código não copia automaticamente o total importado para a tabela de override.
-2. **Projeções de Leads do plano de mídia:** somente a conta `rodrigo` com papel `admin` pode consultar ou salvar projeções em [`server/v2MediaPlanProjections.ts`](../server/v2MediaPlanProjections.ts). O serviço revalida a identidade, valida mês/plano aprovado, usa `expectedVersion` para concorrência e audita o estado anterior e o novo.
+A projeção [`dashboardForOverviewClient`](../server/v2Permissions.ts) mantém o Overview agregado e a whitelist comercial de dealer: nome/UF do cadastro, Leads, metas, vendas, conversão e metas coletivas. Os grupos de meta são apresentados como `Meta coletiva da rede`/`Collective network goal` conforme a localidade da UI.
 
-O teste do proprietário na rota exige o username retornado exatamente como `rodrigo`. Contas históricas com capitalização diferente devem ser revisadas antes de serem consideradas proprietárias, mesmo que alguma consulta SQL use comparação case-insensitive.
+Antes de sair do servidor, essa projeção remove a análise restrita e reduz ou esvazia campos de detalhamento: não entrega linhas de Leads recentes, CRM, cidades, canais, campanhas, versões, horas ou a matriz regional detalhada. O novo `client` não recebe a aba Leads, CSV, Plano de mídia, Controle de envios ou Usuários. Na UI, [`Home.tsx`](../client/src/pages/Home.tsx) mantém esse perfil em `module=leads`, remove `tab` e renderiza somente `Visão Geral`.
 
-### 4.2 Escopo BBRO no controle CRM
+O `client_admin` não é o mesmo perfil: ele conserva a leitura das quatro abas originais — `Visão Geral`, `Lojas & CRM`, `Regiões` e `Leads` — e pode ler os módulos de Plano de mídia e Controle de envios permitidos pela matriz, mas não vê Usuários, não importa, não administra contas, não altera metas, não executa a sincronização externa e não recebe Análise por modelo. A UI desse perfil usa localidade inglesa (`Overview`, `Stores & CRM`, `Regions`, `Leads`, `Model analysis`), embora a aba de análise permaneça bloqueada.
 
-BBRO não é administrador. Ao alterar um check Manual ou consultar seu histórico, o serviço verifica novamente a unidade e a data: somente concessionárias do conjunto CRM e dias encerrados até D-1 são aceitos. O papel não pode importar planilhas, administrar contas, editar metas ou acessar o relatório administrativo completo.
+### 4.2 O que “sanitizado” não quer dizer
 
-## 5. Minimização e exposição pública
+`dashboardForClient` remove avisos e diagnósticos técnicos, normaliza rótulos e agrupa estados; `dispatchForClient` troca título/arquivo, remove informações/notas e apresenta o revisor como `Equipe MG`. Essas projeções não são uma garantia geral de anonimização. Para `client_admin` e `bbro`, a leitura da tabela de Leads pode continuar contendo os campos da linha retornada pela fonte, inclusive nome quando o modo de apresentação não estiver ativo. O histórico de controle também retorna o username do ator que alterou a célula para os perfis autorizados.
 
-A rota `/api/platform/config.js` é gerada por [`server/_core/publicConfig.ts`](../server/_core/publicConfig.ts) a partir de uma whitelist. Podem chegar ao navegador `MANUS_PROJECT_ID`, `MANUS_OAUTH_PORTAL_URL`, `MANUS_API_URL` e `MANUS_API_BROWSER_KEY`. O código não serializa `process.env` inteiro; `DATABASE_URL`, `MANUS_JWT_SECRET` e `MANUS_API_KEY` não fazem parte dessa resposta.
+Não declarar “dados sanitizados automaticamente anônimos”. A remoção de campos pessoais do Overview do `client` é uma regra específica de `dashboardForOverviewClient`, não uma propriedade de todo dado V2.
 
-A conta pública nunca recebe hash de senha. As projeções retornam somente contexto numérico esparso, sem metadados do ator. Os overrides de projeção e metas são separados das fontes importadas, têm auditoria e não alteram orçamento, investimento ou fonte aprovada.
+### 4.3 Proprietário Rodrigo e BBRO
 
-Em desenvolvimento, o plugin do Vite pode gravar logs de console, rede e replay em `.manus-logs`, com corte de 1 MiB por arquivo. Trate esses arquivos como potencialmente sensíveis, não os envie ao repositório e não habilite o coletor como se fosse observabilidade de produção; o plugin não é injetado quando `NODE_ENV=production`.
+Há restrições mais fortes do que “ser Admin”:
 
-## 6. Controles obrigatórios para operação
+1. `ownerProcedure` exige `role === "admin"` e username exatamente `rodrigo` para consultar/salvar o total mensal de vendas e para ler/salvar projeções do plano de mídia. Capitalização diferente não deve ser presumida como proprietário.
+2. A atribuição do papel BBRO é uma operação separada e auditada em [`server/v2Accounts.ts`](../server/v2Accounts.ts): requer a conta Rodrigo como Admin e procura a conta existente cujo username seja `bbro`. Não cria conta, não define senha e incrementa a `sessionVersion` do alvo.
+3. BBRO não é um Admin disfarçado. `setManual` e `history` revalidam a loja e a data; somente lojas do conjunto CRM ou a linha de qualificação e dias encerrados até D-1 passam. `prepareLeadControl` recebe `crmOnly=true` para BBRO e prepara o controle CRM, sem importar a planilha de envios.
+4. A leitura de `dispatch.leadControl` passa por `controlForCRM` para Admin, ADM - Cliente e BBRO; ela reconcilia/mescla o controle e não equivale ao relatório bruto de `dispatch.report`. Há ainda redações de apresentação conforme o perfil. O código preserva linhas necessárias à conciliação e não deve ser descrito como se descartasse todo dealer não oficial; a restrição CRM mais forte está nas operações de validação/preparação.
 
-1. Use `DATABASE_URL`, `MANUS_PROJECT_ID` e `MANUS_JWT_SECRET` de ambiente separado por instalação; nunca publique DSN, segredo, hash ou cookie.
-2. Mantenha HTTPS no ingresso. O cookie é sempre `Secure` e `SameSite=None`.
-3. Coloque rate limiting por origem no proxy/WAF; o contador local de login não é distribuído.
-4. Restrinja a atribuição de `admin` e o provisionamento inicial. Não desative o último administrador ativo.
-5. Faça backup antes de qualquer DDL ou migração customizada. Os arquivos de backup contêm hashes de credenciais e devem ter controle de acesso e criptografia.
-6. Teste mudanças em banco isolado. Nunca aponte testes ou fixtures para o banco de produção.
-7. Revise a origem dos uploads comerciais e de dispatch; eles são mutações administrativas e não são executados automaticamente pelo startup.
+## 5. Navegação e fronteiras de UI
 
-## 7. Limitações verificadas no código atual
+[`client/src/components/LeadsSectionNavigation.tsx`](../client/src/components/LeadsSectionNavigation.tsx) define a ordem atual das abas: `Visão Geral`, `Lojas & CRM`, `Regiões`, `Leads`. `Análise por modelo` só é acrescentada quando `canManage` é verdadeiro e não há `clientView` nem `overviewOnly`; o servidor reforça isso com `adminProcedure` em `leads.modelInsights`.
 
-- `GET /api/health` retorna `status: "ok"`, produto e `environment: "homologacao"`, mas não testa `DATABASE_URL`, tabelas, migrações ou dependências externas. É uma sonda de processo HTTP, não uma readiness check de banco. O [`Dockerfile`](../Dockerfile) também não declara `HEALTHCHECK` nativo.
-- A proteção de login é por processo e endereço de socket; reinício, múltiplas réplicas ou proxies sem preservação de origem reduzem sua efetividade.
-- O cookie cross-site seguro não vem acompanhado de mecanismo CSRF explícito no código lido; a proteção de origem deve ser definida na infraestrutura antes de uma exposição pública.
-- A configuração ausente de banco ou assinatura pode ser percebida apenas quando uma rota tenta usá-la; o processo pode iniciar e somente depois falhar uma operação autenticada.
-- O servidor V2 não executa seed de administrador, import, ETL ou runner de migração no bootstrap. Provisionamento e evolução do banco são responsabilidades operacionais explícitas.
+O manifesto atual de rotas de página está em [`client/public/manus-routes.json`](../client/public/manus-routes.json). Ele lista módulos/abas como entradas de navegação, mas não concede acesso. Parâmetros `tab=models` ou `tab=model-analysis` para perfis não autorizados são normalizados/removidos pela UI; uma chamada direta a `leads.modelInsights` continua negada pelo servidor.
 
-## 8. Referências de implementação
+A UI de Admin também expõe o modo de apresentação. Esse modo é uma projeção de visualização, não um novo papel e não substitui a autorização do backend. O Admin é o único perfil que recebe o módulo Usuários, os uploads comerciais e a sincronização/importação externa.
 
-- [Autenticação, JWT, hash e rate limit — `server/v2Auth.ts`](../server/v2Auth.ts)
-- [Contas, auditoria e invalidação — `server/v2Accounts.ts`](../server/v2Accounts.ts)
-- [Permissões e sanitização — `server/v2Permissions.ts`](../server/v2Permissions.ts)
+## 6. Exportação CSV: máscara, antiformula e limites
+
+A rota `leads.exportCSV` usa [`server/v2LeadsExport.ts`](../server/v2LeadsExport.ts) e é permitida para Admin, `client_admin` e BBRO; o novo `client` não alcança a rota. A exportação:
+
+- ignora paginação e usa todos os registros do recorte aplicado, preservando filtros de período, modelo, canal, campanha, dealer e busca;
+- exige que a fonte de Leads esteja pronta; fonte não configurada produz erro específico, não um CSV vazio enganoso;
+- respeita a validação de período do dashboard, incluindo data final até D-1 e período máximo de três anos;
+- rejeita mais de `100.000` linhas ou saída acima de `16 MiB`;
+- usa BOM UTF-8, CRLF, separador `;` e escape de aspas para compatibilidade com planilhas;
+- protege campos textuais contra injeção de fórmula quando há controles iniciais ou prefixos `=`, `+`, `-` ou `@`, incluindo o caso com espaços/controles antes do caractere; a hora numérica não passa por esse caminho;
+- mascara o nome somente quando o input `clientMode` é verdadeiro, retornando `nameMasked` para conferência da UI; agrupa UF para não-Admin;
+- na UI, confirma que o período da resposta corresponde ao recorte solicitado e, quando solicitado, que a resposta informou nome mascarado.
+
+**Limitação importante:** `clientMode` é uma flag de apresentação do request, não uma autorização por papel. O servidor não força máscara de nome apenas por o papel ser `client_admin` ou `bbro`; a UI desses perfis passa atualmente `clientMode=false`. Portanto, não documentar “CSV sempre mascarado” sem uma mudança de código que imponha essa regra no backend.
+
+## 7. Diagnóstico administrativo agregado
+
+`leads.modelInsights`, implementado em [`server/v2AdminModelInsights.ts`](../server/v2AdminModelInsights.ts), é exclusivo do Admin e só é carregado pela UI quando a aba de análise é autorizada e a fonte está pronta. O retorno contém agregados de modelo, versão, estado, canal, dealer e campanha, matrizes, séries diárias, cobertura da fonte, comparação com janela anterior, gaps de qualidade e oportunidades de mix.
+
+O módulo não seleciona nem retorna campos de nome de Lead, e-mail ou telefone; suas linhas de diagnóstico são contagens, percentuais, rótulos comerciais normalizados e mensagens de qualidade. Isso documenta a forma efetivamente retornada por esse diagnóstico e não equivale a prometer anonimização de toda a fonte, do banco ou de outros endpoints. Os rótulos passam por `safeDiagnosticLabel`; a ausência de PII no diagnóstico não elimina a necessidade de restringir o acesso ao Admin.
+
+Os limites de análise são de comportamento do código: amostra baixa abaixo de 30, gap de mix a partir de 5 pontos percentuais, no máximo 50 insights e 100 oportunidades; matrizes não são truncadas. Esses números são limites de processamento, não métricas correntes do negócio.
+
+## 8. Revogação de sessão, contas e migrações legadas
+
+Alterar papel ou status, redefinir senha, atribuir BBRO e migrar um cliente legado incrementa `sessionVersion`. A sessão antiga falha em `readV2Session` mesmo antes do vencimento do JWT. Alterações administrativas usam transação e lock para impedir a remoção do último Admin ativo.
+
+A migração [`server/migrateV2ClientProfiles.ts`](../server/migrateV2ClientProfiles.ts) é finita, explícita e idempotente. Ela:
+
+- exige um `actorId` de Administrador ativo para auditoria;
+- converte somente contas já existentes com `role='client'` para `client_admin`;
+- incrementa a `sessionVersion` e registra auditoria do ator;
+- não seleciona nem altera `passwordHash` ou `isActive`;
+- não cria conta ou senha nem concede papel de Administrador; restaura a leitura ampliada dos Clientes legados e registra um marcador em `v2_user_migrations`.
+
+A migração de contas em [`server/migrateV2Accounts.ts`](../server/migrateV2Accounts.ts) também é runner explícito, não bootstrap: atualiza apenas contas existentes, promove a conta `rodrigo` já existente quando aplicável e tenta atribuir BBRO à conta existente `bbro`. Nenhuma dessas rotinas deve ser descrita como seed automático de conta ou senha. O processo de inicialização do servidor não executa seed, import, ETL ou migration.
+
+## 9. Minimização pública e limites observados
+
+A rota `/api/platform/config.js` usa a whitelist de [`server/_core/publicConfig.ts`](../server/_core/publicConfig.ts). Podem chegar ao navegador apenas `MANUS_PROJECT_ID`, `MANUS_OAUTH_PORTAL_URL`, `MANUS_API_URL` e `MANUS_API_BROWSER_KEY`. O código não serializa `process.env` inteiro; `DATABASE_URL`, `MANUS_JWT_SECRET` e `MANUS_API_KEY` não fazem parte dessa resposta. Valores browser-safe não devem ser confundidos com segredos.
+
+Limitações verificadas no código atual:
+
+1. `/api/health` retorna `status: "ok"`, produto e `environment: "homologacao"`; não testa banco, tabelas, migrations ou dependências externas. É uma sonda HTTP de processo.
+2. [`Dockerfile`](../Dockerfile) não declara `HEALTHCHECK` nativo.
+3. A proteção de login é por processo e endereço de socket; reinícios, réplicas e proxies que não preservem a origem reduzem sua efetividade.
+4. O cookie cross-site seguro não é acompanhado de token CSRF explícito; a borda precisa definir origem, CSRF e política de domínio antes de exposição pública.
+5. A ausência de configuração de banco ou assinatura pode aparecer somente quando uma rota autenticada tenta usá-la; o processo pode iniciar antes de uma operação falhar.
+6. A UI oculta módulos e abas por papel, mas isso não é a fronteira de segurança. A fronteira é a checagem de sessão/papel nas procedures e as validações de escopo dentro dos serviços.
+7. O repositório canônico é privado, mas ainda assim não é local adequado para segredos, hashes, cookies, dados pessoais, planilhas ou IDs externos. Privacidade do repositório não torna esses materiais aceitáveis.
+
+## 10. Referências de implementação
+
+- [Papéis, normalização e capacidades — `shared/accountRoles.ts`](../shared/accountRoles.ts)
 - [Procedimentos e matriz de rotas — `server/routers.ts`](../server/routers.ts)
+- [JWT, sessão, hash e rate limit — `server/v2Auth.ts`](../server/v2Auth.ts)
+- [Contas, auditoria e invalidação — `server/v2Accounts.ts`](../server/v2Accounts.ts)
+- [Projeções de permissão e apresentação — `server/v2Permissions.ts`](../server/v2Permissions.ts)
 - [Cookie de sessão — `server/_core/cookies.ts`](../server/_core/cookies.ts)
 - [Contexto tRPC — `server/_core/context.ts`](../server/_core/context.ts)
+- [Montagem HTTP, health e `/api/trpc` — `server/_core/index.ts`](../server/_core/index.ts)
 - [Whitelist pública — `server/_core/publicConfig.ts`](../server/_core/publicConfig.ts)
-- [Papéis — `shared/accountRoles.ts`](../shared/accountRoles.ts)
-- [Meta total de vendas — `server/v2SalesGoal.ts`](../server/v2SalesGoal.ts)
-- [Projeções de mídia — `server/v2MediaPlanProjections.ts`](../server/v2MediaPlanProjections.ts)
-- [Esquema starter de usuários — `drizzle/schema.ts`](../drizzle/schema.ts)
+- [CSV, máscara e limites — `server/v2LeadsExport.ts`](../server/v2LeadsExport.ts)
+- [Schema do input/resultado CSV — `shared/leadsExport.ts`](../shared/leadsExport.ts)
+- [Diagnóstico agregado Admin — `server/v2AdminModelInsights.ts`](../server/v2AdminModelInsights.ts)
+- [Controle CRM e escopo BBRO — `server/v2Dispatch.ts`](../server/v2Dispatch.ts)
+- [Preparação do controle CRM/D-1 — `server/v2DispatchLeads.ts`](../server/v2DispatchLeads.ts)
+- [Migração de perfis legados — `server/migrateV2ClientProfiles.ts`](../server/migrateV2ClientProfiles.ts)
+- [Migração de papéis/contas — `server/migrateV2Accounts.ts`](../server/migrateV2Accounts.ts)
+- [Shell da UI e módulos por papel — `client/src/pages/Home.tsx`](../client/src/pages/Home.tsx)
+- [Abas e análise por modelo — `client/src/components/LeadsSectionNavigation.tsx`](../client/src/components/LeadsSectionNavigation.tsx)
+- [Dashboard, projeções e consultas — `client/src/components/V2LeadsDashboard.tsx`](../client/src/components/V2LeadsDashboard.tsx)
+- [Exportação na UI — `client/src/components/V2LeadsExportButton.tsx`](../client/src/components/V2LeadsExportButton.tsx)
+- [Manifesto de rotas de página — `client/public/manus-routes.json`](../client/public/manus-routes.json)

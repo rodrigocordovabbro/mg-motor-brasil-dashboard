@@ -1,5 +1,7 @@
 # Resultados — Dashboard MG Motors V2
 
+> **Registro acumulado de resultados e evidências datadas.** Itens antigos descrevem a etapa em que foram registrados; decisões e pendências superadas não são o contrato atual. Consulte o [README](README.md) e os [guias técnicos](docs/ARQUITETURA.md). O canônico atual é o GitHub privado `rodrigocordovabbro/mg-motor-brasil-dashboard` (`dashboard-v2`/trabalho, `main`/checkpoints), confirmado em 09/11/2026; tentativas bloqueadas/destinos anteriores são históricos. A publicação continua separada.
+
 - [x] Novo recurso `mgmotorsv2` com banco/servidor próprios, sem anexar ou editar o projeto V1.
 - [x] Origem GitHub autorizada em `dashboard-v2`, commit-base `dfad96cb1d015384d0425ce0f91ac308da0c8eb5`. Código de módulos originais preservado em `legacy/`, sem dados operacionais/credenciais. Escopo ativo limitado depois pelo usuário a Leads e Plano de Mídia.
 - [x] Interface branca inspirada nos screenshots fornecidos, identidade MG e V2/homologação. Abas Leads: Visão Geral, Regiões, Horários, Modelos, Lojas & CRM e Leads. Filtros reais por período/modelo/canal/campanha/concessionária/busca; não copiar números das imagens.
@@ -372,3 +374,8 @@ Evidência: cinco regressões executam os efeitos reais após seleção de abas;
 - [x] Cliente continua somente Leads/Overview: sem outras abas, dados pessoais de Leads, CSV, diagnósticos/arquivos privados, uploads, editores, gestão ou nova permissão de escrita. Não modificar contas, Leads, vendas, metas, CRM/V1 nem sincronizar; testar retorno e apresentação por perfil e salvar no Manus sem publicação automática.
 
 Evidência: HTTP somente leitura confirmou 44 registros agregados de dealer idênticos aos do ADM Cliente e metas coletivas iguais, mantendo total 4.068; linhas pessoais ocultas, arquivos privados suprimidos e demais rotas Forbidden. Sete regressões de apresentação e 24 de permissões passaram, incluindo whitelist, zero/nulo, não rateio e não mutação. TypeScript, suíte completa 463 testes/60 arquivos e build aprovados. Alteração restrita ao retorno agregado, apresentação e documentação/testes, sem escrita ou sincronização. Disponível na Prévia, ainda sem publicação automática.
+
+## Documentação vigente do código entregue no GitHub — 09/11/2026
+
+- [ ] README e guias descrevem o funcionamento atual de Atualizar base/confirmar versão, contador canônico/D-1, Retail/Registration/conversão, curva histórica, análise administrativa, exportação, perfis Cliente/ADM Cliente, leitura de dealers e checks Check/--. Instalação, variáveis sem valores secretos, ordem de migrations e limites operacionais baseados no código, com links válidos; sem afirmar integração CRM/automação inexistente ou confundir código salvo com publicado.
+- [ ] Registrar o GitHub privado rodrigocordovabbro/mg-motor-brasil-dashboard como destino canônico atual, com main/checkpoints e dashboard-v2/trabalho. Atualizar contribuição/changelog e sinalizar V2_BASE/plan/TODO como histórico datado. Sem alterar runtime/dados/contas, executar migration/importação, publicar ou versionar segredos/planilhas/relatórios operacionais; enviar somente documentação por push normal, sem force e sem repositório V1/antigo.

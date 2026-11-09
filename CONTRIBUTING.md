@@ -1,33 +1,33 @@
 # Contribuição e manutenção
 
-## Princípios
+> Documentação vigente revisada em **09/11/2026**. Comece pelo [README](README.md) e pelos [guias técnicos](docs/ARQUITETURA.md). `plan.md`, `TODO.md` e `V2_BASE.md` preservam decisões e evidências datadas; instruções antigas nesses registros não substituem os guias atuais.
 
-Faça mudanças pequenas, revisáveis e vinculadas a um resultado do produto. Preserve rótulos originais de arquivos e o histórico de fontes. Não altere dados reais apenas para verificar uma implementação.
+## Repositório e branches
 
-Esta cópia do código usa a branch `dashboard-v2` no repositório `digocordova83-cyber/v2-mgmotor`. Não use o repositório antigo, sua `main` ou o Git de outro serviço como destino. Não use force push. O projeto Manus permanece independente desta cópia: commit ou push no GitHub não publica o site.
+O repositório canônico conectado ao projeto WebDev é o **GitHub privado [rodrigocordovabbro/mg-motor-brasil-dashboard](https://github.com/rodrigocordovabbro/mg-motor-brasil-dashboard)**. `dashboard-v2` é a branch de trabalho; `main` registra as versões usadas pelos checkpoints Manus. Confira destino, referências remotas e mudanças concorrentes antes de salvar; integre sem reescrever histórico.
 
-## Preparação
+Os repositórios anteriores, incluindo o dashboard V1, **não** são destinos deste projeto. Não use force push. Push e checkpoint não equivalem a publicação: a publicação automática está desativada e um deploy exige autorização separada. Banco, contas, sessões, arquivos privados, credenciais e serviços do ambiente não são transferidos pelo Git.
 
-1. Leia o [README](README.md) e os guias em [docs](docs/ARQUITETURA.md).
-2. Use Node.js 22 e pnpm 10.18.0.
-3. Instale com `pnpm install --frozen-lockfile`.
-4. Configure somente um banco isolado de desenvolvimento e segredos próprios.
-5. Antes de editar, confira `git status` e preserve trabalho concorrente.
+## Preparação e organização
 
-## Onde implementar
+Use Node.js 22 e pnpm 10.18.0, conforme `package.json` e `Dockerfile`. Instale com `pnpm install --frozen-lockfile`. Configure segredos somente no ambiente autorizado e use banco isolado para novas instalações e testes experimentais. O banco gerenciado do projeto Manus atual é compartilhado por desenvolvimento e publicação: qualquer gravação nele é real.
 
-| Tipo de mudança | Local |
-| --- | --- |
-| Layout, filtros, estados e acessibilidade | `client/src/` |
-| Regras de cálculo e persistência | `server/` |
-| Autorização de endpoints | `server/routers.ts` e serviços de permissões |
-| Contratos e conciliação | `shared/` |
-| Alteração de schema | `drizzle/` e runner revisado em `server/migrate*.ts` |
-| Documentação | `README.md`, `docs/`, `CHANGELOG.md` |
+Antes de editar, consulte `git status`, preserve o trabalho existente e leia as regras do domínio afetado.
 
-Não use `legacy/` como aplicação ativa. Evite criar um segundo cálculo de KPI no frontend quando já há uma regra no servidor.
+| Mudança                                    | Local principal                                           |
+| ------------------------------------------ | --------------------------------------------------------- |
+| Layout, filtros, idioma e acessibilidade   | `client/src/`                                             |
+| Contagem canônica, projeção e persistência | `server/`                                                 |
+| Autorização e projeção de respostas        | `server/routers.ts`, `server/v2Permissions.ts` e serviços |
+| Tipos, calendário, aliases e capacidades   | `shared/`                                                 |
+| Evolução do banco                          | `drizzle/` e runner explícito em `server/migrateV2*.ts`   |
+| Documentação vigente                       | `README.md`, `docs/`, `CONTRIBUTING.md`, `CHANGELOG.md`   |
 
-## Validação antes de salvar
+Não trate `legacy/` como aplicação ativa. Evite criar no frontend uma segunda regra de KPI que concorra com a implementada no servidor.
+
+## Verificações antes de salvar
+
+Para mudanças funcionais, execute os comandos existentes sem usar dados reais como fixtures:
 
 ```bash
 pnpm check
@@ -36,50 +36,40 @@ pnpm build
 git diff --check
 ```
 
-Formate somente os arquivos alterados quando possível:
+Formate somente os arquivos alterados, por exemplo:
 
 ```bash
 pnpm exec prettier --write caminho/do/arquivo.ts
 ```
 
-A suíte existente usa fixtures e mocks. Novos testes devem continuar sem gravar no banco real. Uma migration ou import executado manualmente é uma mudança de dados, não apenas uma verificação de código.
+Para mudanças apenas documentais, confira links locais, coerência com o código e diff; não declare uma nova execução da suíte funcional se ela não ocorreu. Os testes do projeto usam mocks e fixtures. Uma migration, sincronização ou importação manual é uma alteração de dados, não apenas uma validação de código.
 
-## Regressões importantes
+## Regressões que não podem ser perdidas
 
-Ao mudar cálculos ou uploads, preserve:
+| Área           | Contrato a preservar                                                                                                                                    |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Calendário     | D-1 em `America/Sao_Paulo`; recorte geral e MTD são leituras distintas.                                                                                 |
+| Dados          | Zero conhecido é diferente de `null`/indisponível; nunca simular histórico, resultados ou progresso.                                                    |
+| Contagem       | Origem física preservada; mesma projeção analítica canônica em Leads, CRM, CSV e modelos. Não apagar ocorrências para ajustar totais.                   |
+| Atualizar base | Somente ADMIN importa Google no servidor; confirmar a versão retornada ao dashboard depois do commit. Demais perfis só relêem indicadores.              |
+| Curva          | Plano histórico normalizado, meta global somente em escopo comparável, projeção identificada e realizado só até a cobertura válida.                     |
+| Metas          | Grupos permanecem coletivos, sem duplicação/rateio; overrides manuais e nomes de origem preservados.                                                    |
+| Vendas         | Uma coluna semanal `Wn_Reg` por unidade; Retail geral e Registration separados. Conversão global usa Retail, não Registration.                          |
+| Upload         | Prévia sem escrita; confirmação transacional, limites XLSX e progresso real da preparação do arquivo.                                                   |
+| CRM            | Origem de arquivo distinta da validação auditada; `Check`/`--` são apresentação. Preservar versões, autoria e checks existentes.                        |
+| Perfis         | `admin`, `client_admin`, `client`, `bbro`; autorização no servidor. Cliente só Overview e agregados de dealers, não registros pessoais/CSV/outras abas. |
+| Idioma         | Login sempre inglês; interfaces Cliente/ADM Cliente em inglês, sem traduzir ou regravar nomes reais de origem.                                          |
+| Modelos        | Análise administrativa protegida; gaps de mix são heurísticas, não metas/vendas por modelo inventadas.                                                  |
+| CSV            | Recorte completo aplicado, sem truncamento/página-only; campos autorizados, máscara, escaping e neutralização de fórmulas.                              |
 
-- D-1 no calendário de São Paulo e independência entre período geral e competência mensal.
-- Zero real versus `null`/indisponível.
-- Metas coletivas sem duplicação ou rateio implícito.
-- Valores e nomes originais da fonte, incluindo aliases conciliados.
-- Metas manuais e projeções mensais já salvas.
-- Transação única para fontes combinadas e novos dealers.
-- Idempotência, autoria e controle de concorrência dos checks Manual.
-- WEEKLY_REG como fonte de vendas por loja, sem somar snapshots semanais.
-- Separação entre MTD Registration geral e a distribuição de vendas por dealer.
-- Permissões de Administrador, Cliente e BBRO também no servidor.
+## Banco e operação
 
-## Banco e migrations
+Uma mudança de schema precisa de pré-requisitos, efeito esperado e procedimento de aplicação explícitos. Prefira alterações aditivas, revise dependências e faça backup aprovado antes de DDL. Os runners customizados não são executados no startup; `pnpm db:migrate` não instala todo o schema do produto e `pnpm db:push` não deve ser usado indiscriminadamente.
 
-Uma mudança de schema deve ser aditiva quando possível, com documentação de pré-requisitos, idempotência e efeito esperado. Revise a ordem das tabelas e a dependência de migrations anteriores. Não execute `db:push` indiscriminadamente; as tabelas customizadas possuem SQL e runners próprios.
+Consulte [Operação e deploy](docs/OPERACAO_E_DEPLOY.md) para a ordem atual de migrações e diagnóstico. Não habilite comandos SQL não suportados como no-op para dar aparência de lock ou segurança. Não altere dados, usuários, metas ou checks apenas para experimentar uma mudança.
 
-Nunca conecte uma instalação experimental ao banco de produção. No ambiente Manus gerenciado, desenvolvimento e publicação podem compartilhar o mesmo banco: gravações são reais.
+## Revisão e segurança
 
-## Checklist de revisão
+A mudança deve atender ao pedido, manter estados de vazio/erro/carregamento, respeitar foco e rolagem, autorizar entradas na API e atualizar a documentação afetada. Confira o diff e a branch antes do push. Preserve lockfile, patches e política de instalação; não troque gerenciador nem habilite scripts desconhecidos para contornar erros.
 
-- [ ] A mudança atende ao pedido sem acrescentar dados simulados na interface.
-- [ ] A API valida entradas e autoriza a operação no servidor.
-- [ ] Estados de vazio, erro e carregamento continuam compreensíveis.
-- [ ] O comportamento móvel, rolagem e foco de teclado foram considerados.
-- [ ] Tipos, testes afetados e build passaram.
-- [ ] Nenhuma credencial, planilha, export de Leads ou dump foi incluído.
-- [ ] Documentação e regras de negócio estão atualizadas.
-- [ ] O destino Git e a branch autorizada foram conferidos antes do push.
-
-## Segurança e incidentes
-
-Não publique dados pessoais ou segredos em Issues, Pull Requests, logs ou exemplos. Registre apenas informações técnicas redigidas e comunique o responsável pelo sistema por canal privado. Se uma credencial for exposta, sua remoção do arquivo não basta: rotacione-a e avalie o histórico Git.
-
-## Dependências
-
-Preserve `pnpm-lock.yaml`, `pnpm-workspace.yaml` e os patches. Não troque gerenciador de pacotes nem habilite scripts de instalação desconhecidos para contornar um erro. Documente atualizações de dependências junto com a validação afetada.
+Nunca versionar ou anexar a Issues/PRs credenciais, `.env`, conta de serviço, cookies, hashes de senha, contatos de Leads, XLSX, CSV operacional, dumps ou logs sensíveis. Use exemplos fictícios e canal privado para incidentes. Se houver exposição, apagar o arquivo não basta: é necessário rotacionar a credencial e avaliar o histórico Git.

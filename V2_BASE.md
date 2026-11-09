@@ -1,5 +1,11 @@
 # MG Motor Brasil
 
+> **Registro histórico de implementação e evidências.** A documentação vigente do código está no [README](README.md) e nos [guias técnicos](docs/ARQUITETURA.md), revisados em 09/11/2026. As seções antigas abaixo descrevem etapas anteriores e não devem ser usadas como configuração ou regra atual.
+>
+> **Repositório atual:** GitHub privado [rodrigocordovabbro/mg-motor-brasil-dashboard](https://github.com/rodrigocordovabbro/mg-motor-brasil-dashboard), conectado como canônico do WebDev; `dashboard-v2` para trabalho e `main` para checkpoints. Destinos/erros GitHub anteriores são históricos. Publicação automática desativada; salvar código não publica o site.
+
+## Histórico da base inicial — 05/11/2026
+
 Novo recurso WebDev de homologação, separado do dashboard V1. Origem do código: GitHub autorizado `digocordova83-cyber/mg-motors-dashboard-clone`, branch `dashboard-v2`, commit-base `dfad96cb1d015384d0425ce0f91ac308da0c8eb5`.
 
 Nesta etapa, a aplicação ativa inclui somente **Leads** e **Plano de Mídia**, conforme a delimitação posterior do usuário. Os componentes e serviços dos demais módulos originais permanecem em `legacy/` como código não executado. Não foram copiados snapshots Ads, relatórios, dumps, arquivos de ambiente, bases antigas de Leads, contas/senhas V1 ou scripts operacionais de importação/atualização automática.
@@ -8,7 +14,7 @@ Nesta etapa, a aplicação ativa inclui somente **Leads** e **Plano de Mídia**,
 
 Interface branca inspirada nas referências fornecidas da Webmotors, sem copiar números das imagens. Abas: Visão Geral, Regiões, Horários, Modelos, Lojas & CRM e Leads. A Visão Geral conserva KPIs, pacing mensal, barras diárias por canal, real/pace acumulados, distribuição e acompanhamento simplificado por concessionária. Esse último quadro não apresenta investimento alocado ou CPL estimado.
 
-A planilha nova `LEADS MG — Base` (`1DnkkrrU3GqcuBd5br_OQDaGMMtA2iN2ik4yEV5-Ggw8`) foi lida somente por conta Google autorizada. Carga inicial: **49.128 registros com datas válidas** nas abas Site, Meta, TikTok, TikTok Live, Webmotors, Mercado Livre, UOL e Interlagos. Armazenamento exclusivamente em tabelas `v2_*` do banco novo. Nomes aparecem somente na API autenticada/tabela protegida; e-mails, telefones e CPF não são importados porque não são necessários a esta interface. Nenhum contato foi incluído no repositório ou bundle frontend.
+A planilha nova `LEADS MG — Base` foi lida somente por conta Google autorizada; seu identificador é configuração privada de ambiente, não uma instrução de instalação. Carga inicial: **49.128 registros com datas válidas** nas abas Site, Meta, TikTok, TikTok Live, Webmotors, Mercado Livre, UOL e Interlagos. Armazenamento exclusivamente em tabelas `v2_*` do banco novo. Nomes aparecem somente na API autenticada/tabela protegida; e-mails, telefones e CPF não são importados porque não são necessários a esta interface. Nenhum contato foi incluído no repositório ou bundle frontend.
 
 A carga é **importação inicial autenticada**, não conexão live nem sincronização automática. O timestamp de importação aparece na interface. As contagens preservam cada linha e sua origem; não foram aplicadas regras de deduplicação, integração ou exclusão comercial da Webmotors sem suporte na fonte. Datas ISO com timezone são convertidas ao calendário de São Paulo; datas locais/date-only permanecem no dia da fonte. Não são inventadas horas para datas sem horário.
 
@@ -309,3 +315,11 @@ A pedido do usuário, o perfil Cliente agora recebe e visualiza o acompanhamento
 Projeção do servidor libera somente os campos agregados de cada dealer e cadastro público usado pelo de-para existente. Metas coletivas preservam dealers/valor/Leads sem rateio, com chave/descrição genérica em inglês; arquivos privados, diagnósticos e campos extras de linhas/grupos não são enviados. Dados pessoais/recentes, matrizes restritas, CSV, Media plan, Dispatch/CRM e áreas administrativas permanecem indisponíveis ao Cliente. Nenhuma mudança de papel, senha, população, meta, venda ou check. Não houve importação, escrita em planilha, transferência GitHub ou publicação automática.
 
 Validação: sete testes de apresentação e 24 de permissões, TypeScript, suíte completa 463 testes/60 arquivos e build aprovados. HTTP da Prévia com sessões em memória confirmou 44 registros agregados de dealer e metas coletivas iguais aos do ADM Cliente; total geral 4.068 preservado. Linhas pessoais/arquivos privados ocultos e outras rotas bloqueadas. Nenhum CSV ou dataset foi salvo; nenhum dado ou conta foi atualizado. A nova tabela Cliente é alteração de código na Prévia, separada de publicação.
+
+## Documentação vigente revisada — 09/11/2026
+
+README e os quatro guias técnicos foram revisados contra o código atual em unidades separadas, com checagem de coerência; contribuição e changelog foram atualizados para o novo GitHub privado canônico. Registros antigos receberam aviso de histórico, pois decisões anteriores de fonte, perfil, rótulos e repositório não são o contrato vigente. O exemplo de ambiente esclarece que desenvolvimento/publicação Manus compartilham a base gerenciada; laboratórios usam banco isolado.
+
+A revisão corrigiu a documentação sobre totais físicos versus analíticos, Retail/Registration, projeção sem meta, autorização de quatro perfis, leitura projetada CRM e confirmação por refetch do snapshot. Limites encontrados ficaram explicitamente documentados: bootstrap de fonte vazia com importedAt não nulo/padrão e diferença entre cobertura física anunciada no dashboard/sync versus cobertura canônica da análise administrativa, incluindo limite inicial de disponibilidade diária. Não foram criadas migrations nem modificados runtime/banco/dados para tratar esses limites.
+
+A evidência funcional anterior de 463 testes/60 arquivos é datada e não foi apresentada como nova execução nesta revisão. Validação atual é documental, por código, links/arquivos e diff. Nenhuma importação, mudança de conta, credencial, fonte ou publicação acompanha este trabalho.

@@ -1,5 +1,7 @@
 # MG Sales — painel comercial / homologação
 
+> **Plano acumulado, com decisões históricas.** As orientações mais recentes prevalecem sobre as primeiras etapas; o contrato vigente está no [README](README.md) e nos [guias técnicos](docs/ARQUITETURA.md). Em 09/11/2026 o GitHub privado [rodrigocordovabbro/mg-motor-brasil-dashboard](https://github.com/rodrigocordovabbro/mg-motor-brasil-dashboard) tornou-se o canônico: `dashboard-v2` para trabalho e `main` para checkpoints. Referências a canônico Manus, destinos bloqueados e rótulos/funcionalidades antigas abaixo são históricas, não instruções atuais.
+
 ## Escopo autorizado e atualização
 
 A V2 foi criada em recurso WebDev fullstack independente. A origem/destino de desenvolvimento continua sendo `digocordova83-cyber/mg-motors-dashboard-clone`, exclusivamente `dashboard-v2`, base `dfad96cb1d015384d0425ce0f91ac308da0c8eb5`. A `main` do GitHub e o projeto V1 não serão alterados. O novo recurso usa seu próprio repositório gerenciado para checkpoint/publicação; nenhuma configuração V1 será copiada.
@@ -14,7 +16,7 @@ Preservar o código dos módulos V1 (Google Ads, Meta Ads, TikTok Ads, Social Or
 
 ## Fonte de Leads e proteção
 
-A nova planilha autorizada é `1DnkkrrU3GqcuBd5br_OQDaGMMtA2iN2ik4yEV5-Ggw8`, gid 0. Ler via Google Workspace autorizado, somente leitura. Inspecionar headers/tipos e preparar o mapeamento dos campos reais. Nenhum dado de Leads da V1 será importado. A carga inicial, se o acesso funcionar, será armazenada exclusivamente no banco do recurso V2, em tabelas próprias. Não copiar export de contatos para Git/cliente nem expor PII em mensagens. Separar carga inicial autenticada de atualização automática: não afirmar sincronização contínua ou live API quando apenas uma captura autorizada foi importada. Não copiar tokens do conector para o runtime publicado. Se acesso não existir, manter estado honesto e entregar a estrutura, com o bloqueio objetivamente informado.
+A nova planilha autorizada é a base de Leads definida no ambiente privado. Ler via Google Workspace autorizado, somente leitura. Inspecionar headers/tipos e preparar o mapeamento dos campos reais. Nenhum dado de Leads da V1 será importado. A carga inicial, se o acesso funcionar, será armazenada exclusivamente no banco do recurso V2, em tabelas próprias. Não copiar export de contatos para Git/cliente nem expor PII em mensagens. Separar carga inicial autenticada de atualização automática: não afirmar sincronização contínua ou live API quando apenas uma captura autorizada foi importada. Não copiar tokens do conector para o runtime publicado. Se acesso não existir, manter estado honesto e entregar a estrutura, com o bloqueio objetivamente informado.
 
 `server/routers.ts` expõe somente autenticação customizada própria V2 e APIs protegidas de análise da nova fonte. `server/v2Auth.ts` valida JWT HS256 com secret gerenciado, appId, scope e expiração; resolve conta ativa no banco e usa cookie próprio `HttpOnly; SameSite=None; Secure`. Não há usuário simulado nem bypass em Preview. Tentativas de login são limitadas; respostas não retornam hash/credenciais. `server/v2Leads.ts` calcula métricas somente dos dados do banco V2 e distingue não configurado, erro e ausência de registros no filtro.
 
@@ -264,3 +266,7 @@ A normalização de abas confundia ausência de acesso à análise administrativ
 ## Visão de dealers para Cliente no Overview — 09/11/2026
 
 Exibir o acompanhamento comercial de dealers também no Overview do perfil Cliente, reaproveitando a tabela existente em inglês e modo somente leitura. API Overview passa a fornecer seus agregados de dealer e metas coletivas já conciliados, sem linhas pessoais, diagnósticos, arquivos privados ou nova leitura de abas. Manter Leads/Overview como única navegação de mgmotor; Stores & CRM, Regions, exportação, importação, edição e análise administrativa continuam bloqueados. Preservar Top 10 estados, resumo Leads/Sales, filtros/D-1, de-para explícito, nomes originais no banco, valores e distinção de meta coletiva versus individual. Sem reimportação, atualização de conta ou publicação automática.
+
+## Documentação vigente e entrega no novo GitHub — 09/11/2026
+
+Revisar README e guias de arquitetura, regras, segurança e operação contra o código atual. Retirar descrições antigas da atualização, Retail/conversão e Cliente; documentar curva histórica, análise administrativa, exportação, checks, dois perfis Cliente e leitura de dealers. Repositório canônico confirmado agora é o GitHub privado rodrigocordovabbro/mg-motor-brasil-dashboard, com main para checkpoints e dashboard-v2 como branch de trabalho; os destinos anteriores ficam somente como histórico. Manter plan/TODO/V2_BASE como registros datados, com indicação clara de que não substituem os guias vigentes. Mudança exclusivamente documental: sem migração/importação, conta, segredo, dado operacional ou publicação; validar links e consistência antes do push normal das branches autorizadas.

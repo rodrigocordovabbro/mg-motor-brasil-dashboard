@@ -1,47 +1,68 @@
-# MG Motor Brasil | Gestão de Leads & Performance — Operação e Deploy
+# MG Motor Brasil | Operação e Deploy
 
-> **Escopo:** operação da cópia de código na raiz do repositório, com referências ao código-fonte real. Os nomes `v2_*` são nomes técnicos de tabelas e módulos; não são o título público do produto.
+> **Estado documental registrado em 09/11/2026.** Este guia foi revisado somente contra os arquivos de código/configuração listados em [Fontes reais](#11-fontes-reais), além das decisões canônicas confirmadas para este projeto. Os comandos operacionais abaixo são referência e **não foram executados nesta revisão**.
 >
-> O código mantido aqui é uma cópia somente de código. O projeto canônico permanece no Manus; serviços gerenciados, credenciais, bases e configurações de plataforma não são transferidos por este guia. A publicação pública do código é uma escolha de distribuição e não deve ser confundida com uma autorização para compartilhar segredos ou usar o banco de outro ambiente.
+> O produto público continua sendo MG Motor Brasil. Os nomes `v2_*` identificam módulos e tabelas técnicas; não são um título público.
 
-## 1. Arquitetura executável
+## 1. Estado canônico e limites desta documentação
 
-| Camada | Implementação observada |
-|---|---|
-| Runtime | Node.js 22 (`node:22-bookworm-slim` no [`Dockerfile`](../Dockerfile)) |
-| Gerenciador | pnpm 10.18.0 (`packageManager` e `devDependency` em [`package.json`](../package.json)) |
-| HTTP | Express + servidor HTTP nativo em [`server/_core/index.ts`](../server/_core/index.ts) |
-| API | tRPC sob `/api/trpc`, com roteador em [`server/routers.ts`](../server/routers.ts) |
-| Frontend | Vite + React; desenvolvimento com HMR em [`server/_core/vite.ts`](../server/_core/vite.ts) |
-| Banco | MySQL/TiDB compatível via `mysql2`; camada customizada em [`server/v2Db.ts`](../server/v2Db.ts) |
-| Build | `vite build` do cliente e bundle esbuild do servidor em `dist/index.js` |
-| Conteúdo persistente | Base de Leads, snapshots comerciais, dispatch, contas e overrides/auditorias customizados |
+| Item                                    | Estado confirmado                                                                                                                | O que não deve ser inferido                                                          |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Repositório canônico                    | [GitHub privado `rodrigocordovabbro/mg-motor-brasil-dashboard`](https://github.com/rodrigocordovabbro/mg-motor-brasil-dashboard) | Não é repositório público e não é um destino antigo.                                 |
+| Branch de trabalho                      | `dashboard-v2`                                                                                                                   | Um commit nessa branch ainda não é checkpoint em `main`.                             |
+| Checkpoints                             | `main` é a branch usada para checkpoints                                                                                         | Salvar checkpoint e publicar são operações distintas.                                |
+| Publicação automática                   | Desativada (`false`)                                                                                                             | Não há CI/CD ou publicação automática prometida por este repositório.                |
+| Publicação                              | Separada do checkpoint e deve ser autorizada/confirmada à parte                                                                  | Uma versão salva não é automaticamente a versão servida.                             |
+| Banco no ambiente Manus                 | Desenvolvimento e publicação compartilham o banco gerenciado atual                                                               | Não documentar esses dois ambientes como bancos separados sem uma decisão nova.      |
+| Instalações/testes experimentais        | Devem usar banco separado, com credencial própria                                                                                | Nunca apontar fixtures, testes ou DDL experimental para o banco compartilhado atual. |
+| Código antigo/V1 e repositórios antigos | Não são destinos atuais                                                                                                          | Não copiar, migrar ou publicar a partir deles.                                       |
 
-O processo escuta em `0.0.0.0`. O endpoint `GET /api/health` retorna JSON com `status: "ok"`, produto `MG Motor Brasil` e `environment: "homologacao"`. Esse endpoint é uma sonda HTTP de processo; ele não testa banco, tabelas, migrações nem serviços externos. O Dockerfile expõe a porta 3000, mas não declara um `HEALTHCHECK` nativo: o orquestrador deve configurar a chamada HTTP separadamente.
+O repositório GitHub privado é o canônico atual; não o descreva como “cópia independente do Manus”. Banco gerenciado, segredos, contas, dados e arquivos operacionais não são transportados pelo Git. Não copie `.env`, dumps, planilhas, credenciais, logs operacionais ou tokens para o repositório, uma imagem, um ticket ou um comando registrado.
 
-## 2. Variáveis de ambiente e segredos
+### 1.1 Fontes reais, valores ausentes e versões
 
-O entrypoint importa `dotenv/config` em [`server/_core/index.ts`](../server/_core/index.ts), portanto `pnpm dev` e o processo de aplicação carregam `.env` local automaticamente. `.env` e variantes são ignorados pelo Git e pelo Docker; [`../.env.example`](../.env.example) contém somente nomes e orientações, nunca valores para copiar para produção.
+As afirmações técnicas deste guia vêm do código atual, não de guias antigos. A lista completa está em [Fontes reais](#11-fontes-reais). O seguinte permanece deliberadamente sem valor fixo:
 
-| Variável | Obrigatória | Uso real |
-|---|---:|---|
-| `DATABASE_URL` | Sim para dados v2 e comandos Drizzle | DSN MySQL/TiDB usada por `mysql2` e pelo `drizzle-kit`; não deve ser impressa nem incluída na imagem/documentação |
-| `MANUS_PROJECT_ID` | Sim para sessão v2 | Vincula o JWT à aplicação e é comparado na verificação; o identificador é o único valor dessa família permitido na configuração pública |
-| `MANUS_JWT_SECRET` | Sim para login/verificação v2 | Chave privada HS256; permanece somente no ambiente do servidor |
-| `NODE_ENV` | Sim para seleção explícita de produção | `development` habilita Vite/HMR; qualquer execução de produção deve usar `production` |
-| `PORT` | Não | Padrão 3000; o servidor valida intervalo 1–65535; o container define `PORT=3000` |
+- SHA atual da branch `dashboard-v2`, SHA efetivamente salvo em `main`, versão/commit publicado, URL publicada e status corrente do serviço;
+- contagem atual de Leads, data da última importação, cobertura por fonte, estado de migrações no banco e existência/acesso da planilha-base;
+- IDs externos da planilha, JSON da conta de serviço, DSNs, tokens, senhas e qualquer outro segredo;
+- ocorrência atual de HTTP 503, OOM ou publicação antiga servindo tráfego.
 
-A whitelist de [`server/_core/publicConfig.ts`](../server/_core/publicConfig.ts) pode enviar ao navegador `MANUS_PROJECT_ID`, URLs públicas da plataforma e `MANUS_API_BROWSER_KEY`. Ela não serializa o ambiente inteiro. `MANUS_JWT_SECRET`, `DATABASE_URL` e chaves de servidor não devem aparecer em HTML, logs, artefatos, tickets ou comandos copiados para chat.
+A suíte funcional anteriormente aprovada registrou **463 testes em 60 arquivos**. Isso é evidência anterior, não um teste executado nesta revisão. A revisão estática não executou instalação, migração, importação, teste funcional ou publicação; o versionamento Git da documentação é uma etapa separada.
 
-Os runners de migração customizados não importam o entrypoint HTTP; ao executá-los como processos avulsos, assegure que a variável necessária esteja no ambiente do processo. Não presuma que o carregamento de `.env` do servidor ocorreu antes de um `pnpm exec tsx server/migrateV2*.ts`.
+Sempre separe:
 
-## 3. Instalação, validação e execução
+1. **Versão de trabalho:** commit em `dashboard-v2`.
+2. **Versão salva:** commit aceito em `main` e confirmado como checkpoint pela plataforma.
+3. **Versão publicada:** versão/commit que o serviço realmente está servindo após uma publicação separada e confirmada.
 
-Os comandos abaixo são os scripts existentes em [`package.json`](../package.json). Executá-los contra uma instalação local ou ambiente controlado é responsabilidade operacional; nenhum deles foi executado durante a produção desta documentação.
+Não chame a versão publicada de “nova” apenas porque existe um commit novo na branch de trabalho. Não chame um checkpoint de publicação bem-sucedida sem confirmação própria.
+
+## 2. Arquitetura executável observada
+
+| Camada               | Implementação no código atual                                                                                                      |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime              | Node.js 22, imagem `node:22-bookworm-slim`                                                                                         |
+| Gerenciador          | pnpm 10.18.0, declarado em `packageManager` e `devDependency`                                                                      |
+| HTTP                 | Express sobre servidor HTTP nativo                                                                                                 |
+| API                  | tRPC em `/api/trpc`, roteador em [`server/routers.ts`](../server/routers.ts)                                                       |
+| Frontend             | React + Vite; desenvolvimento com HMR no mesmo servidor                                                                            |
+| Banco                | MySQL/TiDB compatível via `mysql2`, camada customizada em [`server/v2Db.ts`](../server/v2Db.ts)                                    |
+| Build                | `vite build` produz o cliente em `dist/public`; esbuild empacota o servidor em `dist/index.js`                                     |
+| Listener             | `0.0.0.0`, com `PORT` validado entre 1 e 65535; padrão 3000                                                                        |
+| Conteúdo persistente | Contas, Leads, snapshots comerciais, dispatch, projeções, overrides, auditorias e proveniência privada conforme o esquema aplicado |
+
+O entrypoint em [`server/_core/index.ts`](../server/_core/index.ts) monta JSON/URL-encoded com limite de 2 MiB, expõe `/api/health`, monta tRPC e escolhe Vite em `NODE_ENV=development` ou arquivos estáticos em qualquer outro modo. O servidor não importa nenhum `migrateV2*.ts`, não faz seed e não importa planilha ao iniciar.
+
+O endpoint `GET /api/health` devolve `status: "ok"`, o produto e `environment: "homologacao"`. Ele é **somente liveness**: não testa banco, tabelas, migrações, Google Sheets ou outros serviços. O [`Dockerfile`](../Dockerfile) não declara `HEALTHCHECK`; se a infraestrutura usar uma sonda HTTP, ela deve chamar esse endpoint sem transformá-lo em readiness.
+
+A sessão usa cookie HTTP-only com `Secure`, `SameSite=None` e caminho `/`, conforme [`server/_core/cookies.ts`](../server/_core/cookies.ts). O ingresso externo deve terminar em HTTPS. A versão da sessão é consultada no banco; mudanças de papel, status ou senha incrementam `sessionVersion` e tornam tokens antigos inválidos.
+
+## 3. Instalação, scripts e container
 
 ### 3.1 Instalação reprodutível
 
-A partir da raiz do repositório:
+A partir da raiz do repositório, em uma instalação controlada:
 
 ```bash
 corepack enable
@@ -49,243 +70,253 @@ corepack prepare pnpm@10.18.0 --activate
 pnpm install --frozen-lockfile
 ```
 
-O [`Dockerfile`](../Dockerfile) repete essa política com `CI=1 pnpm install --frozen-lockfile` e aplica o patch declarado em [`pnpm-workspace.yaml`](../pnpm-workspace.yaml).
+O mesmo pin é usado no [`Dockerfile`](../Dockerfile), que copia `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml` e `patches` antes de executar `CI=1 pnpm install --frozen-lockfile`. O arquivo [`pnpm-workspace.yaml`](../pnpm-workspace.yaml) declara o patch do `wouter`, o override de `nanoid` e os pacotes que podem executar build nativo.
 
-### 3.2 Verificações sem escrita no banco
+Não registre a saída com DSNs ou segredos. Não inclua `.env` ou variantes no Git. O Dockerfile usa `COPY . .`; portanto, o contexto de build deve ser controlado para não carregar arquivos secretos ou operacionais. Variáveis privadas entram somente em runtime pelo mecanismo de segredos apropriado.
 
-```bash
-pnpm check
-pnpm test
-```
+### 3.2 Scripts existentes
 
-`pnpm check` executa `tsc --noEmit`. `pnpm test` executa `vitest run` para os testes em `server/**/*.test.ts`, `server/**/*.spec.ts` e `server/**/*.test.tsx`, com ambiente Node conforme [`vitest.config.ts`](../vitest.config.ts). As fixtures de teste são seguras quando executadas isoladas; não aponte `DATABASE_URL` de produção para testes que tenham integração de banco.
+| Script              | Efeito observado                                                       | Cuidados                                                                       |
+| ------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `pnpm dev`          | Define `NODE_ENV=development` e roda `tsx watch server/_core/index.ts` | Usa Vite/HMR e o mesmo servidor HTTP.                                          |
+| `pnpm build`        | Executa Vite e esbuild, gerando `dist/public` e `dist/index.js`        | É o build usado pelo container.                                                |
+| `pnpm start`        | Define `NODE_ENV=production` e roda `node dist/index.js`               | Não cria esquema, conta, seed ou import.                                       |
+| `pnpm check`        | `tsc --noEmit`                                                         | Não é migração nem teste de banco.                                             |
+| `pnpm test`         | `vitest run`                                                           | Não aponte testes de integração para o banco Manus compartilhado.              |
+| `pnpm dev:static`   | Vite estático em `0.0.0.0` usando `PORT` ou 3000                       | Não fornece Express, tRPC, autenticação nem `/api/health`.                     |
+| `pnpm build:static` | `vite build`                                                           | Gera somente o cliente; não substitui o bundle do servidor.                    |
+| `pnpm db:migrate`   | `drizzle-kit migrate`                                                  | Atua no starter Drizzle e pode escrever no banco.                              |
+| `pnpm db:push`      | `drizzle-kit generate && drizzle-kit migrate`                          | Pode gerar e aplicar mudança de esquema; não é procedimento do esquema `v2_*`. |
+| `pnpm format`       | Reescreve arquivos com Prettier                                        | Não use como etapa automática de deploy.                                       |
 
-`pnpm format` existe, mas reescreve arquivos do projeto inteiro. Não o use como passo automático de deploy sem revisão do diff.
+Uma execução controlada de `pnpm build` deve preceder `pnpm start` quando não houver `dist`. A ausência de `DATABASE_URL`, `MANUS_PROJECT_ID` ou `MANUS_JWT_SECRET` pode aparecer somente ao usar uma rota; o processo ainda pode começar a escutar antes disso.
 
-### 3.3 Desenvolvimento com API
+### 3.3 Imagem e processo
 
-```bash
-pnpm dev
-```
+O container atual:
 
-O script define `NODE_ENV=development` e executa `tsx watch server/_core/index.ts`. O Express monta a API, o Vite é acoplado em middleware e o HMR usa o mesmo servidor HTTP. O listener continua em `0.0.0.0`; ajuste `PORT` no ambiente se a máquina tiver outra necessidade.
+1. parte de Node 22 Bookworm Slim;
+2. ativa pnpm 10.18.0;
+3. instala o lockfile congelado;
+4. copia o projeto e executa `pnpm build` durante a criação da imagem;
+5. define `NODE_ENV=production` e `PORT=3000`;
+6. expõe 3000 e inicia `node dist/index.js`.
 
-Há também `pnpm dev:static` e `pnpm build:static`, que são comandos Vite estáticos. O modo estático não substitui o processo Express para as rotas tRPC, autenticação e `/api/health`.
-
-### 3.4 Build e produção
-
-```bash
-pnpm build
-pnpm start
-```
-
-`pnpm build` executa o build Vite e empacota [`server/_core/index.ts`](../server/_core/index.ts) com esbuild em `dist/index.js`. `pnpm start` define `NODE_ENV=production` e executa `node dist/index.js`; o diretório `dist` precisa existir. O servidor serve `dist/public` em produção por [`server/_core/vite.ts`](../server/_core/vite.ts).
-
-O caminho de container é equivalente:
+Referência de execução local com um arquivo controlado, sem colocar valores na linha de comando:
 
 ```bash
 docker build -t mgmotorsv2:local .
-docker run --rm -p 3000:3000 --env-file .env mgmotorsv2:local
+docker run --rm -p 3000:3000 --env-file <arquivo-de-ambiente-controlado> mgmotorsv2:local
 ```
 
-Use um arquivo de ambiente controlado, nunca coloque valores na linha de comando registrada ou na imagem. O exemplo acima é operacional e não deve ser usado para apontar testes para o banco de produção.
+Esses exemplos não foram executados nesta revisão. O arquivo controlado não pode apontar testes para o banco compartilhado ou de produção. Dados duráveis pertencem ao banco/armazenamento apropriado; não grave segredos ou dados de Leads na imagem.
 
-## 4. Health check e exposição de rede
+## 4. Variáveis de ambiente e segredos
 
-Após iniciar uma instância, o probe HTTP esperado é:
+Os nomes abaixo foram observados no código atual. Valores não pertencem a este documento.
 
-```bash
-curl --fail --silent --show-error http://127.0.0.1:3000/api/health
-```
+| Variável                                                           | Obrigatoriedade/alcance observado                       | Uso real                                                                                                                                                                                      |
+| ------------------------------------------------------------------ | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                                                     | Necessária para a camada `v2` e para comandos Drizzle   | DSN consumida por `mysql2` e `drizzle-kit`; somente no processo autorizado.                                                                                                                   |
+| `MANUS_PROJECT_ID`                                                 | Necessária para criar/verificar sessão V2               | Participa do claim `appId`; também pode ser enviado como configuração pública do navegador.                                                                                                   |
+| `MANUS_JWT_SECRET`                                                 | Necessária para login/verificação V2                    | Chave HS256 exclusiva do servidor; nunca vai para HTML, logs ou Git.                                                                                                                          |
+| `NODE_ENV`                                                         | Seleção explícita de execução                           | `development` liga Vite/HMR; `production` é usado pelo script de produção.                                                                                                                    |
+| `PORT`                                                             | Opcional                                                | Padrão 3000; o entrypoint rejeita valores fora de 1–65535.                                                                                                                                    |
+| `GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON`                               | Necessária somente para sync Google                     | JSON de conta de serviço com `client_email` e `private_key`; segredo somente do servidor.                                                                                                     |
+| `GOOGLE_SHEETS_SPREADSHEET_ID`                                     | Opcional para resolver a fonte                          | Quando presente, é usado como fonte configurada; quando ausente, o código consulta a fonte canônica registrada no banco. O valor nunca deve ser exposto neste guia.                           |
+| `MG_MIGRATION_ACTOR_ID`                                            | Somente na execução direta de `migrateV2ClientProfiles` | Identifica o Administrador ativo que audita a mudança de papel; não é valor para fixar ou compartilhar.                                                                                       |
+| `MG_SYNC_DIAGNOSTICS`                                              | Opt-in                                                  | Só quando exatamente `1`, registra amostras de uso de memória do sync; não ativa importação, não altera a lógica e não mede SLA.                                                              |
+| `MANUS_OAUTH_PORTAL_URL`, `MANUS_API_URL`, `MANUS_API_BROWSER_KEY` | Configuração pública opcional                           | [`server/_core/publicConfig.ts`](../server/_core/publicConfig.ts) envia somente esses valores e `MANUS_PROJECT_ID` ao navegador. Não confundir valores browser-safe com segredos de servidor. |
 
-O ingresso externo deve terminar em HTTPS antes de encaminhar para o processo, porque o cookie da sessão é sempre `Secure` e `SameSite=None` (detalhes em [`docs/SEGURANCA_E_ACESSO.md`](./SEGURANCA_E_ACESSO.md)). A porta interna padrão é 3000 e o listener é `0.0.0.0:3000` no container.
+A whitelist pública não serializa `process.env` inteiro. Em particular, não exponha `DATABASE_URL`, `MANUS_JWT_SECRET`, `GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON`, tokens, senhas ou IDs externos da planilha.
 
-O status 200 do endpoint não comprova que `DATABASE_URL` está acessível. Para uma readiness check real, a infraestrutura deve adicionar verificação controlada e não invasiva de dependências; isso não está implementado no código atual. Não há healthcheck Docker automático no [`Dockerfile`](../Dockerfile).
+## 5. Banco e migrações
 
-## 5. Banco: duas camadas que não devem ser confundidas
+### 5.1 Ambientes
 
-### 5.1 Starter Drizzle
+No projeto Manus atual, desenvolvimento e publicação **compartilham o banco gerenciado atual**. Isso significa que uma escrita, deleção, migração, importação ou teste que alcance essa base pode afetar o serviço publicado. Não use o banco compartilhado para experimentação.
 
-O [`drizzle.config.ts`](../drizzle.config.ts) aponta o `drizzle-kit` para `drizzle/schema.ts`, dialeto MySQL e a mesma `DATABASE_URL`. O journal atual do Drizzle registra apenas a migração starter `0000_initial_users`; ela cria a tabela `users` descrita em [`drizzle/0000_initial_users.sql`](../drizzle/0000_initial_users.sql).
+Para uma instalação nova, laboratório, fixture, teste de integração ou reprodução de falha, use uma instância MySQL/TiDB separada e uma `DATABASE_URL` separada. Essa separação experimental não deve ser descrita como uma característica do banco Manus atual.
 
-Os scripts existentes são:
+O starter Drizzle é configurado por [`drizzle.config.ts`](../drizzle.config.ts), aponta para [`drizzle/schema.ts`](../drizzle/schema.ts), usa dialeto MySQL e exige `DATABASE_URL`. Seus comandos (`db:migrate`/`db:push`) não criam nem evoluem todas as tabelas `v2_*`. Não use `db:push` cegamente para “corrigir” o esquema V2.
 
-```bash
-pnpm db:migrate
-pnpm db:push
-```
+### 5.2 Pré-requisitos e ordem manual
 
-`pnpm db:migrate` chama `drizzle-kit migrate`. `pnpm db:push` chama `drizzle-kit generate && drizzle-kit migrate`. Ambos podem escrever no banco; `db:push` também pode gerar mudança de esquema. Esses comandos pertencem ao esquema Drizzle starter e **não são o procedimento para criar ou evoluir as tabelas técnicas `v2_*`**.
+A ordem abaixo deriva das foreign keys, colunas e verificações efetivamente observadas. Ela é um runbook manual, não um “migrate all”. Faça revisão, aprovação e backup antes de cada mudança de esquema ou papel. Execute um processo por vez; **não copie os executáveis para um loop automático** e não os importe no startup.
 
-### 5.2 Banco customizado do produto
+1. **Base V2:** executar, em cliente SQL aprovado, [`drizzle/v2-base.sql`](../drizzle/v2-base.sql). Cria/garante contas, fonte, Leads, metas de Leads e auditoria de metas.
+2. **Dispatch base:** executar [`drizzle/v2-dispatch.sql`](../drizzle/v2-dispatch.sql). Cria relatórios, linhas, células, checks e auditoria de checks; suas foreign keys exigem contas V2.
+3. **Contas:** executar `pnpm exec tsx server/migrateV2Accounts.ts`. Garante o enum aditivo `admin`, `client`, `client_admin`, `bbro`, `sessionVersion`, tabelas de auditoria e marcadores. Promove somente uma conta existente com username `rodrigo` para `admin`; não cria conta, senha ou hash. A etapa de BBRO atua somente sobre a conta existente `bbro`, quando encontrada, pela autorização da conta Rodrigo; ao atribuir o papel, incrementa a versão da sessão.
+4. **Perfis de cliente:** executar `MG_MIGRATION_ACTOR_ID=<id-interno-de-admin-ativo> pnpm exec tsx server/migrateV2ClientProfiles.ts`. O runner valida, antes da mudança, que o ator é um Administrador ativo. Converte somente contas existentes com papel `client` para `client_admin`, incrementa `sessionVersion` e grava auditoria. Não seleciona nem altera `passwordHash` ou `isActive`, não converte `admin`/`bbro` e não cria conta. A marca de migração torna a execução idempotente.
+5. **Comercial:** executar `pnpm exec tsx server/migrateV2Commercial.ts`. Garante snapshots comerciais e `sourceWeek`, preservando snapshots antigos.
+6. **Registration:** executar `pnpm exec tsx server/migrateV2Registration.ts`. Adiciona `registrationMtd` e `registrationAsOf` como colunas nulas, sem backfill de snapshots antigos.
+7. **Retail:** executar `pnpm exec tsx server/migrateV2Retail.ts`. Adiciona `retailMtd` e `retailAsOf` como colunas nulas depois das colunas de Registration; preserva snapshots antigos e não faz backfill.
+8. **Lifecycle comercial:** executar `pnpm exec tsx server/migrateV2CommercialLifecycle.ts`. Cria estado/auditoria do ciclo, adiciona proveniência às metas e somente vincula metas legadas quando valor, horários, ator e auditoria conferem exatamente; incertezas permanecem manuais.
+9. **Registry de dealers:** executar `pnpm exec tsx server/migrateV2DealerRegistry.ts`. Cria o registro com chave normalizada; não importa linhas de dealers por conta própria.
+10. **Dispatch diário:** executar `pnpm exec tsx server/migrateV2DispatchDaily.ts`. Torna `volume` anulável, adiciona `sourcePending` e cria a tabela de imports de dispatch; preserva dados e checks existentes.
+11. **Meta total de vendas:** executar `pnpm exec tsx server/migrateV2SalesGoal.ts`. Cria tabelas de meta, auditoria e locks; não semeia nem reescreve valor importado.
+12. **Projeções de mídia:** executar `pnpm exec tsx server/migrateV2MediaPlanProjections.ts`. Cria versões, overrides e auditoria em três DDLs independentes; não semeia, reseta ou reescreve projeção aprovada.
+13. **Proveniência de Leads:** executar `pnpm exec tsx server/migrateV2LeadsSync.ts`. Cria somente `v2_lead_imports`, `v2_lead_sync_rows` e `v2_lead_sync_history`; não contém `ALTER`, `DROP`, `DELETE` nem backfill.
 
-O login e os dados do produto usam `v2_accounts` e as tabelas customizadas lidas por [`server/v2Db.ts`](../server/v2Db.ts). Não há um comando npm que aplique todos os SQL v2. Os arquivos e runners são intencionalmente explícitos e não são importados pelo startup da aplicação.
+Os nomes dos comandos acima são scripts avulsos reais, não comandos a serem concatenados. Os runners podem executar `ALTER TABLE`, criar locks ou atualizar proveniência; não há rollback SQL automático nem comando único de downgrade. Se uma etapa falhar, pare, preserve o erro seguro, revise o backup e a compatibilidade antes de tentar novamente.
 
-A regra operacional é: revisar o SQL, obter aprovação, fazer backup, executar em banco isolado ou janela controlada e validar o resultado. **Não use `pnpm db:push` cegamente para o esquema v2.**
+### 5.3 Configuração inicial de fonte: limite conhecido
 
-## 6. Banco novo: pré-requisitos e ordem de migração
+O sync exige o registro interno de fonte já configurado, e o dashboard usa `importedAt` como sinal de importação. No DDL atual, `v2_sources.importedAt` é `TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`. Criar uma linha vazia com esse padrão pode anunciar `READY` e permitir exportação sem uma importação concluída; a preparação do schema não comprova presença de dados.
 
-Esta seção descreve a ordem derivada das dependências reais, especialmente foreign keys e `SHOW COLUMNS`. Ela não é um runner automático; cada etapa é manual, revisável e não foi executada nesta tarefa.
+**Não criar um timestamp, hash ou total fictício para contornar a falta de bootstrap.** Uma instalação realmente vazia precisa de procedimento de inicialização/evolução de fonte aprovado e compatível com esse marcador; ele não é fornecido por um seed automático no código atual. Tornar a data anulável e definir o estado pré-importação seria uma mudança de schema/código com revisão e backup próprios, não algo aplicado por esta revisão documental. Em instalações existentes, preservar os metadados da importação real e não resetar a fonte.
 
-### 6.1 Pré-requisitos da base
-
-1. Disponibilize uma instância MySQL/TiDB vazia e separada de desenvolvimento/homologação/produção.
-2. Configure `DATABASE_URL` somente no ambiente do processo autorizado.
-3. Se o fluxo starter `users` também for necessário, aplique a migração Drizzle com aprovação:
-
-   ```bash
-   pnpm db:migrate
-   ```
-
-   Isso não cria contas `v2_accounts`.
-
-4. Em um cliente SQL aprovado, execute integralmente, nesta ordem, os dois DDLs base:
-
-   - [`drizzle/v2-base.sql`](../drizzle/v2-base.sql): cria `v2_accounts`, fontes, Leads, metas de Leads e auditoria de metas.
-   - [`drizzle/v2-dispatch.sql`](../drizzle/v2-dispatch.sql): cria relatórios, linhas, células, checks e auditoria de checks; suas foreign keys exigem `v2_accounts`.
-
-   Esses arquivos são SQL para execução controlada, não scripts do `package.json`. Não copie DSN, senha ou token para o comando, editor ou log do cliente SQL.
-
-### 6.2 Runners customizados
-
-Depois de `v2-base.sql` e `v2-dispatch.sql`, execute **um processo por vez**, na ordem abaixo, a partir da raiz do repositório:
-
-```bash
-pnpm exec tsx server/migrateV2Accounts.ts
-pnpm exec tsx server/migrateV2Commercial.ts
-pnpm exec tsx server/migrateV2Registration.ts
-pnpm exec tsx server/migrateV2CommercialLifecycle.ts
-pnpm exec tsx server/migrateV2DealerRegistry.ts
-pnpm exec tsx server/migrateV2DispatchDaily.ts
-pnpm exec tsx server/migrateV2SalesGoal.ts
-pnpm exec tsx server/migrateV2MediaPlanProjections.ts
-pnpm exec tsx server/migrateV2LeadsSync.ts
-```
-
-O motivo e o efeito esperado de cada runner são:
-
-| Ordem | Runner | Dependência/efeito observado |
-|---:|---|---|
-| 1 | [`server/migrateV2Accounts.ts`](../server/migrateV2Accounts.ts) | Adiciona/ajusta `role`, `sessionVersion`, auditoria e marcadores em `v2_accounts`; pode promover uma conta existente `rodrigo`, mas não cria conta nem senha. A atribuição BBRO é separada e condicionada à conta existente `bbro`. |
-| 2 | [`server/migrateV2Commercial.ts`](../server/migrateV2Commercial.ts) | Cria snapshots comerciais que referenciam `v2_accounts` e garante `sourceWeek`. |
-| 3 | [`server/migrateV2Registration.ts`](../server/migrateV2Registration.ts) | Adiciona, se ausentes, `registrationMtd` e `registrationAsOf` em `v2_commercial_imports`; por isso vem depois do runner comercial. |
-| 4 | [`server/migrateV2CommercialLifecycle.ts`](../server/migrateV2CommercialLifecycle.ts) | Cria estado/auditoria do ciclo comercial e adiciona proveniência às metas; lê `v2_commercial_imports` e `v2_lead_goals`. |
-| 5 | [`server/migrateV2DealerRegistry.ts`](../server/migrateV2DealerRegistry.ts) | Cria o registro persistido de dealers descobertos; não importa linhas por conta própria. |
-| 6 | [`server/migrateV2DispatchDaily.ts`](../server/migrateV2DispatchDaily.ts) | Exige `v2_dispatch_cells`, torna `volume` anulável, adiciona `sourcePending` e cria `v2_dispatch_imports`. |
-| 7 | [`server/migrateV2SalesGoal.ts`](../server/migrateV2SalesGoal.ts) | Cria tabelas de override, auditoria e mutex da meta total de vendas; não semeia valor. |
-| 8 | [`server/migrateV2MediaPlanProjections.ts`](../server/migrateV2MediaPlanProjections.ts) | Cria versões, overrides e auditoria de projeções; executa três DDLs independentes e não semeia projeções. |
-| 9 | [`server/migrateV2LeadsSync.ts`](../server/migrateV2LeadsSync.ts) | Cria apenas as três tabelas privadas de proveniência/cargas de Leads; exige fonte/contas já existentes e não importa dados. |
-
-Os runners são aditivos em sua intenção, mas alguns executam `ALTER TABLE` e o lifecycle pode vincular com segurança dados legados quando os encontra. Por isso o backup e a revisão de ambiente vêm antes da execução. Não existe rollback SQL automático ou um comando único de “migrate all”.
-
-### 6.3 O que não acontece no bootstrap
+### 5.4 O que não acontece no startup
 
 - O entrypoint não importa nenhum `migrateV2*.ts`.
-- Não há seed geral de conta, senha, meta, override, projeção ou import.
-- `v2-sales-goal.sql` e `v2-media-projections.sql` criam estruturas vazias; não copiam valores importados.
-- Não há ETL, sincronização automática ou importação de planilha no `pnpm start`.
-- Importações comerciais e de dispatch são ações autenticadas e administrativas, com prévia/commit conforme [`server/routers.ts`](../server/routers.ts).
+- `pnpm start` não executa DDL, seed, criação de conta, definição de senha, importação de planilha ou ETL.
+- Não há cron, agendamento ou sync Google automático no código lido.
+- O botão de Leads é uma ação autenticada e administrativa; clientes e BBRO não executam a importação.
+- Migrações e importações reais não são testes de Prévia. A Prévia não recebe automaticamente segredos configurados somente para publicação.
 
-## 7. Runbook de deploy
+## 6. Backup, aprovação e restauração
 
-### 7.1 Antes da mudança
+O código não implementa serviço automático de backup, restore ou rollback. Use a ferramenta SQL/backup aprovada, mantendo conexão e dados fora deste documento e do Git.
 
-1. **Bloqueio obrigatório:** nunca compartilhe o banco gerenciado de desenvolvimento/homologação com produção e nunca use o banco de produção em testes, fixtures, previews ou migrações experimentais. Identifique o ambiente e confirme que o banco é o correto; desenvolvimento, homologação e produção devem usar bancos distintos.
-2. Confirme o artefato/commit de código autorizado. A cópia pública não deve conter notas internas, identificadores de fontes, DSNs ou segredos; o código canônico continua no Manus.
-3. Valide que `DATABASE_URL`, `MANUS_PROJECT_ID` e `MANUS_JWT_SECRET` foram injetados pelo gerenciador de segredos, sem aparecerem em logs ou argumentos.
-4. Faça o backup lógico descrito na seção seguinte.
-5. Em ambiente não produtivo, rode `pnpm install --frozen-lockfile`, `pnpm check`, `pnpm test` e `pnpm build`.
-6. Revise qualquer DDL ou runner necessário. Não execute migração apenas porque o container iniciou.
+Antes de DDL, mudança de papel, deploy sensível ou importação real:
 
-### 7.2 Publicação
+1. confirme o ambiente, a versão de trabalho/checkpoint e o banco correto;
+2. obtenha aprovação explícita para a mudança;
+3. bloqueie mutações administrativas ou agende janela controlada quando necessário;
+4. faça backup lógico consistente de `users` se usado e das tabelas `v2_*`, incluindo auditorias, locks, snapshots e proveniência;
+5. criptografe e restrinja o arquivo fora do repositório;
+6. valide a leitura do backup em restauração isolada sem apontar a aplicação de produção;
+7. registre apenas metadados não secretos (ambiente, horário, escopo, versão e identificador interno do backup).
 
-1. Construa uma imagem imutável com o [`Dockerfile`](../Dockerfile). A imagem instala Node 22/pnpm 10.18, copia o código e executa `pnpm build`.
-2. Injete as variáveis no runtime, não durante a criação da imagem.
-3. Suba o processo com `node dist/index.js` e porta interna 3000.
-4. Configure o ingresso HTTPS e o probe `GET /api/health`.
-5. Confirme o status HTTP, logs de inicialização e disponibilidade das rotas sem imprimir cabeçalhos de cookie ou valores de ambiente.
-6. Faça smoke test com uma conta de teste do ambiente correto. Não suponha que exista um administrador inicial: o startup não cria um.
-7. Habilite tráfego gradualmente e monitore erros de banco, autenticação e conflito de versão. Não existe CI/CD ou publicação automática prometida por este repositório.
+Não registre DSN, senha, token, valor de `GOOGLE_SHEETS_SPREADSHEET_ID` ou conteúdo de Leads. Não apague snapshots/auditorias para fazer rollback. Para restaurar, use primeiro uma base isolada, compare estrutura/contagens/estado e só depois faça uma troca controlada. O artefato de aplicação precisa ser compatível com o esquema restaurado; não há downgrade automático.
+
+## 7. Runbook de deploy e checkpoint
+
+### 7.1 Antes da publicação
+
+1. Trabalhe na branch `dashboard-v2` do repositório GitHub privado canônico.
+2. Revise somente os arquivos autorizados para o commit e não inclua banco, segredos, dados, planilhas, dumps ou arquivos operacionais.
+3. Em ambiente experimental, use banco separado. No Manus atual, lembre que desenvolvimento e publicação compartilham o banco gerenciado.
+4. Faça backup/aprovação antes de qualquer DDL ou mudança de papel.
+5. Monte o container a partir do commit autorizado e injete variáveis privadas no runtime; não dependa de segredo durante a compilação.
+6. Confirme que `dist/index.js` e `dist/public` existem na imagem e que o listener usa `PORT`.
+7. Use `GET /api/health` somente para verificar liveness. Ele não comprova banco pronto nem migrações aplicadas.
+8. Não execute migrações, seed ou importação como efeito colateral de subir o container.
+
+### 7.2 Checkpoint, publicação e verificação de versão
+
+- Um checkpoint válido é o commit aceito em `main` e confirmado pela plataforma como versão salva.
+- A publicação é uma operação separada; a configuração canônica de publicação automática permanece `false`.
+- A versão em `dashboard-v2`, a versão salva em `main` e a versão servida devem ser registradas separadamente.
+- Só declare publicação concluída após confirmação da própria publicação, não por saída de um comando Git ou por existir um novo commit.
+- Não há promessa de CI/CD, webhook ou publicação automática neste projeto.
+
+Se uma publicação for autorizada, confirme também o commit/versão que o serviço realmente serve, o HTTP observado e os logs sem expor cookies ou ambiente. O estado publicado atual não foi consultado nesta revisão.
 
 ### 7.3 Pós-publicação
 
-- Verifique que a aplicação está ouvindo em `0.0.0.0:3000` e que o HTTPS chega ao processo.
-- Confirme `auth.me` após login, logout e nova leitura da sessão.
-- Confirme uma leitura de dashboard e uma rota de baixo risco com a permissão correspondente.
-- Para alterações de conta, confirme que o incremento de `sessionVersion` invalida sessões antigas.
-- Para projeções, confirme `expectedVersion`, auditoria e preservação do plano importado.
-- Para uploads, confirme que a prévia não grava e que apenas o commit autorizado altera snapshots.
+Faça, no ambiente correto e sob autorização, verificações de baixo risco:
 
-## 8. Backup e restauração — procedimento manual
+- liveness em `/api/health`;
+- login, `auth.me`, logout e nova leitura da sessão;
+- leitura do dashboard com a permissão correspondente;
+- mudança de conta somente quando aprovada, confirmando auditoria e invalidação de sessões antigas;
+- prévia e commit de importações sem confundir prévia com gravação;
+- após importação de Leads, confirmação da resposta do sync, data/cobertura e contagem canônica retornadas.
 
-O projeto não implementa serviço de backup, restore ou rollback automático. Use a ferramenta SQL/backup aprovada pela organização e mantenha os valores de conexão fora deste documento.
+Não transforme um status 200 de liveness em uma afirmação de readiness ou de integridade do banco.
 
-### 8.1 Backup antes de DDL, deploy sensível ou importação
+## 8. Sincronização manual REAL da base de Leads
 
-1. Coloque a aplicação em janela de manutenção ou bloqueie mutações administrativas; registre o horário e o ambiente.
-2. Pela ferramenta SQL aprovada, faça um backup lógico consistente da tabela starter `users` quando ela for utilizada e de todas as tabelas `v2_*`, incluindo tabelas de auditoria, estado, locks e snapshots.
-3. Trate o arquivo como material sensível: ele pode conter hashes de senha, dados de Leads, snapshots comerciais e auditorias. Criptografe, restrinja acesso e armazene fora do repositório.
-4. Registre apenas metadados operacionais não secretos: ambiente, hora, escopo, versão do artefato e identificador/hash do backup. Nunca registre DSN, senha ou token.
-5. Valide que o arquivo pode ser lido em uma restauração isolada antes de uma mudança irreversível.
+### 8.1 Origem, credencial e alcance
 
-### 8.2 Restauração controlada
+O procedimento real é a mutation administrativa `leads.syncBase`. O servidor obtém um snapshot do Google Sheets por conta de serviço própria, usando JWT para token e o escopo oficial `spreadsheets.readonly`. A credencial é `GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON`, somente no servidor, com `client_email` e `private_key`; nunca deve chegar ao navegador, Git, chat, planilha pública ou linha de comando registrada.
 
-1. Interrompa ou coloque em manutenção as escritas da aplicação.
-2. Restaure o backup em uma base isolada primeiro. Compare contagens, chaves, tabelas de auditoria e estado dos snapshots.
-3. Após aprovação, restaure a base alvo usando a ferramenta SQL/backup, seguindo a política de transação e lock da própria ferramenta.
-4. Aponte uma instância controlada para a base restaurada; não altere produção diretamente para “testar”.
-5. Execute o probe HTTP, faça leitura autenticada e verifique logs sem dados sensíveis.
-6. Se o rollback for aprovado, mantenha o artefato de aplicação compatível com o esquema restaurado. Não existe migração de downgrade automática; a compatibilidade deve ser revisada manualmente.
+O acesso Google deve ser concedido como **Leitor** à conta de serviço. A planilha não deve ser tornada pública. O código chama os endpoints oficiais de metadados e `values:batchGet`; não escreve na planilha e não usa token OAuth de conector da sessão.
 
-## 9. Rollback operacional manual
+A fonte é resolvida pelo registro canônico de fonte no banco, salvo quando `GOOGLE_SHEETS_SPREADSHEET_ID` é fornecido explicitamente. O código valida que o snapshot recebido corresponde à fonte autorizada. Este guia não imprime nem fixa o ID externo da planilha. O identificador interno da fonte é uma relação de banco, não um ID de plataforma ou de planilha a ser exibido.
 
-O rollback é uma decisão e execução de operador, não uma feature automática:
+As abas aceitas pelo código são exatamente: `Site`, `Meta`, `Tiktok - Live`, `Tikok`, `Weebmotors`, `Uol`, `Mercado Livre` e `Interlagos`. `Página10` é excluída. Abas não autorizadas, repetidas, sem cabeçalho válido, sem cabeçalho de data ou com data inválida rejeitam o snapshot antes da gravação.
 
-1. Pare o tráfego de escrita e capture um backup do estado atual para preservar evidência.
-2. Se o problema for de código, volte a uma imagem/artefato previamente validado.
-3. Se o problema for de banco, restaure o backup aprovado em base isolada, valide e somente então faça a troca controlada.
-4. Refaça o `/api/health`, login, leitura de dashboard e verificações de permissão.
-5. Mantenha a aplicação em manutenção até confirmar que o código e o esquema são compatíveis.
-6. Reabra escrita manualmente e registre causa, horário, artefato e backup usados.
+A identidade física de uma ocorrência é **aba + número da linha**. O ID externo que eventualmente exista em uma célula é apenas campo de proveniência; não deduplica linhas. Duplicidades manuais autorizadas permanecem como ocorrências separadas. Os valores brutos, cabeçalhos, timestamp, modelo, dealer e payload ficam em proveniência privada; APIs públicas do dashboard não selecionam esses payloads.
 
-Não remova tabelas, não execute `db:push` para “corrigir” produção e não apague snapshots/auditorias como forma de rollback. As fontes comerciais são snapshots imutáveis; a remoção de uma fonte usa estado/auditoria, e as versões anteriores devem permanecer preservadas.
+### 8.2 Transação, idempotência e contagem canônica
 
-## 10. Pontos de atenção conhecidos
+O mapper prepara e valida o snapshot completo antes de abrir a transação. Dentro da transação, o serviço:
 
-- O health check informa sempre `environment: "homologacao"` e não testa a disponibilidade do banco; trate-o como liveness até que a infraestrutura complemente a readiness.
-- O [`Dockerfile`](../Dockerfile) não tem instrução `HEALTHCHECK`; a sonda deve ser configurada no orquestrador.
-- O limite de login é em memória e por processo; ele não substitui um rate limit distribuído no ingress.
-- O cookie exige HTTPS mesmo em desenvolvimento e `SameSite=None` requer revisão de proteção de origem/CSRF.
-- A ausência de `DATABASE_URL`, `MANUS_PROJECT_ID` ou `MANUS_JWT_SECRET` pode só aparecer quando uma rota usar o recurso; o processo pode escutar antes disso.
-- Não há bootstrap automático de administrador, ETL periódico, importação automática, serviço gerenciado transferido ou pipeline de publicação garantido pelo código lido.
+1. bloqueia a fonte canônica e confirma que o identificador recebido corresponde a ela;
+2. calcula o hash SHA-256 canônico do snapshot e serializa somente a representação necessária;
+3. se o hash atual for igual ao importado anteriormente, confirma a transação sem escrita de linhas e retorna `changed: false`;
+4. se houver mudança, registra o import, faz UPSERT por `(sourceSheet, sourceRow)`, preserva IDs físicos, registra histórico somente para inserções/alterações e atualiza a proveniência atual;
+5. calcula a contagem **física persistida** com `COUNT(*)` de `v2_leads`, a data física mais recente e contagens por origem;
+6. atualiza a fonte com horário, contagem, erros de data e hash e só então faz `COMMIT`.
 
-## 11. Referências operacionais
+Linhas ausentes em uma nova fotografia não são apagadas. Por isso, `totalRows` é a contagem física persistida de `v2_leads`, e não uma promessa de que a planilha recebida contém exatamente esse número de linhas. O total analítico do dashboard é calculado separadamente pelo contador canônico com datas/identidade/ciclo de canais; os dois totais não precisam coincidir. Carga idêntica é no-op e não altera o horário da última importação. Falha de validação, fonte incorreta, credencial ausente ou erro dentro da transação faz rollback e preserva a base anterior.
 
-- [Scripts e versões — `package.json`](../package.json)
-- [Imagem e processo — `Dockerfile`](../Dockerfile)
-- [Entrypoint Express/tRPC — `server/_core/index.ts`](../server/_core/index.ts)
-- [Vite, arquivos estáticos e servidor — `server/_core/vite.ts`](../server/_core/vite.ts)
-- [Configuração Vite — `vite.config.ts`](../vite.config.ts)
-- [Configuração Drizzle — `drizzle.config.ts`](../drizzle.config.ts)
-- [Journal starter — `drizzle/meta/_journal.json`](../drizzle/meta/_journal.json)
-- [Schema starter — `drizzle/schema.ts`](../drizzle/schema.ts)
-- [Banco customizado — `server/v2Db.ts`](../server/v2Db.ts)
-- [Roteadores, autorização e uploads — `server/routers.ts`](../server/routers.ts)
-- [Base customizada — `drizzle/v2-base.sql`](../drizzle/v2-base.sql)
-- [Controle de dispatch — `drizzle/v2-dispatch.sql`](../drizzle/v2-dispatch.sql)
-- [Runners customizados — diretório `server/`](../server/)
-- [Segurança e matriz de acesso — `docs/SEGURANCA_E_ACESSO.md`](./SEGURANCA_E_ACESSO.md)
+A resposta dinâmica pode conter `changed`, `importedAt`, `totalRows`, `inserted`, `updated`, `sourceCounts` e `latestLeadDate`. Não grave nenhum desses valores como constante no guia.
 
-## 12. Sincronização manual REAL da planilha-base de Leads
+**Limite atual de cobertura:** `latestLeadDate` e datas por origem da resposta do sync ainda são físicas. O dashboard anuncia limites físicos e considera disponibilidade diária pelo limite superior, sem aplicar o início da cobertura; a análise administrativa usa `readV2LeadCoverage` do contador canônico. Antes do primeiro histórico ou quando a regra corrige datas, zero/data física não comprova cobertura analítica. Unificar esses limites é uma pendência técnica, não uma correção executada nesta documentação.
 
-O botão administrativo **Atualizar base de Leads** chama `leads.syncBase`, que consulta o Google Sheets no servidor, valida o snapshot completo e aplica uma carga transacional em `v2_leads`. Não se limita a invalidar caches. Clientes e BBRO não podem executar essa importação; a ação de leitura desses perfis apenas atualiza os indicadores do banco.
+### 8.3 Fluxo do popup e versão confirmada
 
-Configure **GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON** como segredo somente do servidor pelo cartão seguro do Manus, nunca em chat, arquivo versionado, JavaScript do cliente ou comando de shell. O valor deve ser o JSON de uma conta de serviço Google própria, com `client_email` e `private_key`. Habilite Google Sheets API no projeto Google dessa conta e compartilhe a planilha-base somente como **Leitor** com seu `client_email`. Não torne a planilha pública. Não copie tokens OAuth do conector da sessão ao site. A chamada pede apenas `spreadsheets.readonly`, usa os endpoints fixos oficiais do Google e nunca escreve na planilha.
+O fluxo operacional da interface administrativa deve ser tratado nesta ordem:
 
-O ID da base vem do registro `v2_sources.id=1`; `GOOGLE_SHEETS_SPREADSHEET_ID` pode confirmar explicitamente esse mesmo ID. Uma fotografia de outra planilha é recusada. Se a chave estiver ausente, inválida ou sem acesso, não haverá sucesso fictício: a base anterior é mantida e a interface informa a pendência/falha. Um valor configurado precisa existir no ambiente de execução efetivo; configurar somente produção não carrega o segredo na Prévia.
+1. abrir o popup de importação e iniciar `leads.syncBase`;
+2. aguardar a resposta do servidor; o clique, por si só, não confirma gravação;
+3. somente após o commit/no-op confirmado, invalidar as leituras de Leads, modelos e CRM e refazer a consulta do dashboard;
+4. comparar `fresh.source.importedAt` e `fresh.source.totalRows` com a versão retornada pelo sync; se não conferir, emitir `LEADS_RELOAD_VERSION_NOT_CONFIRMED`;
+5. mostrar no popup o resultado da consulta confirmada e os metadados/alterações da importação, mantendo separados total físico e analítico;
+6. concluir sucesso somente após a confirmação. Erro dentro da transação implica rollback; erro de transporte ou da consulta posterior não prova rollback, pois a importação pode já ter sido gravada. Nesses casos, não anunciar sucesso nem reenviar cegamente: verificar a versão observada com leitura segura.
 
-Antes da primeira carga deste mecanismo, execute explicitamente `pnpm exec tsx server/migrateV2LeadsSync.ts` no banco autorizado, após revisão. A migration cria apenas `v2_lead_imports`, `v2_lead_sync_rows` e `v2_lead_sync_history`; não roda no startup e não cria metas ou contas. Desenvolvimento e publicação deste projeto Manus compartilham o banco gerenciado, portanto não use importações reais como testes.
+Esse botão não cria cron, não publica o site, não altera contas/metas/projeções/checks e não substitui uma operação de checkpoint/publicação.
 
-As abas de canais reconhecidas são Site, Meta, Tiktok - Live, Tikok, Weebmotors, Uol, Mercado Livre e Interlagos. Página10 não é uma fonte. Header/date inválidos rejeitam a carga antes de gravar. A identidade de uma ocorrência é **aba + linha**, não ID de plataforma: duplicidades manuais autorizadas permanecem como ocorrências separadas. IDs, timestamps, modelos, dealers e células brutas permanecem em proveniência privada no banco; esses payloads não são enviados pelas APIs de dashboard. IDs internos existentes são preservados por UPSERT e registros históricos/linhas ausentes nunca são apagados. Cargas iguais são no-op, sem alterar o timestamp da última importação.
+## 9. Diagnóstico de publicação antiga, HTTP 503 e OOM
 
-A importação não modifica contas, metas de Leads/vendas, projeções de mídia, checks ou auditorias administrativas. Após um commit confirmado, a interface invalida as leituras de Leads e CRM e apresenta data da importação/cobertura da fonte. O filtro padrão continua até D-1 em America/Sao_Paulo. Este botão não configura cron, agendamento nem publicação; isso permanece separado da sincronização manual.
+### 9.1 Publicado antigo versus commit novo
+
+Quando uma alteração parece não estar no site, primeiro separe as três versões: commit em `dashboard-v2`, checkpoint confirmado em `main` e versão realmente publicada. Confirme o SHA/versão servido por evidência da publicação e compare com o checkpoint; não conclua que o serviço está novo por causa de um push ou build local. A versão publicada corrente não foi confirmada nesta revisão.
+
+### 9.2 HTTP 503
+
+`/api/health` é liveness e o processo escuta em `0.0.0.0`; o Dockerfile expõe 3000, mas não instala uma readiness probe. Um HTTP 503 pode vir do ingresso, do orquestrador, de uma instância que não iniciou ou de uma versão publicada antiga. Verifique, em sequência controlada, a versão servida, o estado do container/orquestrador, os logs seguros, a porta/`PORT` e a resposta de liveness. Não declare o banco pronto apenas pelo health 200.
+
+### 9.3 OOM e memória do sync
+
+O sync já limita a resposta Google a 32 MiB, lê o corpo por chunks quando `response.body` permite, faz UPSERT/histórico em lotes de 300 linhas e usa hashing canônico incremental. Isso reduz picos, mas não transforma o processamento inteiro em memória constante: o snapshot/JSON validado ainda precisa ser materializado para validação e importação.
+
+`MG_SYNC_DIAGNOSTICS=1` é **opt-in somente para memória**. O código registra amostras de `rss`, heap, memória externa e buffers em fases como preparação do snapshot, leitura de texto Google, parse JSON e leitura do snapshot. Não registra payloads, credenciais, IDs externos ou conteúdo da planilha e não habilita nenhuma operação adicional.
+
+Uma correção importante foi reutilizar `Intl.DateTimeFormat` em [`shared/dashboardDates.ts`](../shared/dashboardDates.ts) e [`server/v2Mapper.ts`](../server/v2Mapper.ts), evitando criar instâncias nativas ICU por timestamp de Lead. A leitura analítica usa streaming/backpressure, e o mapper/hashing reduz cópias de payload. Essas proteções têm perfis de memória diferentes; use as amostras para comparar uma execução controlada, sem prometer duração, throughput ou um tempo fixo de conclusão. Se houver OOM, compare a versão publicada com o checkpoint, reduza o escopo/concorrência conforme a política de infraestrutura e preserve logs sem dados sensíveis antes de alterar código ou banco.
+
+## 10. Pontos de atenção permanentes
+
+- Health é liveness, não readiness.
+- Startup do site não faz migração, seed, importação nem sincronização.
+- Desenvolvimento e publicação Manus compartilham o banco gerenciado atual; instalações/testes experimentais usam banco separado.
+- DDL e mudança de papel exigem backup, aprovação e execução manual, um runner por vez.
+- `migrateV2ClientProfiles` exige Administrador ativo validado, registra auditoria e revoga sessões dos clientes convertidos via `sessionVersion`.
+- Não use `pnpm db:push` como migração V2.
+- Não há conta, senha, administrador, cron, ETL ou CI/CD criados automaticamente pelo startup/código lido.
+- Limite de login é em memória e por processo; não substitui rate limit distribuído no ingresso.
+- Cookies de sessão exigem HTTPS e `SameSite=None`; revise proteção de origem/CSRF na infraestrutura.
+- Banco, segredos, dados, imagens, planilhas e arquivos operacionais não são artefatos de Git/deploy.
+
+## 11. Fontes reais
+
+As referências abaixo são arquivos do código atual usados nesta revisão:
+
+- Scripts e versões: [`package.json`](../package.json), [`pnpm-workspace.yaml`](../pnpm-workspace.yaml), [`pnpm-lock.yaml`](../pnpm-lock.yaml).
+- Imagem e processo: [`Dockerfile`](../Dockerfile), [`server/_core/index.ts`](../server/_core/index.ts), [`server/_core/vite.ts`](../server/_core/vite.ts).
+- Configuração pública e cookies: [`server/_core/publicConfig.ts`](../server/_core/publicConfig.ts), [`server/_core/cookies.ts`](../server/_core/cookies.ts), [`vite.config.ts`](../vite.config.ts).
+- API e acesso: [`server/routers.ts`](../server/routers.ts), [`server/v2Db.ts`](../server/v2Db.ts), [`server/v2Accounts.ts`](../server/v2Accounts.ts), [`server/v2Auth.ts`](../server/v2Auth.ts).
+- Banco starter: [`drizzle.config.ts`](../drizzle.config.ts), [`drizzle/schema.ts`](../drizzle/schema.ts), [`drizzle/meta/_journal.json`](../drizzle/meta/_journal.json).
+- DDL base: [`drizzle/v2-base.sql`](../drizzle/v2-base.sql), [`drizzle/v2-dispatch.sql`](../drizzle/v2-dispatch.sql), [`drizzle/v2-commercial.sql`](../drizzle/v2-commercial.sql), [`drizzle/v2-accounts.sql`](../drizzle/v2-accounts.sql), [`drizzle/v2-client-profiles.sql`](../drizzle/v2-client-profiles.sql), [`drizzle/v2-retail.sql`](../drizzle/v2-retail.sql).
+- Runners: [`server/migrateV2Accounts.ts`](../server/migrateV2Accounts.ts), [`server/migrateV2ClientProfiles.ts`](../server/migrateV2ClientProfiles.ts), [`server/migrateV2Commercial.ts`](../server/migrateV2Commercial.ts), [`server/migrateV2Registration.ts`](../server/migrateV2Registration.ts), [`server/migrateV2Retail.ts`](../server/migrateV2Retail.ts), [`server/migrateV2CommercialLifecycle.ts`](../server/migrateV2CommercialLifecycle.ts), [`server/migrateV2DealerRegistry.ts`](../server/migrateV2DealerRegistry.ts), [`server/migrateV2DispatchDaily.ts`](../server/migrateV2DispatchDaily.ts), [`server/migrateV2SalesGoal.ts`](../server/migrateV2SalesGoal.ts), [`server/migrateV2MediaPlanProjections.ts`](../server/migrateV2MediaPlanProjections.ts), [`server/migrateV2LeadsSync.ts`](../server/migrateV2LeadsSync.ts).
+- Sync real de Leads: [`shared/leadsSync.ts`](../shared/leadsSync.ts), [`server/v2LeadsSync.ts`](../server/v2LeadsSync.ts), [`server/v2LeadsSyncMapper.ts`](../server/v2LeadsSyncMapper.ts), [`drizzle/v2-leads-sync.sql`](../drizzle/v2-leads-sync.sql).
+
+### Alertas de fatos ainda não confirmados
+
+1. Não foi confirmado nesta revisão qual SHA está em `dashboard-v2`, qual checkpoint está registrado em `main` ou qual versão/commit está publicado.
+2. Não foi confirmado o estado corrente do banco, das migrações, da conta de serviço, do acesso de Leitor, da planilha-base ou das contagens de Leads.
+3. Não foi confirmado se existe atualmente HTTP 503, OOM ou uma publicação antiga servindo tráfego; a seção de diagnóstico é preventiva.
+4. A suíte de 463 testes em 60 arquivos é evidência anterior; nenhum teste foi executado para esta revisão.
