@@ -248,3 +248,15 @@ Salvar o código sanitizado no repositório Manus e depois tentar atualizar a c�
 ## Conversion ao lado de Retail — 09/11/2026
 
 O bloco Sales passa a usar quatro indicadores na mesma linha desktop: Sales goal, Total sales (MTD Registration), Retail e Conversion. Reutilizar o mesmo componente de indicador e notas de fonte/escopo; manter os cálculos, valores, idiomas e N/A sem comparabilidade. Em telas pequenas a grade continua responsiva. A confirmação de criação GitHub foi cancelada pelo usuário; não reabrir ou transferir, mantendo o repositório Manus e publicação separada.
+
+## Acesso Thiago / mg e retorno indevido de aba — 09/11/2026
+
+Corrigir o efeito de normalização: ADM - Cliente e BBRO conservam Stores & CRM, Regions e Leads, sem poder acessar Model analysis administrativa. Somente Cliente overview-only é normalizado sempre para Overview. Thiago permanece client_admin com leitura dos módulos/abas que lhe são permitidos, sem gestão/importação. Verificar mg e definir client somente se necessário via atualização de conta auditada, sem senha/status ou outros usuários; mostrar apenas Leads/Overview, com autorização no servidor e URL normalizada. Não alterar V1, dados, metas ou controles; salvar correção no Manus separadamente de publicação.
+
+## Evolução diária administrativa por modelo — 09/11/2026
+
+Substituir a barra única diária de todos os modelos por barras agrupadas, uma por modelo em cada data, com cores/legenda consistentes e volumes reais do contrato existente. A seleção de um modelo mantém somente sua série; ausência/futuro continuam N/D e zero coberto permanece zero. Não recalcular fonte, mudar filtros ou liberar a aba administrativa para perfis de cliente. Preservar tabela/detalhes e acesso do Administrador.
+
+## Corrigir persistência de abas ADM - Cliente e restringir MG — 09/11/2026
+
+A normalização de abas confundia ausência de acesso à análise administrativa por modelo com acesso somente Overview, fechando Stores & CRM, Regions e Leads de ADM - Cliente/BBRO. Corrigir só a guarda de normalização: quatro abas permitidas permanecem abertas; análise por modelo continua exclusiva de Administrador. Thiago permanece client_admin, com leitura de Leads, Media plan e Dispatch/CRM. A conta MG (`mgmotor`) passa a client/Overview pela atualização auditada existente, preservando senha/status e invalidando sua sessão anterior; `mgsales`, Thiago, Administrador e BBRO ficam inalterados. Conferência de APIs não sincroniza dados nem cria CSVs.

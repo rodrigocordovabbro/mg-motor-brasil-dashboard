@@ -354,3 +354,14 @@ Bloqueio verificado: integração ativa autenticada como rodrigocordovabbro; vie
 - [x] Conversion/Conversão é o quarto indicador do bloco Sales/Vendas, imediatamente ao lado de Retail, na mesma grade de Sales goal → MTD Registration → Retail → Conversion em desktop; responsivo em telas menores. Mesmos valores/cálculo de Retail ÷ Leads, fontes, nomes PT/EN e N/A para ausência/recorte não comparável. Não sincronizar ou alterar Leads, metas, vendas, CRM, contas ou V1; salvar no Manus sem publicação ou transferência GitHub cancelada.
 
 Evidência: oito regressões do resumo (duas novas de ordem/grid PT/EN) e 14 regressões de apresentação/conversão aprovadas, total 22; TypeScript, build e diff-check aprovados; health/manifesto HTTP 200. Alteração limitada ao layout e testes/documentação, sem chamadas de dados ou contas. Criação GitHub cancelada pelo usuário; transferência nula confirmada, sem reabertura ou envio de código.
+
+## Restaurar abas do ADM - Cliente e restringir mg — 09/11/2026
+
+- [x] Thiago/ADM - Cliente consegue abrir e permanecer em Overview, Stores & CRM, Regions e Leads, além de Media plan/Dispatch control permitidos, sem gestão de usuários, importação ou Model analysis exclusiva do Administrador. Corrigir a normalização que indevidamente retorna qualquer aba a Overview; manter bloqueio de Model analysis e ações de escrita.
+- [x] mg (`mgmotor`)/Cliente possui somente Leads → Overview visível; URLs de guias/módulos não autorizados são normalizadas e APIs restritas continuam negadas, incluindo exportação/linhas individuais. Papel atualizado pela rotina auditada, senha/status preservados e sessão MG anterior invalidada; mgsales, Thiago/client_admin, outros papéis, Leads e checks intactos. Não alterar metas/CRM/V1 nem publicar automaticamente; testar e salvar no Manus.
+
+## Barras diárias separadas por modelo na análise administrativa — 09/11/2026
+
+- [x] Gráfico de evolução diária apresenta uma barra para cada modelo por dia, agrupadas lado a lado, com cores/legenda e volumes próprios. Seleção local mantém o modelo escolhido; soma dos modelos equivale ao volume do dia quando coberto, preservando zero e N/D/futuro sem inventar dados. Mesma população, escala e filtros; não sincronizar, mudar backend/dados ou acesso exclusivo do Administrador. Testar e salvar a apresentação, sem publicação automática.
+
+Evidência: cinco regressões executam os efeitos reais após seleção de abas; oito regressões de barras/insights comprovam modelos, soma, seis cores, seleção, zero e N/D. HTTP administrativo validou Thiago com as leituras permitidas e mgmotor com as APIs restritas Forbidden; atualização de mgmotor comprovou senhas/status, demais papéis, população de Leads e checks/auditoria CRM idênticos. TypeScript, suíte completa de 462 testes/60 arquivos e build aprovados; health/manifesto HTTP 200. Sessões/resultados apenas em memória, sem sincronização ou CSV. Correção de frontend salva na Prévia, ainda separada da publicação.

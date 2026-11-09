@@ -9,17 +9,19 @@ import type {
   AdminModelMixOpportunity,
   AdminModelQualityGap,
 } from "@shared/adminModelInsights";
+import { OFFICIAL_MODELS, UNIDENTIFIED_MODEL } from "@shared/modelRegistry";
 import V2ModelsDashboard from "./V2ModelsDashboard";
 
 const ALL_MODELS = "Todos";
-const MODEL_COLORS = [
-  "#e2212d",
-  "#2563eb",
-  "#0f766e",
-  "#d97706",
-  "#7c3aed",
-  "#64748b",
-];
+const MODEL_COLORS: Record<string, string> = {
+  "MG 4": "#2563eb",
+  "MG Urban": "#7c3aed",
+  "MG S5": "#0f766e",
+  "MG Cyberster": "#b45309",
+  "IM 6": "#be185d",
+  [UNIDENTIFIED_MODEL]: "#64748b",
+};
+const FALLBACK_MODEL_COLORS = ["#e2212d", "#d97706", "#0891b2", "#4338ca"];
 
 const DIMENSION_LABELS: Record<AdminModelInsightsDimension, string> = {
   state: "Estado",
@@ -100,12 +102,13 @@ function coverageLabel(
   }[value];
 }
 
-function modelColor(model: string): string {
+export function modelColor(model: string): string {
+  if (MODEL_COLORS[model]) return MODEL_COLORS[model];
   const hash = [...model].reduce(
     (total, character) => total + character.charCodeAt(0),
     0
   );
-  return MODEL_COLORS[hash % MODEL_COLORS.length];
+  return FALLBACK_MODEL_COLORS[hash % FALLBACK_MODEL_COLORS.length];
 }
 
 function Card({
@@ -608,80 +611,183 @@ function MatrixTable({
   );
 }
 
-function DailySeries({
+function dailyModelNames(
+  data: Pick<AdminModelInsights, "daily" | "mix">,
+  selectedModel: string
+): string[] {
+  if (selectedModel !== ALL_MODELS) return [selectedModel];
+
+  const available = new Set<string>([
+    ...data.mix.models.map(item => item.model),
+    ...data.daily.flatMap(day => Object.keys(day.models ?? {})),
+  ]);
+  if (data.mix.unidentifiedTotal > 0) available.add(UNIDENTIFIED_MODEL);
+
+  const official = new Set<string>(OFFICIAL_MODELS);
+  const canonical: string[] = OFFICIAL_MODELS.filter(model =>
+    available.has(model)
+  );
+  if (available.has(UNIDENTIFIED_MODEL)) canonical.push(UNIDENTIFIED_MODEL);
+  const extra = [...available]
+    .filter(model => !official.has(model) && model !== UNIDENTIFIED_MODEL)
+    .sort((a, b) => a.localeCompare(b, "pt-BR"));
+  return [...canonical, ...extra];
+}
+
+export type AdminModelDailySeriesPoint = {
+  date: string;
+  total: number | null;
+  sourceAvailable: boolean;
+  models: Array<{ model: string; value: number | null }>;
+};
+
+export function buildAdminModelDailySeries(
+  data: Pick<AdminModelInsights, "daily" | "mix">,
+  selectedModel: string
+): AdminModelDailySeriesPoint[] {
+  const models = dailyModelNames(data, selectedModel);
+  return data.daily.map(day => ({
+    date: day.date,
+    total: day.sourceAvailable && finite(day.total) ? day.total : null,
+    sourceAvailable: day.sourceAvailable,
+    models: models.map(model => {
+      const rawValue = day.models?.[model];
+      return {
+        model,
+        value:
+          day.sourceAvailable && finite(day.total)
+            ? finite(rawValue)
+              ? rawValue
+              : 0
+            : null,
+      };
+    }),
+  }));
+}
+
+export function DailySeries({
   data,
   selectedModel,
 }: {
   data: AdminModelInsights;
   selectedModel: string;
 }) {
+  const models = useMemo(
+    () => dailyModelNames(data, selectedModel),
+    [data, selectedModel]
+  );
   const series = useMemo(
-    () =>
-      data.daily.map(day => ({
-        ...day,
-        visibleTotal: day.sourceAvailable
-          ? selectedModel === ALL_MODELS
-            ? day.total
-            : (day.models[selectedModel] ?? 0)
-          : null,
-      })),
-    [data.daily, selectedModel]
+    () => buildAdminModelDailySeries(data, selectedModel),
+    [data, selectedModel]
   );
   const max = Math.max(
     1,
     ...series.flatMap(day =>
-      finite(day.visibleTotal) ? [day.visibleTotal] : []
+      day.models.flatMap(point => (finite(point.value) ? [point.value] : []))
     )
   );
+  const dayWidth = Math.max(88, models.length * 32 + 20);
+  const columnCount = Math.max(series.length, 1);
+  const chartMinWidth = Math.max(720, series.length * dayWidth);
+
   return (
     <Card testId="admin-model-insights-daily">
       <CardHeading
         eyebrow="Evolução diária"
         title={`Leads por dia · ${selectedModelLabel(selectedModel)}`}
-        description="Barras representam volume real do dia no recorte selecionado. Zero coberto é zero real; fora da cobertura ou futuro permanece N/D."
+        description="Cada dia mostra uma barra por modelo, lado a lado. Zero coberto é zero real; fora da cobertura ou futuro permanece N/D."
       />
-      <div className="max-w-full overflow-auto px-5 py-5" tabIndex={0}>
+      <div
+        className="max-w-full overflow-x-auto px-5 py-5"
+        tabIndex={0}
+        aria-label="Rolagem horizontal da série diária"
+      >
         <div
-          className="grid min-w-[720px] grid-flow-col auto-cols-[minmax(48px,1fr)] items-end gap-2 border-b border-slate-200 pb-2"
-          style={{ minHeight: 230 }}
-          aria-label="Série diária de Leads"
+          className="grid items-end gap-2 border-b border-slate-200 pb-2"
+          style={{
+            minHeight: 270,
+            minWidth: chartMinWidth,
+            gridTemplateColumns: `repeat(${columnCount}, minmax(${dayWidth}px, 1fr))`,
+          }}
+          role="group"
+          aria-label="Série diária de Leads agrupada por modelo"
         >
-          {series.map((day, index) => {
-            const value = day.visibleTotal;
-            const height =
-              finite(value) && value > 0 ? Math.max(7, (value / max) * 178) : 0;
+          {series.map(day => {
+            const details = day.models
+              .map(
+                point =>
+                  `${point.model}: ${finite(point.value) ? numberFormat(point.value) : "N/D"}`
+              )
+              .join("; ");
             return (
               <div
                 key={day.date}
-                className="flex h-[205px] min-w-0 flex-col items-center justify-end gap-2"
+                className="flex h-[250px] min-w-0 flex-col items-center justify-end gap-1"
                 data-testid={`admin-model-insights-day-${day.date}`}
+                aria-label={`${dateLabel(day.date)} — ${details}`}
               >
-                <span className="text-[10px] font-bold tabular-nums text-slate-700">
-                  {finite(value) ? numberFormat(value) : "N/D"}
+                <div className="flex h-[216px] w-full min-w-0 items-end justify-center gap-0.5">
+                  {day.models.map(point => {
+                    const value = point.value;
+                    const height =
+                      finite(value) && value > 0
+                        ? Math.max(7, (value / max) * 178)
+                        : 0;
+                    const valueLabel = finite(value)
+                      ? numberFormat(value)
+                      : "N/D";
+                    const barTestId = `admin-model-insights-bar-${day.date}-${point.model}`;
+                    return (
+                      <div
+                        key={point.model}
+                        className="flex min-w-0 flex-1 flex-col items-center justify-end gap-1"
+                        data-model={point.model}
+                      >
+                        <span className="max-w-full truncate text-[9px] font-bold tabular-nums text-slate-700">
+                          {valueLabel}
+                        </span>
+                        <div
+                          className="flex h-[178px] w-full items-end justify-center"
+                          title={`${dateLabel(day.date)} · ${point.model}: ${valueLabel}${finite(day.total) ? ` · Total do dia: ${numberFormat(day.total)}` : ""}`}
+                        >
+                          {finite(value) ? (
+                            <div
+                              className="w-full max-w-5 rounded-t-md transition-[height]"
+                              style={{
+                                height,
+                                backgroundColor: modelColor(point.model),
+                              }}
+                              data-testid={barTestId}
+                              data-value={value}
+                              aria-label={`${dateLabel(day.date)} — ${point.model}: ${valueLabel} Leads`}
+                              role="img"
+                            />
+                          ) : (
+                            <div
+                              className="w-full max-w-5 border-t-2 border-dashed border-slate-300"
+                              data-testid={barTestId}
+                              data-value="N/D"
+                              aria-label={`${dateLabel(day.date)} — ${point.model}: N/D, fonte não disponível`}
+                              role="img"
+                            />
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <span className="max-w-full truncate text-[10px] text-slate-500">
+                  {dateLabel(day.date)}
                 </span>
-                <div
-                  className="flex h-[178px] w-full items-end justify-center"
+                <span
+                  className="max-w-full truncate text-[9px] tabular-nums text-slate-400"
                   title={
-                    finite(value)
-                      ? `${dateLabel(day.date)}: ${numberFormat(value)} Leads`
-                      : `${dateLabel(day.date)}: fonte não disponível`
+                    finite(day.total)
+                      ? `Total do dia: ${numberFormat(day.total)} Leads`
+                      : "Total do dia: N/D"
                   }
                 >
-                  {finite(value) ? (
-                    <div
-                      className="w-7 rounded-t-md bg-[#e2212d] transition-[height]"
-                      style={{ height }}
-                      aria-hidden="true"
-                    />
-                  ) : (
-                    <div
-                      className="w-7 border-t-2 border-dashed border-slate-300"
-                      aria-hidden="true"
-                    />
-                  )}
-                </div>
-                <span className="truncate text-[10px] text-slate-500">
-                  {dateLabel(day.date)}
+                  Total: {finite(day.total) ? numberFormat(day.total) : "N/D"}
                 </span>
                 <span className="sr-only">
                   {day.sourceAvailable
@@ -693,25 +799,40 @@ function DailySeries({
           })}
         </div>
       </div>
-      <div className="flex flex-wrap gap-x-5 gap-y-2 border-t border-slate-100 px-5 py-3 text-[11px] text-slate-500">
-        <span className="inline-flex items-center gap-2">
-          <span
-            className="h-2.5 w-2.5 rounded-sm bg-[#e2212d]"
-            aria-hidden="true"
-          />
-          Volume real coberto
-        </span>
-        <span className="inline-flex items-center gap-2">
-          <span
-            className="w-3 border-t-2 border-dashed border-slate-400"
-            aria-hidden="true"
-          />
-          N/D: cobertura não confirmada
-        </span>
-        <span>
-          Denominador do dia: população coberta do próprio dia; seleção local
-          exibe o modelo sem preencher dias ausentes.
-        </span>
+      <div className="border-t border-slate-100 px-5 py-3 text-[11px] text-slate-500">
+        <div
+          className="flex flex-wrap gap-x-5 gap-y-2"
+          role="list"
+          aria-label="Legenda de cores por modelo"
+        >
+          {models.map(model => (
+            <span
+              key={model}
+              className="inline-flex items-center gap-2"
+              data-testid={`admin-model-insights-legend-${model}`}
+              role="listitem"
+            >
+              <span
+                className="h-2.5 w-2.5 rounded-sm"
+                style={{ backgroundColor: modelColor(model) }}
+                aria-hidden="true"
+              />
+              <span>{model}</span>
+            </span>
+          ))}
+          <span className="inline-flex items-center gap-2">
+            <span
+              className="w-3 border-t-2 border-dashed border-slate-400"
+              aria-hidden="true"
+            />
+            N/D: cobertura não confirmada
+          </span>
+        </div>
+        <p className="mt-2">
+          Valores acima de cada barra são contagens do modelo. O total do dia é
+          apenas contextual; a seleção local exibe somente o modelo escolhido,
+          sem preencher dias ausentes.
+        </p>
       </div>
     </Card>
   );

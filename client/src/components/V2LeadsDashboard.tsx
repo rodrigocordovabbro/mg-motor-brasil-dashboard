@@ -2439,7 +2439,13 @@ export default function V2LeadsDashboard({
   );
   const activeTab: V2Tab = overviewOnly ? "Visão Geral" : requestedTab;
   useEffect(() => {
-    if (!overviewOnly && modelAnalysisAllowed) return;
+    // Restricted clients stay on Overview; other read-only profiles only
+    // normalize the Administrator-only model tab, not their permitted tabs.
+    if (
+      !overviewOnly &&
+      (requestedTab !== MODEL_ANALYSIS_TAB || modelAnalysisAllowed)
+    )
+      return;
     if (requestedTab !== "Visão Geral") setActiveTab("Visão Geral");
     if (typeof window === "undefined") return;
     const url = new URL(window.location.href);
