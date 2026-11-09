@@ -2,6 +2,7 @@ import { RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
   describeLeadsReload,
+  LEADS_RELOAD_VERSION_NOT_CONFIRMED,
   type LeadsReloadResult,
 } from "@shared/leadsReload";
 
@@ -57,7 +58,9 @@ export function V2LeadsReloadButton({
             ? "Sua sessão expirou. Faça login novamente para atualizar os dados."
             : code === "PRECONDITION_FAILED"
               ? "Conexão Google pendente. Configure a conta de serviço no cartão seguro e dê acesso de Leitor à planilha-base. Nenhum dado foi alterado."
-              : "Não foi possível atualizar a base. Os dados anteriores foram mantidos; tente novamente."
+              : code === LEADS_RELOAD_VERSION_NOT_CONFIRMED
+                ? "A planilha foi importada, mas o painel ainda não confirmou a nova versão. Atualize os indicadores."
+                : "Não foi possível atualizar a base. Os dados anteriores foram mantidos; tente novamente."
       );
     } finally {
       locked.current = false;

@@ -315,7 +315,11 @@ function mapSource(
       crm: rawCrm || "Não informado",
       headers,
       rawValues,
-      payloadJson: quoteJson(payload),
+      // Keep raw provenance, but serialize only when a changed row is persisted.
+      // An unchanged 50k-row workbook must not retain 50k duplicate JSON payloads.
+      get payloadJson() {
+        return quoteJson(payload);
+      },
       rowHash: rowHash(sheet, rowNumber, headers, rawValues),
     });
   }
@@ -354,23 +358,40 @@ export function prepareLeadsSnapshot(
     throw new Error("A fonte de Leads não contém abas autorizadas.");
 
   const rows = sources.flatMap(source => source.rows);
-  const canonical = sources
+  // Emit exactly the previous canonical JSON bytes into the hash in bounded
+  // pieces. Never allocate a second workbook or a workbook-sized JSON string.
+  const hash = createHash("sha256");
+  hash.update("[");
+  const ordered = sources
     .slice()
-    .sort((a, b) => a.sourceSheet.localeCompare(b.sourceSheet))
-    .map(source => ({
-      sourceSheet: source.sourceSheet,
-      ...(source.rows.some((row, index) => row.sourceRow !== index + 2)
-        ? { physicalRows: source.rows.map(row => row.sourceRow) }
-        : {}),
-      headers: trimTrailingEmpty(source.headers),
-      values: canonicalValues([
-        source.headers,
-        ...source.rows.map(row => row.rawValues),
-      ]),
-    }));
-  const inputSha256 = createHash("sha256")
-    .update(quoteJson(canonical))
-    .digest("hex");
+    .sort((a, b) => a.sourceSheet.localeCompare(b.sourceSheet));
+  ordered.forEach((source, index) => {
+    if (index) hash.update(",");
+    hash.update(`{"sourceSheet":${quoteJson(source.sourceSheet)}`);
+    if (source.rows.some((row, rowIndex) => row.sourceRow !== rowIndex + 2)) {
+      hash.update(',"physicalRows":[');
+      source.rows.forEach((row, rowIndex) => {
+        if (rowIndex) hash.update(",");
+        hash.update(String(row.sourceRow));
+      });
+      hash.update("]");
+    }
+    hash.update(
+      `,"headers":${quoteJson(trimTrailingEmpty(source.headers))},"values":[`
+    );
+    hash.update(
+      quoteJson(trimTrailingEmpty(source.headers).map(canonicalCell))
+    );
+    for (const row of source.rows) {
+      hash.update(",");
+      hash.update(
+        quoteJson(trimTrailingEmpty(row.rawValues).map(canonicalCell))
+      );
+    }
+    hash.update("]}");
+  });
+  hash.update("]");
+  const inputSha256 = hash.digest("hex");
 
   return { sources, rows, inputSha256 };
 }

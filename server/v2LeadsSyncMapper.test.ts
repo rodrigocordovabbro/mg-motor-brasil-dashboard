@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
 import {
   canonicalizeLeadsSyncValues,
   normalizeLeadsSyncRangeSheet,
@@ -188,4 +189,66 @@ it("inclui posições físicas no hash quando há linhas vazias no meio da fonte
   ]);
   expect(moved.rows[0].sourceRow).toBe(3);
   expect(moved.inputSha256).not.toBe(before.inputSha256);
+});
+
+it("emite exatamente o hash canônico anterior sem criar um JSON de todo o workbook", () => {
+  const prepared = prepareLeadsSnapshot([
+    {
+      range: "Meta!A:W",
+      values: [
+        metaHeaders.concat("", ""),
+        metaRow().concat("", ""),
+        [],
+        metaRow({ 16: "Outra pessoa de teste", 2: "7/20/26" }),
+      ],
+    },
+    {
+      range: "Site!A:E",
+      values: [
+        ["data", "Modelo de Interesse", "Concessionária"],
+        ["01/07/2026", "MG4", "Dealer"],
+      ],
+    },
+  ]);
+  const trim = (values: readonly unknown[]) => {
+    const result = [...values];
+    while (
+      result.length &&
+      (result.at(-1) == null || String(result.at(-1)).trim() === "")
+    )
+      result.pop();
+    return result;
+  };
+  const previous = prepared.sources
+    .slice()
+    .sort((a, b) => a.sourceSheet.localeCompare(b.sourceSheet))
+    .map(source => ({
+      sourceSheet: source.sourceSheet,
+      ...(source.rows.some((r, i) => r.sourceRow !== i + 2)
+        ? { physicalRows: source.rows.map(r => r.sourceRow) }
+        : {}),
+      headers: trim(source.headers),
+      values: canonicalizeLeadsSyncValues([
+        source.headers,
+        ...source.rows.map(r => r.rawValues),
+      ]),
+    }));
+  expect(prepared.inputSha256).toBe(
+    createHash("sha256").update(JSON.stringify(previous)).digest("hex")
+  );
+});
+
+it("mantém payload completo acessível mas não retém uma string duplicada por linha", () => {
+  const row = prepareLeadsSnapshot([
+    { range: "Meta!A:W", values: [metaHeaders, metaRow()] },
+  ]).rows[0];
+  const descriptor = Object.getOwnPropertyDescriptor(row, "payloadJson");
+  expect(descriptor?.get).toBeTypeOf("function");
+  expect(descriptor?.value).toBeUndefined();
+  expect(JSON.parse(row.payloadJson)).toMatchObject({
+    sourceSheet: "Meta",
+    sourceRow: 2,
+    headers: metaHeaders,
+    values: metaRow(),
+  });
 });

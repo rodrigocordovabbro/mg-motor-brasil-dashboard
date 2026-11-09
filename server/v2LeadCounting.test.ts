@@ -21,7 +21,9 @@ vi.mock("./v2Db", () => ({
 }));
 import {
   aggregateV2Leads,
+  invalidateAnalyticalCache,
   readV2LeadsForPeriod,
+  V2_COUNTING_PAGE_SIZE,
   V2_COUNTING_SOURCE_SELECT,
 } from "./v2Leads";
 
@@ -286,9 +288,45 @@ describe("seleção compartilhada do dashboard", () => {
     state.raw = [raw(corrected), raw(site(2, { data: "03/11/2026" }))];
     const rows = await readV2LeadsForPeriod("2026-11-01", "2026-11-02");
     expect(rows.map(v => v.id)).toEqual([1]);
-    expect(state.execute).toHaveBeenCalledWith(V2_COUNTING_SOURCE_SELECT);
+    expect(state.execute).toHaveBeenCalledWith(
+      `${V2_COUNTING_SOURCE_SELECT} LIMIT ${V2_COUNTING_PAGE_SIZE} OFFSET 0`
+    );
     expect(V2_COUNTING_SOURCE_SELECT).not.toContain("WHERE leadDate");
     expect(V2_COUNTING_SOURCE_SELECT).toContain("WHEN 'Site' THEN 0");
+  });
+  it("lê em páginas limitadas e deduplica a mesma ocorrência entre páginas", async () => {
+    state.raw = [
+      ...Array.from({ length: V2_COUNTING_PAGE_SIZE }, (_, index) =>
+        raw(
+          site(index + 1, {
+            "E-mail do solicitante": `person-${index}@example.invalid`,
+          })
+        )
+      ),
+      raw(
+        site(2000, {
+          "E-mail do solicitante": "person-0@example.invalid",
+        })
+      ),
+    ];
+    state.execute.mockImplementation(async (sql: string) => {
+      const match = sql.match(/ LIMIT (\d+) OFFSET (\d+)$/);
+      if (!match) throw new Error("Consulta paginada ausente no teste.");
+      const pageSize = Number(match[1]);
+      const offset = Number(match[2]);
+      return [state.raw.slice(offset, offset + pageSize), []];
+    });
+
+    const rows = await readV2LeadsForPeriod("2026-11-01", "2026-11-05");
+
+    expect(rows).toHaveLength(V2_COUNTING_PAGE_SIZE);
+    expect(rows[0]?.id).toBe(1);
+    expect(rows.at(-1)?.id).toBe(V2_COUNTING_PAGE_SIZE);
+    expect(state.execute).toHaveBeenCalledTimes(2);
+    expect(state.execute.mock.calls.map(call => call[0])).toEqual([
+      `${V2_COUNTING_SOURCE_SELECT} LIMIT ${V2_COUNTING_PAGE_SIZE} OFFSET 0`,
+      `${V2_COUNTING_SOURCE_SELECT} LIMIT ${V2_COUNTING_PAGE_SIZE} OFFSET ${V2_COUNTING_PAGE_SIZE}`,
+    ]);
   });
   it("cacheia só a projeção segura, recarrega na nova importação e não permite mutação do cache", async () => {
     state.raw = [raw(site(1)), raw(site(2))];
@@ -332,6 +370,21 @@ describe("seleção compartilhada do dashboard", () => {
     );
     expect(state.execute).toHaveBeenCalledTimes(2);
   });
+  it("permite invalidar o snapshot analítico sem alterar a versão da fonte", async () => {
+    state.raw = [raw(site(1))];
+    expect(await readV2LeadsForPeriod("2026-11-01", "2026-11-05")).toHaveLength(
+      1
+    );
+    state.raw = [
+      raw(site(2, { "E-mail do solicitante": "novo@example.invalid" })),
+    ];
+    invalidateAnalyticalCache();
+
+    const rows = await readV2LeadsForPeriod("2026-11-01", "2026-11-05");
+
+    expect(rows.map(row => row.id)).toEqual([2]);
+    expect(state.execute).toHaveBeenCalledTimes(2);
+  });
   it("mantém um dia JS de uma casa no mesmo calendário", () => {
     expect(legacyCorrectedDate("Mon Jan 1 2026", false)).toBe("2026-01-01");
     expect(legacyCorrectedDate("Mon Jan 01 2026", false)).toBe("2026-01-01");
@@ -365,7 +418,7 @@ describe("seleção compartilhada do dashboard", () => {
     expect(d.period.dateTo).toBe("2026-11-05");
     expect(d.summary.total).toBe(2);
     expect(d.pacing.current).toBe(2);
-    expect(d.daily.reduce((n, v) => n + v.total, 0)).toBe(2);
+    expect(d.daily.reduce((n, v) => n + (v.total ?? 0), 0)).toBe(2);
     expect(d.daily.at(-1)?.cumulative).toBe(2);
     expect(d.channels.reduce((n, v) => n + v.count, 0)).toBe(2);
     expect(d.dealers.reduce((n, v) => n + v.count, 0)).toBe(2);

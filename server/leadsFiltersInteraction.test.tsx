@@ -9,6 +9,7 @@ const mock = vi.hoisted(() => ({
   values: [] as any[],
   setters: [] as any[],
   query: vi.fn(),
+  syncBaseMutation: vi.fn(),
   invalidateLeads: vi.fn(),
   invalidateCRM: vi.fn(),
 }));
@@ -39,7 +40,7 @@ vi.mock("@/lib/trpc", () => ({
       dispatch: { leadControl: { invalidate: mock.invalidateCRM } },
     }),
     leads: {
-      syncBase: { useMutation: () => ({ mutateAsync: vi.fn() }) },
+      syncBase: { useMutation: () => ({ mutateAsync: mock.syncBaseMutation }) },
       dashboard: { useQuery: mock.query },
     },
   },
@@ -58,12 +59,12 @@ function findElement(node: any, predicate: (element: any) => boolean): any {
   }
   return null;
 }
-function panel() {
+function panel(canManage = false) {
   mock.index = 0;
   const tree = Dashboard({
     authenticated: true,
     clientMode: false,
-    canManage: false,
+    canManage,
   });
   const filters = findElement(
     tree,
@@ -79,6 +80,9 @@ beforeEach(() => {
   mock.index = 0;
   mock.values = [];
   mock.setters = [];
+  mock.syncBaseMutation.mockReset();
+  mock.invalidateLeads.mockReset();
+  mock.invalidateCRM.mockReset();
   mock.query.mockReset().mockImplementation(filters => ({
     data: {
       status: "READY",
@@ -205,15 +209,52 @@ describe("aplicação dos filtros do painel", () => {
   });
 });
 
-function findOverview() {
+function findOverview(canManage = false) {
   mock.index = 0;
   const tree = Dashboard({
     authenticated: true,
     clientMode: false,
-    canManage: false,
+    canManage,
   });
   return findElement(tree, element => element.type?.name === "OverviewTab");
 }
+
+function versionedDashboard(
+  importedAt = "2026-11-04T12:00:00Z",
+  totalRows = 2
+) {
+  return {
+    status: "READY",
+    period: {
+      dateFrom: "2026-11-01",
+      dateTo: "2026-11-04",
+      cutoffDate: "2026-11-04",
+    },
+    options: { models: [], channels: [], campaigns: [], dealers: [] },
+    source: {
+      name: "Fonte de teste",
+      importedAt,
+      totalRows,
+      latestLeadDate: "2026-11-04",
+    },
+    pacing: { competence: "2026-11", current: 3 },
+    summary: { total: 3 },
+    notes: [],
+  };
+}
+
+function syncVersion(importedAt = "2026-11-05T14:00:00Z", totalRows = 3) {
+  return {
+    changed: true,
+    importedAt,
+    totalRows,
+    inserted: 1,
+    updated: 0,
+    sourceCounts: [],
+    latestLeadDate: "2026-11-04",
+  };
+}
+
 it("reconsulta uma vez, invalida os caches sem fetch duplicado e mantém confirmação no shell", async () => {
   const original = {
     status: "READY",
@@ -284,6 +325,169 @@ it("rejeita fonte ausente mesmo quando a query HTTP resolveu sem erro", async ()
     "não configurada"
   );
   expect(mock.values[6]).toContain("Não foi possível atualizar a base");
+});
+
+it("aguarda o sync administrativo antes de invalidar/refazer a leitura e confirma a mesma versão SQL", async () => {
+  const original = versionedDashboard();
+  const syncResult = syncVersion();
+  const fresh = {
+    ...original,
+    checkedAt: "2026-11-05T15:00:00Z",
+    source: {
+      ...original.source,
+      importedAt: syncResult.importedAt,
+      totalRows: syncResult.totalRows,
+    },
+    pacing: { competence: "2026-11", current: 9 },
+    summary: { total: 9 },
+  };
+  const events: string[] = [];
+  mock.syncBaseMutation.mockImplementation(async () => {
+    events.push("sync");
+    return syncResult;
+  });
+  mock.invalidateLeads.mockImplementation(() => {
+    events.push("invalidate leads");
+  });
+  mock.invalidateCRM.mockImplementation(() => {
+    events.push("invalidate crm");
+  });
+  const refetch = vi.fn().mockImplementation(async () => {
+    events.push("refetch");
+    return { data: fresh, error: null };
+  });
+  mock.query.mockReturnValue({
+    data: original,
+    isLoading: false,
+    isFetching: false,
+    refetch,
+  });
+
+  const result = await findOverview(true).props.onReloadMonth();
+
+  expect(events).toEqual([
+    "sync",
+    "invalidate leads",
+    "invalidate crm",
+    "refetch",
+  ]);
+  expect(result.newImport).toBe(true);
+  expect(result.sync).toMatchObject({ totalRows: syncResult.totalRows });
+  expect(mock.syncBaseMutation).toHaveBeenCalledOnce();
+  expect(refetch).toHaveBeenCalledOnce();
+});
+
+it("não invalida nem refaz a leitura quando a sincronização administrativa falha", async () => {
+  const data = versionedDashboard();
+  const refetch = vi.fn();
+  mock.syncBaseMutation.mockRejectedValue({
+    data: { code: "PRECONDITION_FAILED" },
+  });
+  mock.query.mockReturnValue({
+    data,
+    isLoading: false,
+    isFetching: false,
+    refetch,
+  });
+
+  await expect(findOverview(true).props.onReloadMonth()).rejects.toMatchObject({
+    data: { code: "PRECONDITION_FAILED" },
+  });
+
+  expect(mock.invalidateLeads).not.toHaveBeenCalled();
+  expect(mock.invalidateCRM).not.toHaveBeenCalled();
+  expect(refetch).not.toHaveBeenCalled();
+  expect(mock.values[6]).toContain("Conexão Google pendente");
+});
+
+it("não declara sucesso nem preservação incorreta se a leitura fresca falha após o commit", async () => {
+  const data = versionedDashboard();
+  const syncResult = syncVersion();
+  const refetch = vi.fn().mockRejectedValue(new Error("leitura indisponível"));
+  mock.syncBaseMutation.mockResolvedValue(syncResult);
+  mock.query.mockReturnValue({
+    data,
+    isLoading: false,
+    isFetching: false,
+    refetch,
+  });
+
+  await expect(findOverview(true).props.onReloadMonth()).rejects.toMatchObject({
+    code: "LEADS_RELOAD_VERSION_NOT_CONFIRMED",
+  });
+
+  expect(mock.values[6]).toBe(
+    "A planilha foi importada, mas o painel ainda não confirmou a nova versão. Atualize os indicadores."
+  );
+  expect(mock.values[6]).not.toContain("preservados");
+});
+
+it("rejeita uma leitura fresca ainda anterior à versão retornada pelo sync", async () => {
+  const data = versionedDashboard();
+  const syncResult = syncVersion();
+  const refetch = vi.fn().mockResolvedValue({
+    data: versionedDashboard(),
+    error: null,
+  });
+  mock.syncBaseMutation.mockResolvedValue(syncResult);
+  mock.query.mockReturnValue({
+    data,
+    isLoading: false,
+    isFetching: false,
+    refetch,
+  });
+
+  await expect(findOverview(true).props.onReloadMonth()).rejects.toMatchObject({
+    code: "LEADS_RELOAD_VERSION_NOT_CONFIRMED",
+  });
+
+  expect(refetch).toHaveBeenCalledOnce();
+  expect(mock.values[6]).toBe(
+    "A planilha foi importada, mas o painel ainda não confirmou a nova versão. Atualize os indicadores."
+  );
+});
+
+it("desabilita preset, campos e busca enquanto a sincronização administrativa está pendente", async () => {
+  const data = versionedDashboard();
+  const syncResult = syncVersion();
+  let resolveSync!: (result: typeof syncResult) => void;
+  const pendingSync = new Promise<typeof syncResult>(resolve => {
+    resolveSync = resolve;
+  });
+  mock.syncBaseMutation.mockReturnValue(pendingSync);
+  const fresh = {
+    ...data,
+    source: {
+      ...data.source,
+      importedAt: syncResult.importedAt,
+      totalRows: syncResult.totalRows,
+    },
+  };
+  mock.query.mockReturnValue({
+    data,
+    isLoading: false,
+    isFetching: false,
+    refetch: vi.fn().mockResolvedValue({ data: fresh, error: null }),
+  });
+
+  const reload = findOverview(true).props.onReloadMonth();
+  await Promise.resolve();
+  const filters = panel(true);
+  const renderedFilters = filters.type(filters.props);
+  const fieldset = findElement(
+    renderedFilters,
+    element => element.type === "fieldset"
+  );
+  const appliedBefore = mock.values[2];
+
+  expect(filters.props.isFetching).toBe(true);
+  expect(fieldset.props.disabled).toBe(true);
+  filters.props.onPreset("Mês");
+  filters.props.onSearch();
+  expect(mock.values[2]).toBe(appliedBefore);
+
+  resolveSync(syncResult);
+  await reload;
 });
 
 it("retira modelos da inicial e mantém canais, estados e concessionárias", () => {

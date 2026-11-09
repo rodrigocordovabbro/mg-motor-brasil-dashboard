@@ -1,3 +1,17 @@
+export const LEADS_RELOAD_VERSION_NOT_CONFIRMED =
+  "LEADS_RELOAD_VERSION_NOT_CONFIRMED";
+export const LEADS_RELOAD_VERSION_NOT_CONFIRMED_MESSAGE =
+  "A planilha foi importada, mas o painel ainda não confirmou a nova versão. Atualize os indicadores.";
+
+export class LeadsReloadVersionNotConfirmedError extends Error {
+  readonly code = LEADS_RELOAD_VERSION_NOT_CONFIRMED;
+
+  constructor() {
+    super(LEADS_RELOAD_VERSION_NOT_CONFIRMED_MESSAGE);
+    this.name = "LeadsReloadVersionNotConfirmedError";
+  }
+}
+
 export type LeadsReloadResult = {
   competence: string;
   total: number;

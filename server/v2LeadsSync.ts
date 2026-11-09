@@ -31,6 +31,21 @@ const GOOGLE_MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
 const ROW_BATCH_SIZE = 300;
 const ORIGINS = new Set<LeadsSyncOrigin>(["gws", "server"]);
 
+function diagnoseSyncMemory(stage: string): void {
+  if (process.env.MG_SYNC_DIAGNOSTICS !== "1") return;
+  const m = process.memoryUsage();
+  console.log(
+    "[Leads sync memory]",
+    JSON.stringify({
+      stage,
+      rssMb: Math.round(m.rss / 1048576),
+      heapMb: Math.round(m.heapUsed / 1048576),
+      externalMb: Math.round(m.external / 1048576),
+      buffersMb: Math.round(m.arrayBuffers / 1048576),
+    })
+  );
+}
+
 type DbMap = RowDataPacket & Record<string, unknown>;
 type ExistingSyncRow = {
   leadId: number;
@@ -519,14 +534,6 @@ async function importPreparedSnapshot(
 
     let inserted = 0;
     let updated = 0;
-    const changedRows: Array<{
-      row: MappedLeadSyncRow;
-      leadId: number;
-      old: ExistingSyncRow | undefined;
-      importId: number;
-      actor: LeadsSyncActor;
-      spreadsheetId: string;
-    }> = [];
 
     // The source lock serializes imports. Compare once and write only physical
     // occurrences whose content changed; untouched IDs/snapshots remain intact.
@@ -539,7 +546,9 @@ async function importPreparedSnapshot(
       const oldRows = await readExistingRows(connection, batch);
       await upsertLeads(connection, batch);
       const leadIds = await readLeadIds(connection, batch);
-      const batchChangedRows: typeof changedRows = [];
+      const batchChangedRows: Array<
+        Parameters<typeof insertHistory>[1][number]
+      > = [];
       for (const row of batch) {
         const key = rowKey(row.sourceSheet, row.sourceRow);
         const old = oldRows.get(key);
@@ -558,7 +567,6 @@ async function importPreparedSnapshot(
             spreadsheetId: snapshot.spreadsheetId,
           });
       }
-      changedRows.push(...batchChangedRows);
       await insertHistory(connection, batchChangedRows);
       await upsertCurrentSnapshots(connection, batch, leadIds, importId);
     }
@@ -624,6 +632,7 @@ export async function importLeadsSnapshot(
         : "A fonte de Leads não pôde ser validada."
     );
   }
+  diagnoseSyncMemory("snapshot-prepared");
   return importPreparedSnapshot(snapshot, prepared, actor, origin);
 }
 
@@ -677,7 +686,8 @@ async function readResponseText(
 ): Promise<string> {
   if (response.body?.getReader) {
     const reader = response.body.getReader();
-    const chunks: Uint8Array[] = [];
+    const decoder = new TextDecoder();
+    const chunks: string[] = [];
     let total = 0;
     try {
       while (true) {
@@ -686,18 +696,20 @@ async function readResponseText(
         const chunkValue = next.value as Uint8Array;
         total += chunkValue.byteLength;
         if (total > maxBytes) throw new Error("Google response too large");
-        chunks.push(chunkValue);
+        chunks.push(decoder.decode(chunkValue, { stream: true }));
       }
+      chunks.push(decoder.decode());
+    } catch (error) {
+      try {
+        await reader.cancel();
+      } catch {
+        /* Keep the original safe error. */
+      }
+      throw error;
     } finally {
       reader.releaseLock();
     }
-    const merged = new Uint8Array(total);
-    let offset = 0;
-    for (const chunkValue of chunks) {
-      merged.set(chunkValue, offset);
-      offset += chunkValue.byteLength;
-    }
-    return new TextDecoder().decode(merged);
+    return chunks.join("");
   }
   const text = await response.text();
   if (Buffer.byteLength(text, "utf8") > maxBytes)
@@ -722,7 +734,9 @@ async function fetchJson(
     });
     if (!response.ok) throw new Error("Google request failed");
     const body = await readResponseText(response, GOOGLE_MAX_RESPONSE_BYTES);
+    diagnoseSyncMemory("google-text-read");
     const parsed = JSON.parse(body) as unknown;
+    diagnoseSyncMemory("google-json-parsed");
     if (!parsed || typeof parsed !== "object")
       throw new Error("Google response invalid");
     return parsed as Record<string, unknown>;
@@ -877,10 +891,7 @@ async function fetchGoogleSnapshot(
   };
 }
 
-/** Reads metadata and rendered values from Google Sheets, never writes Sheets. */
-export async function syncLeadsFromGoogle(
-  actor: LeadsSyncActor
-): Promise<LeadsSyncResult> {
+async function runGoogleSync(actor: LeadsSyncActor): Promise<LeadsSyncResult> {
   assertActor(actor);
   const account = readServiceAccount();
   if (!account) throw configurationError();
@@ -893,6 +904,7 @@ export async function syncLeadsFromGoogle(
       accessToken,
       deadline
     );
+    diagnoseSyncMemory("snapshot-read");
     return await importLeadsSnapshot(snapshot, actor, "server");
   } catch (error) {
     if (error instanceof LeadsSyncError) throw error;
@@ -900,6 +912,22 @@ export async function syncLeadsFromGoogle(
       "IMPORT_FAILED",
       "Não foi possível sincronizar a base de Leads do Google Sheets."
     );
+  }
+}
+
+let activeGoogleSync: Promise<LeadsSyncResult> | undefined;
+/** Authorized callers share one current-source read; audit retains the initiator. */
+export async function syncLeadsFromGoogle(
+  actor: LeadsSyncActor
+): Promise<LeadsSyncResult> {
+  assertActor(actor);
+  if (activeGoogleSync) return activeGoogleSync;
+  const operation = runGoogleSync(actor);
+  activeGoogleSync = operation;
+  try {
+    return await operation;
+  } finally {
+    if (activeGoogleSync === operation) activeGoogleSync = undefined;
   }
 }
 

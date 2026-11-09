@@ -3,6 +3,11 @@ import {
   isIsoCalendarDate,
 } from "../shared/dashboardDates";
 import type { V2Lead } from "../shared/v2Types";
+const saoPauloHourFormatter = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/Sao_Paulo",
+  hour: "2-digit",
+  hourCycle: "h23",
+});
 export type MappedLead = Omit<V2Lead, "id"> & {
   sourceSheet: string;
   sourceRow: number;
@@ -48,13 +53,7 @@ export function parseSourceDate(
     if (iso[2] && /(?:Z|[+-]\d\d:\d\d)$/.test(stamp)) {
       const parsed = new Date(stamp);
       if (!Number.isNaN(parsed.getTime())) {
-        const hour = Number(
-          new Intl.DateTimeFormat("en-US", {
-            timeZone: "America/Sao_Paulo",
-            hour: "2-digit",
-            hourCycle: "h23",
-          }).format(parsed)
-        );
+        const hour = Number(saoPauloHourFormatter.format(parsed));
         return { date: formatIsoDateInTimeZone(parsed), hour };
       }
     }

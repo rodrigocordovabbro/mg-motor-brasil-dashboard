@@ -23,7 +23,7 @@ import { readExtraDealerRegistry } from "./v2DealerRegistry";
 import { aggregateModelAnalysis, resolveModelVersion } from "./v2ModelAnalysis";
 import { addIsoDays, resolveDashboardPeriod } from "../shared/dashboardDates";
 import {
-  countLegacyCompatibleLeads,
+  createLegacyLeadCountingAccumulator,
   isLegacyLeadChannelActive,
 } from "./v2LeadCounting";
 import type {
@@ -197,23 +197,33 @@ export const V2_COUNTING_SOURCE_SELECT = `SELECT l.id,l.leadDate AS date,l.leadH
   FROM v2_leads l LEFT JOIN v2_lead_sync_rows r ON r.sourceId=1 AND r.leadId=l.id
   ORDER BY CASE l.sourceSheet WHEN 'Site' THEN 0 WHEN 'Interlagos' THEN 1 WHEN 'Tiktok - Live' THEN 2 WHEN 'Tikok' THEN 3 WHEN 'Meta' THEN 4 WHEN 'Weebmotors' THEN 5 WHEN 'Mercado Livre' THEN 6 WHEN 'Uol' THEN 7 ELSE 8 END,l.sourceRow,l.id`;
 
+export const V2_COUNTING_PAGE_SIZE = 1000;
+
+function toLegacyCountingInput(row: RowDataPacket) {
+  return {
+    lead: mapV2LeadRow(row),
+    provenance: {
+      sourceSheet: row.sourceSheet,
+      headersJson: row.headersJson,
+      valuesJson: row.valuesJson,
+      sourceTimestampRaw: row.sourceTimestampRaw,
+    },
+  };
+}
+
 export function mapLegacyCountedLeadRows(
   raw: readonly RowDataPacket[]
 ): V2Lead[] {
-  return countLegacyCompatibleLeads(
-    raw.map(row => ({
-      lead: mapV2LeadRow(row),
-      provenance: {
-        sourceSheet: row.sourceSheet,
-        headersJson: row.headersJson,
-        valuesJson: row.valuesJson,
-        sourceTimestampRaw: row.sourceTimestampRaw,
-      },
-    }))
-  );
+  const counter = createLegacyLeadCountingAccumulator();
+  for (const row of raw) counter.add(toLegacyCountingInput(row));
+  return counter.finish();
 }
 
 let countingCache: { version: string; rows: Promise<V2Lead[]> } | undefined;
+export function invalidateAnalyticalCache(): void {
+  countingCache = undefined;
+}
+
 async function readCountedSourceRows(): Promise<V2Lead[]> {
   const pool = getV2Pool();
   const [sources] = await pool.query<RowDataPacket[]>(
@@ -228,11 +238,27 @@ async function readCountedSourceRows(): Promise<V2Lead[]> {
     : null;
   const load = async () => {
     // Read the complete snapshot before date filtering: corrected dates can cross
-    // a month boundary. Cache only the safe projected rows, not contacts/payloads.
-    const [raw] = await pool.execute<RowDataPacket[]>(
-      V2_COUNTING_SOURCE_SELECT
-    );
-    return mapLegacyCountedLeadRows(raw);
+    // a month boundary. Pages bound the raw JSON/payload working set while the
+    // accumulator preserves canonical first-occurrence precedence across pages.
+    const counter = createLegacyLeadCountingAccumulator();
+    if (pool.pool) {
+      // mysql2 exposes its core pool for streaming. Backpressure bounds private
+      // rows without rerunning the full ordered SELECT for every OFFSET page.
+      const stream = pool.pool
+        .query(V2_COUNTING_SOURCE_SELECT)
+        .stream({ highWaterMark: 32 });
+      for await (const row of stream)
+        counter.add(toLegacyCountingInput(row as RowDataPacket));
+      return counter.finish();
+    }
+    for (let offset = 0; ; offset += V2_COUNTING_PAGE_SIZE) {
+      const [raw] = await pool.execute<RowDataPacket[]>(
+        `${V2_COUNTING_SOURCE_SELECT} LIMIT ${V2_COUNTING_PAGE_SIZE} OFFSET ${offset}`
+      );
+      for (const row of raw) counter.add(toLegacyCountingInput(row));
+      if (raw.length < V2_COUNTING_PAGE_SIZE) break;
+    }
+    return counter.finish();
   };
   if (!version) return load();
   if (countingCache?.version === version) return countingCache.rows;

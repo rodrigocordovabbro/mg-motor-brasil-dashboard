@@ -339,20 +339,40 @@ export function projectLegacyLeadCounting(input: LeadCountingInput): {
   return { lead: { ...original, date }, contentHash, valid: true };
 }
 
+export type LegacyLeadCountingAccumulator = {
+  add(input: LeadCountingInput): void;
+  finish(): V2Lead[];
+};
+
+/**
+ * Incremental form of the historical counter for bounded database reads.
+ * The set deliberately lives across pages so canonical SQL ordering keeps
+ * the same first-occurrence precedence as the array-based implementation.
+ */
+export function createLegacyLeadCountingAccumulator(): LegacyLeadCountingAccumulator {
+  const seen = new Set<string>();
+  const result: V2Lead[] = [];
+  return {
+    add(input) {
+      const row = projectLegacyLeadCounting(input);
+      if (!row.valid) return;
+      if (row.contentHash) {
+        if (seen.has(row.contentHash)) return;
+        seen.add(row.contentHash);
+      }
+      if (isLegacyLeadChannelActive(row.lead.channel, row.lead.date))
+        result.push(row.lead);
+    },
+    finish() {
+      return result;
+    },
+  };
+}
+
 export function countLegacyCompatibleLeads(
   inputs: readonly LeadCountingInput[]
 ): V2Lead[] {
-  const seen = new Set<string>();
-  const result: V2Lead[] = [];
-  for (const input of inputs) {
-    const row = projectLegacyLeadCounting(input);
-    if (!row.valid) continue;
-    if (row.contentHash) {
-      if (seen.has(row.contentHash)) continue;
-      seen.add(row.contentHash);
-    }
-    if (isLegacyLeadChannelActive(row.lead.channel, row.lead.date))
-      result.push(row.lead);
-  }
-  return result;
+  const counter = createLegacyLeadCountingAccumulator();
+  for (const input of inputs) counter.add(input);
+  return counter.finish();
 }

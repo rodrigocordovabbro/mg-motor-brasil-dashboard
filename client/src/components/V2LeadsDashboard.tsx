@@ -1,7 +1,9 @@
 import {
   describeLeadsReload,
+  LeadsReloadVersionNotConfirmedError,
   type LeadsReloadResult,
 } from "@shared/leadsReload";
+import type { LeadsSyncResult } from "@shared/leadsSync";
 import { showDealerInCommercialTable } from "@shared/dealerPresentation";
 import type { UserRole } from "@shared/accountRoles";
 import {
@@ -460,130 +462,132 @@ function FilterBar({
           onSearch();
         }}
       >
-        <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-2">
-            <Filter className="h-4 w-4 text-[#e2212d]" aria-hidden="true" />
-            <h2 className="text-sm font-bold text-slate-900">
-              Filtros de leads
-            </h2>
-            <span className="hidden text-xs text-slate-400 sm:inline">
-              Dados encerrados até D-1
-            </span>
-          </div>
-          <div
-            className="flex flex-wrap gap-1.5"
-            role="group"
-            aria-label="Período rápido"
-          >
-            {LEAD_PERIOD_PRESETS.map(preset => (
-              <button
-                key={preset}
-                type="button"
-                onClick={() => onPreset(preset)}
-                aria-pressed={selectedPreset === preset}
-                className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${selectedPreset === preset ? "bg-red-50 text-[#e2212d]" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"}`}
-              >
-                {preset}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="grid gap-3 px-5 py-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-          <label className="xl:col-span-1">
-            <span className="v2-label">Início</span>
-            <input
-              aria-label="Data inicial"
-              type="date"
-              max={cutoff}
-              value={draft.dateFrom}
-              onChange={event =>
-                update(
-                  "dateFrom",
-                  event.target.value
-                    ? capDateAtDashboardCutoff(event.target.value)
-                    : ""
-                )
-              }
-              className="v2-input"
-            />
-          </label>
-          <label className="xl:col-span-1">
-            <span className="v2-label">Fim</span>
-            <input
-              aria-label="Data final"
-              type="date"
-              max={cutoff}
-              value={draft.dateTo}
-              onChange={event =>
-                update(
-                  "dateTo",
-                  event.target.value
-                    ? capDateAtDashboardCutoff(event.target.value)
-                    : ""
-                )
-              }
-              className="v2-input"
-            />
-          </label>
-          <SelectFilter
-            label="Modelo"
-            value={draft.model ?? ""}
-            options={options.models}
-            onChange={value => update("model", value)}
-          />
-          <SelectFilter
-            label="Canal"
-            value={draft.channel ?? ""}
-            options={options.channels}
-            onChange={value => update("channel", value)}
-          />
-          <SelectFilter
-            label="Concessionária"
-            value={draft.dealer ?? ""}
-            options={options.dealers}
-            onChange={value => update("dealer", value)}
-          />
-          <label className="sm:col-span-2 xl:col-span-2">
-            <span className="v2-label">
-              {clientMode ? "Cidade/UF/concessionária" : "Busca"}
-            </span>
-            <div className="relative">
-              <Search
-                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
-                aria-hidden="true"
-              />
-              <input
-                aria-label={
-                  clientMode ? "Cidade/UF/concessionária" : "Buscar lead"
-                }
-                value={draft.search ?? ""}
-                onChange={event => update("search", event.target.value)}
-                placeholder={
-                  clientMode
-                    ? "Cidade, UF ou concessionária"
-                    : "Nome, cidade ou estado"
-                }
-                className="v2-input pl-9"
-              />
+        <fieldset disabled={isFetching} className="contents">
+          <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-[#e2212d]" aria-hidden="true" />
+              <h2 className="text-sm font-bold text-slate-900">
+                Filtros de leads
+              </h2>
+              <span className="hidden text-xs text-slate-400 sm:inline">
+                Dados encerrados até D-1
+              </span>
             </div>
-          </label>
-        </div>
-        <div className="flex flex-col gap-2 border-t border-slate-100 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="min-h-5 text-xs text-[#b41b26]">
-            {dateError ??
-              (pendingChanges
-                ? "Filtros alterados. Clique em Buscar para aplicar."
-                : `Limite operacional: ${fullDate(cutoff)} (America/Sao_Paulo)`)}
-          </p>
-          <button
-            type="submit"
-            disabled={isFetching}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#e2212d] px-5 text-sm font-bold text-white shadow-sm transition hover:bg-[#c91c28] disabled:cursor-wait disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
-          >
-            <Search className="h-4 w-4" />
-            {isFetching ? "Buscando…" : "Buscar"}
-          </button>
-        </div>
+            <div
+              className="flex flex-wrap gap-1.5"
+              role="group"
+              aria-label="Período rápido"
+            >
+              {LEAD_PERIOD_PRESETS.map(preset => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => onPreset(preset)}
+                  aria-pressed={selectedPreset === preset}
+                  className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${selectedPreset === preset ? "bg-red-50 text-[#e2212d]" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"}`}
+                >
+                  {preset}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="grid gap-3 px-5 py-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+            <label className="xl:col-span-1">
+              <span className="v2-label">Início</span>
+              <input
+                aria-label="Data inicial"
+                type="date"
+                max={cutoff}
+                value={draft.dateFrom}
+                onChange={event =>
+                  update(
+                    "dateFrom",
+                    event.target.value
+                      ? capDateAtDashboardCutoff(event.target.value)
+                      : ""
+                  )
+                }
+                className="v2-input"
+              />
+            </label>
+            <label className="xl:col-span-1">
+              <span className="v2-label">Fim</span>
+              <input
+                aria-label="Data final"
+                type="date"
+                max={cutoff}
+                value={draft.dateTo}
+                onChange={event =>
+                  update(
+                    "dateTo",
+                    event.target.value
+                      ? capDateAtDashboardCutoff(event.target.value)
+                      : ""
+                  )
+                }
+                className="v2-input"
+              />
+            </label>
+            <SelectFilter
+              label="Modelo"
+              value={draft.model ?? ""}
+              options={options.models}
+              onChange={value => update("model", value)}
+            />
+            <SelectFilter
+              label="Canal"
+              value={draft.channel ?? ""}
+              options={options.channels}
+              onChange={value => update("channel", value)}
+            />
+            <SelectFilter
+              label="Concessionária"
+              value={draft.dealer ?? ""}
+              options={options.dealers}
+              onChange={value => update("dealer", value)}
+            />
+            <label className="sm:col-span-2 xl:col-span-2">
+              <span className="v2-label">
+                {clientMode ? "Cidade/UF/concessionária" : "Busca"}
+              </span>
+              <div className="relative">
+                <Search
+                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                  aria-hidden="true"
+                />
+                <input
+                  aria-label={
+                    clientMode ? "Cidade/UF/concessionária" : "Buscar lead"
+                  }
+                  value={draft.search ?? ""}
+                  onChange={event => update("search", event.target.value)}
+                  placeholder={
+                    clientMode
+                      ? "Cidade, UF ou concessionária"
+                      : "Nome, cidade ou estado"
+                  }
+                  className="v2-input pl-9"
+                />
+              </div>
+            </label>
+          </div>
+          <div className="flex flex-col gap-2 border-t border-slate-100 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="min-h-5 text-xs text-[#b41b26]">
+              {dateError ??
+                (pendingChanges
+                  ? "Filtros alterados. Clique em Buscar para aplicar."
+                  : `Limite operacional: ${fullDate(cutoff)} (America/Sao_Paulo)`)}
+            </p>
+            <button
+              type="submit"
+              disabled={isFetching}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#e2212d] px-5 text-sm font-bold text-white shadow-sm transition hover:bg-[#c91c28] disabled:cursor-wait disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
+            >
+              <Search className="h-4 w-4" />
+              {isFetching ? "Buscando…" : "Buscar"}
+            </button>
+          </div>
+        </fieldset>
       </form>
     </Card>
   );
@@ -1752,10 +1756,12 @@ function LeadsTableTab({
   data,
   onPage,
   clientMode,
+  isBusy,
 }: {
   data: V2LeadsResponse;
   onPage: (page: number) => void;
   clientMode: boolean;
+  isBusy: boolean;
 }) {
   const totalPages = Math.max(
     1,
@@ -1860,7 +1866,7 @@ function LeadsTableTab({
             type="button"
             aria-label="Página anterior"
             title="Página anterior"
-            disabled={currentPage <= 1}
+            disabled={isBusy || currentPage <= 1}
             onClick={() => onPage(currentPage - 1)}
             className="rounded-lg border border-slate-200 p-2 disabled:opacity-35"
           >
@@ -1870,7 +1876,7 @@ function LeadsTableTab({
             type="button"
             aria-label="Próxima página"
             title="Próxima página"
-            disabled={currentPage >= totalPages}
+            disabled={isBusy || currentPage >= totalPages}
             onClick={() => onPage(currentPage + 1)}
             className="rounded-lg border border-slate-200 p-2 disabled:opacity-35"
           >
@@ -1997,7 +2003,19 @@ export default function V2LeadsDashboard({
     });
   };
   const [reloadNotice, setReloadNotice] = useState<string | null>(null);
+  const [refreshBusy, setRefreshBusy] = useState(false);
+  const activeReloadLock = useRef<Promise<LeadsReloadResult> | null>(null);
+  const reloadSequence = useRef(0);
+  const mountedRef = useRef(true);
   useEffect(() => setReloadNotice(null), [applied]);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      reloadSequence.current += 1;
+      activeReloadLock.current = null;
+    };
+  }, []);
   const queryUtils = v2Trpc.useUtils();
   const syncBaseMutation = v2Trpc.leads.syncBase.useMutation();
   const dashboardQuery = v2Trpc.leads.dashboard.useQuery(
@@ -2011,6 +2029,7 @@ export default function V2LeadsDashboard({
   const data = dashboardQuery.data;
 
   const choosePreset = (preset: string) => {
+    if (refreshBusy || activeReloadLock.current) return;
     const period = resolveLeadPeriodPreset(preset, cutoff);
     const next = omitLeadCampaign({ ...draft, ...period, page: 1 });
     setDraft(next);
@@ -2020,6 +2039,7 @@ export default function V2LeadsDashboard({
   };
 
   const applyFilters = () => {
+    if (refreshBusy || activeReloadLock.current) return;
     try {
       const period = resolveDashboardPeriod(draft.dateFrom, draft.dateTo);
       setDateError(null);
@@ -2033,80 +2053,115 @@ export default function V2LeadsDashboard({
     }
   };
 
-  const changePage = (page: number) =>
+  const changePage = (page: number) => {
+    if (refreshBusy || activeReloadLock.current) return;
     setApplied(current => ({ ...current, page }));
+  };
   const refresh = () => void dashboardQuery.refetch();
-  const reloadMonthlyBase = async (): Promise<LeadsReloadResult> => {
-    setReloadNotice(
-      "Lendo planilha-base e importando. Aguarde a confirmação; a base anterior permanece disponível."
-    );
-    try {
-      const previousImport = data?.source.importedAt;
-      let syncResult;
-      if (canManage) {
-        try {
-          syncResult = await syncBaseMutation.mutateAsync();
-        } catch (error) {
-          const code = reloadErrorCode(error);
-          setReloadNotice(
-            code === "FORBIDDEN"
-              ? "Apenas administradores podem importar a planilha-base. Nenhuma permissão foi alterada; os dados anteriores foram preservados."
-              : code === "PRECONDITION_FAILED"
-                ? "Conexão Google pendente: forneça GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON pelo cartão seguro e compartilhe a planilha-base como Leitor com o client_email dessa conta. A base armazenada foi preservada."
-                : "Não foi possível sincronizar a planilha-base. Os dados anteriores foram preservados; tente novamente."
-          );
-          throw error;
-        }
-      }
-      // Mark related views stale without immediately issuing duplicate requests.
-      await Promise.all([
-        queryUtils.leads.dashboard.invalidate(undefined, {
-          refetchType: "none",
-        }),
-        queryUtils.dispatch.leadControl.invalidate(undefined, {
-          refetchType: "none",
-        }),
-      ]);
-      const result = await dashboardQuery.refetch({ throwOnError: true });
-      if (result.error) throw result.error;
-      const fresh = result.data;
-      if (!fresh || fresh.status !== "READY")
-        throw new Error("Fonte de Leads não configurada.");
-      const summary: LeadsReloadResult = {
-        competence: fresh.pacing.competence,
-        total: fresh.summary.total,
-        monthlyTotal: fresh.pacing.current,
-        checkedAt: fresh.checkedAt ?? new Date().toISOString(),
-        importedAt: fresh.source.importedAt,
-        latestLeadDate: fresh.source.latestLeadDate ?? null,
-        requestedDateTo: fresh.period.dateTo,
-        newImport: fresh.source.importedAt !== previousImport,
-        ...(syncResult
-          ? {
-              sync: {
-                changed: syncResult.changed,
-                inserted: syncResult.inserted,
-                updated: syncResult.updated,
-                totalRows: syncResult.totalRows,
-              },
-            }
-          : {}),
-      };
-      setReloadNotice(describeLeadsReload(summary));
-      return summary;
-    } catch (error) {
-      const code = reloadErrorCode(error);
-      setReloadNotice(
-        code === "FORBIDDEN"
-          ? "Apenas administradores podem importar a planilha-base. Nenhuma permissão foi alterada; os dados anteriores foram preservados."
-          : code === "UNAUTHORIZED"
-            ? "Sua sessão expirou. Faça login novamente para atualizar os dados."
-            : code === "PRECONDITION_FAILED"
-              ? "Conexão Google pendente: forneça a conta de serviço pelo cartão seguro e compartilhe a planilha-base como Leitor com seu client_email. A base armazenada foi preservada."
-              : "Não foi possível atualizar a base. Os dados anteriores foram preservados; tente novamente."
+  const reloadMonthlyBase = (): Promise<LeadsReloadResult> => {
+    const activeReload = activeReloadLock.current;
+    if (activeReload) return activeReload;
+    const request = reloadSequence.current + 1;
+    reloadSequence.current = request;
+    const notify = (message: string) => {
+      if (mountedRef.current && request === reloadSequence.current)
+        setReloadNotice(message);
+    };
+    setRefreshBusy(true);
+    const run = async (): Promise<LeadsReloadResult> => {
+      notify(
+        canManage
+          ? "Lendo planilha-base e importando. Aguarde a confirmação; a base anterior permanece disponível."
+          : "Consultando os dados armazenados. Aguarde a confirmação dos indicadores."
       );
-      throw error;
-    }
+      const previousImport = data?.source.importedAt;
+      let syncResult: LeadsSyncResult | undefined;
+      let syncFailureNotice: string | null = null;
+      try {
+        if (canManage) {
+          try {
+            syncResult = await syncBaseMutation.mutateAsync();
+          } catch (error) {
+            const code = reloadErrorCode(error);
+            syncFailureNotice =
+              code === "FORBIDDEN"
+                ? "Apenas administradores podem importar a planilha-base. Nenhuma permissão foi alterada; os dados anteriores foram preservados."
+                : code === "PRECONDITION_FAILED"
+                  ? "Conexão Google pendente: forneça GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON pelo cartão seguro e compartilhe a planilha-base como Leitor com o client_email dessa conta. A base armazenada foi preservada."
+                  : "Não foi possível sincronizar a planilha-base. Os dados anteriores foram preservados; tente novamente.";
+            notify(syncFailureNotice);
+            throw error;
+          }
+        }
+        // Mark related views stale without immediately issuing duplicate requests.
+        await Promise.all([
+          queryUtils.leads.dashboard.invalidate(undefined, {
+            refetchType: "none",
+          }),
+          queryUtils.dispatch.leadControl.invalidate(undefined, {
+            refetchType: "none",
+          }),
+        ]);
+        const result = await dashboardQuery.refetch({ throwOnError: true });
+        if (result.error) throw result.error;
+        const fresh = result.data;
+        if (!fresh || fresh.status !== "READY")
+          throw new Error("Fonte de Leads não configurada.");
+        if (
+          syncResult &&
+          (fresh.source.importedAt !== syncResult.importedAt ||
+            fresh.source.totalRows !== syncResult.totalRows)
+        )
+          throw new LeadsReloadVersionNotConfirmedError();
+        const summary: LeadsReloadResult = {
+          competence: fresh.pacing.competence,
+          total: fresh.summary.total,
+          monthlyTotal: fresh.pacing.current,
+          checkedAt: fresh.checkedAt ?? new Date().toISOString(),
+          importedAt: fresh.source.importedAt,
+          latestLeadDate: fresh.source.latestLeadDate ?? null,
+          requestedDateTo: fresh.period.dateTo,
+          newImport: fresh.source.importedAt !== previousImport,
+          ...(syncResult
+            ? {
+                sync: {
+                  changed: syncResult.changed,
+                  inserted: syncResult.inserted,
+                  updated: syncResult.updated,
+                  totalRows: syncResult.totalRows,
+                },
+              }
+            : {}),
+        };
+        notify(describeLeadsReload(summary));
+        return summary;
+      } catch (error) {
+        if (syncResult) {
+          const confirmationError = new LeadsReloadVersionNotConfirmedError();
+          notify(confirmationError.message);
+          throw confirmationError;
+        }
+        const code = reloadErrorCode(error);
+        notify(
+          syncFailureNotice ??
+            (code === "FORBIDDEN"
+              ? "Apenas administradores podem importar a planilha-base. Nenhuma permissão foi alterada; os dados anteriores foram preservados."
+              : code === "UNAUTHORIZED"
+                ? "Sua sessão expirou. Faça login novamente para atualizar os dados."
+                : code === "PRECONDITION_FAILED"
+                  ? "Conexão Google pendente: forneça a conta de serviço pelo cartão seguro e compartilhe a planilha-base como Leitor com seu client_email. A base armazenada foi preservada."
+                  : "Não foi possível atualizar a base. Os dados anteriores foram preservados; tente novamente.")
+        );
+        throw error;
+      }
+    };
+    const promise = run().finally(() => {
+      if (!mountedRef.current || request !== reloadSequence.current) return;
+      activeReloadLock.current = null;
+      setRefreshBusy(false);
+    });
+    activeReloadLock.current = promise;
+    return promise;
   };
 
   if (!authenticated) return null;
@@ -2147,6 +2202,7 @@ export default function V2LeadsDashboard({
             <FilterBar
               draft={draft}
               setDraft={next => {
+                if (refreshBusy || activeReloadLock.current) return;
                 if (
                   next.dateFrom !== draft.dateFrom ||
                   next.dateTo !== draft.dateTo
@@ -2165,7 +2221,7 @@ export default function V2LeadsDashboard({
                 JSON.stringify(omitLeadCampaign({ ...applied, page: 1 }))
               }
               onPreset={choosePreset}
-              isFetching={dashboardQuery.isFetching}
+              isFetching={dashboardQuery.isFetching || refreshBusy}
               clientMode={clientMode}
             />
             {data.status === "NOT_CONFIGURED" ? (
@@ -2203,7 +2259,9 @@ export default function V2LeadsDashboard({
                       : data.source.latestLeadDate
                         ? "Fonte importada"
                         : "Fonte sem data disponível"}{" "}
-                    {dashboardQuery.isFetching ? "· atualizando" : ""}
+                    {dashboardQuery.isFetching || refreshBusy
+                      ? "· atualizando"
+                      : ""}
                   </div>
                 </div>
                 {activeTab === "Visão Geral" ? (
@@ -2220,6 +2278,7 @@ export default function V2LeadsDashboard({
                     data={data}
                     onPage={changePage}
                     clientMode={clientMode}
+                    isBusy={refreshBusy}
                   />
                 ) : null}
               </>
