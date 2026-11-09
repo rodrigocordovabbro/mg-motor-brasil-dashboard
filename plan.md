@@ -234,3 +234,7 @@ Ajuste final do Administrador: acrescentar à sua Visão Geral operacional um bl
 ### Fechamento da apresentação por perfil — 09/11/2026
 
 O novo Cliente recebe só a Visão Geral com curvas, Top 10 estados e os dois blocos comerciais agregados, sem tabela operacional por loja. O ADM - Cliente conserva o acompanhamento comercial e as demais leituras do antigo Cliente, em inglês e sem ganhar edição/importação/validação. A remoção anterior refere-se ao card de distribuição por concessionária, não à tabela de acompanhamento mantida para perfis completos. Administrador/BBRO seguem em português; o bloco de modelos só aparece no Administrador operacional. A conferência BBRO usa Check/-- apenas na apresentação e conserva a origem/auditoria. A migração registra o Administrador ativo como autor, não o cliente afetado, e usa um marcador idempotente; a publicação é uma operação separada.
+
+### Login sempre em inglês — 09/11/2026
+
+Toda a apresentação pré-autenticação usa inglês fixo: marca/captions, formulário, campos/placeholders, botão/estado ocupado, validação, erros e verificação de sessão, independentemente de papel ou idioma do dashboard. Preservar autenticação, credenciais, cookies, permissões e idioma pós-login já configurados. Mensagens de falha exibem texto seguro em inglês sem repassar texto bruto português do servidor; não criar contas, trocar senhas ou publicar automaticamente.

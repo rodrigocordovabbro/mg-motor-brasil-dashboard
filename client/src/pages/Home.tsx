@@ -59,6 +59,17 @@ function errorMessage(error: unknown) {
   return "Usuário ou senha inválidos. Confira os dados e tente novamente.";
 }
 
+function loginErrorMessage(error: unknown): string {
+  const detail = error as { data?: { code?: string }; code?: string } | null;
+  const code = detail?.data?.code ?? detail?.code;
+  if (code === "TOO_MANY_REQUESTS")
+    return "Too many sign-in attempts. Please wait and try again.";
+  if (code === "UNAUTHORIZED")
+    return "Incorrect username or password. Please try again.";
+  if (code === "BAD_REQUEST") return "Please check your username and password.";
+  return "Unable to sign in. Please try again.";
+}
+
 function BrandMark({
   inverted = false,
   locale = "pt-BR",
@@ -69,12 +80,16 @@ function BrandMark({
   return (
     <div
       className="flex shrink-0 items-center gap-3"
-      aria-label="MG Motor Brasil — Acompanhamento de resultados"
+      aria-label={
+        locale === "en"
+          ? "MG Motor Brasil — Performance dashboard"
+          : "MG Motor Brasil — Acompanhamento de resultados"
+      }
     >
       <span className="inline-flex h-12 w-[104px] shrink-0 items-center justify-center px-1 py-1.5">
         <img
           src={inverted ? "/logo-mg-horizontal.svg" : "/logo-mg-red.svg"}
-          alt="Logo MG Motor"
+          alt={locale === "en" ? "MG Motor logo" : "Logo MG Motor"}
           width={142}
           height={65}
           className="h-full w-full object-contain"
@@ -107,7 +122,7 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: () => Promise<void> }) {
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!username.trim() || !password) {
-      setError("Informe usuário e senha para continuar.");
+      setError("Enter your username and password to continue.");
       return;
     }
     setError(null);
@@ -116,37 +131,40 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: () => Promise<void> }) {
       setPassword("");
       await onLoggedIn();
     } catch (loginError) {
-      setError(errorMessage(loginError));
+      setError(loginErrorMessage(loginError));
     }
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#f0f1f4] px-4 py-10">
+    <div
+      lang="en"
+      className="flex min-h-screen items-center justify-center bg-[#f0f1f4] px-4 py-10"
+    >
       <div className="grid w-full max-w-4xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.1)] lg:grid-cols-[0.9fr_1.1fr]">
         <div className="hidden flex-col justify-between bg-[#141d2c] p-9 text-white lg:flex">
           <div>
-            <BrandMark inverted />
+            <BrandMark inverted locale="en" />
             <div className="mt-16 max-w-xs">
               <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-red-300">
-                Ambiente de homologação
+                Staging environment
               </p>
               <h1 className="mt-3 text-3xl font-bold leading-tight tracking-tight">
-                Acompanhamento de resultados.
+                Performance at a glance.
               </h1>
               <p className="mt-4 text-sm leading-6 text-slate-300">
-                Leads, metas, vendas e mídia em uma visão integrada da MG Motor
-                Brasil, com dados das fontes configuradas pela equipe.
+                Leads, goals, sales and media in one MG Motor Brasil dashboard,
+                using the data sources configured by the team.
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2 text-xs text-slate-400">
-            <ShieldCheck className="h-4 w-4 text-red-300" /> Sessão protegida ·
-            fonte importada
+            <ShieldCheck className="h-4 w-4 text-red-300" /> Secure session ·
+            imported data
           </div>
         </div>
         <div className="p-6 sm:p-10">
           <div className="lg:hidden">
-            <BrandMark />
+            <BrandMark locale="en" />
           </div>
           <div className="mx-auto max-w-sm lg:mx-0">
             <div className="mt-10 lg:mt-4">
@@ -157,12 +175,12 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: () => Promise<void> }) {
                 MG Motor Brasil
               </h2>
               <p className="mt-2 text-sm leading-6 text-slate-500">
-                Acompanhamento de resultados. Entre com seu usuário e senha.
+                Sign in with your username and password to view the dashboard.
               </p>
             </div>
             <form onSubmit={submit} className="mt-7 space-y-4" noValidate>
               <label className="block">
-                <span className="v2-label">Usuário</span>
+                <span className="v2-label">Username</span>
                 <input
                   name="username"
                   type="text"
@@ -170,11 +188,11 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: () => Promise<void> }) {
                   value={username}
                   onChange={event => setUsername(event.target.value)}
                   className="v2-input"
-                  placeholder="Digite seu usuário"
+                  placeholder="Enter your username"
                 />
               </label>
               <label className="block">
-                <span className="v2-label">Senha</span>
+                <span className="v2-label">Password</span>
                 <input
                   name="password"
                   type="password"
@@ -182,7 +200,7 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: () => Promise<void> }) {
                   value={password}
                   onChange={event => setPassword(event.target.value)}
                   className="v2-input"
-                  placeholder="Digite sua senha"
+                  placeholder="Enter your password"
                 />
               </label>
               {error ? (
@@ -199,14 +217,14 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: () => Promise<void> }) {
                 disabled={loginMutation.isPending}
                 className="mt-2 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#e2212d] text-sm font-bold text-white shadow-sm transition hover:bg-[#c91c28] disabled:cursor-wait disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
               >
-                {loginMutation.isPending ? "Entrando…" : "Entrar"}
+                {loginMutation.isPending ? "Signing in…" : "Sign in"}
                 {loginMutation.isPending ? null : (
                   <ArrowRight className="h-4 w-4" />
                 )}
               </button>
             </form>
             <p className="mt-7 text-center text-[11px] leading-5 text-slate-400">
-              Acesso restrito a usuários autorizados.
+              Access is restricted to authorized users.
             </p>
           </div>
         </div>
@@ -365,9 +383,12 @@ function Topbar({
 
 function LoadingScreen() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#f0f1f4]">
+    <div
+      lang="en"
+      className="flex min-h-screen items-center justify-center bg-[#f0f1f4]"
+    >
       <div className="rounded-2xl border border-slate-200 bg-white px-6 py-5 text-sm font-semibold text-slate-600 shadow-sm">
-        Verificando sessão…
+        Checking your session…
       </div>
     </div>
   );

@@ -328,3 +328,9 @@ Evidência: cinco regressões de cores e 15 de curvas/barras; oito regressões d
 - [x] Visão Geral operacional do Administrador inclui Leads por modelo do mesmo filtro aplicado, com volumes reais e aliases exatos já conciliados. Mostrar não identificado separado e indisponibilidade/vazio honestos. Não exibir para Cliente, ADM - Cliente, BBRO ou modo de apresentação, não criar nova aba nem alterar Leads, filtros ou despacho CRM.
 
 Evidência final: TypeScript, 430 testes/54 arquivos e build aprovados; revisão corrigiu o símbolo indefinido do resumo no novo Cliente. Autorização, rotas, Top 10 válido, inglês, blocos comerciais, Check/--, modelos administrativos e exportação por papel testados. Migração real de duas contas foi idempotente e confirmou senhas/status, Administrador/BBRO, Leads e checks/auditoria CRM preservados; sem criação de usuário ou nova carga. Leitura final manteve Registration 90/Retail 84. Health e manifesto HTTP 200 (seis rotas); scripts de aplicação e dados fora do Git. Salvamento no Manus separado de publicação automática desativada.
+
+## Login sempre em inglês — 09/11/2026
+
+- [x] Tela de login e verificação de sessão sempre em inglês em desktop/mobile, antes de identificar qualquer perfil; textos, campos/placeholders, acessibilidade, botão ocupado, validação e erros em inglês. Não expor erro bruto do servidor, usuário existente ou credenciais. Autenticação, cookie/sessão, envio do usuário/senha, permissões, idioma pós-login e dados intactos; salvar no Manus sem publicação automática.
+
+Evidência: seis testes novos de login/inglês/validação/erros/envio/pending e 16 regressões de navegação/perfis/logout aprovados; TypeScript incluindo o novo teste, build, diff-check e health/manifesto HTTP 200. Mocks apenas, sem autenticação real ou alteração de contas/dados; publicação separada.
