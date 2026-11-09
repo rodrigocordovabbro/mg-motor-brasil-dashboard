@@ -1,7 +1,9 @@
 import { useMemo, useState, type ReactNode } from "react";
 import {
+  Bar,
   CartesianGrid,
   ComposedChart,
+  LabelList,
   Line,
   ReferenceLine,
   ResponsiveContainer,
@@ -32,6 +34,44 @@ type ChartRow = {
   date: string;
   [key: string]: string | number | null;
 };
+
+/** Display-only transformation: keep accumulated bars and curves comparable. */
+export function buildHistoricalPaceChartRows(
+  data: HistoricalLeadPace,
+  scenario: HistoricalLeadPaceScenario,
+  showHistorical = false
+): ChartRow[] {
+  return scenario.points.map((point, index) => {
+    const available =
+      data.lastAvailableDate !== null &&
+      point.date <= data.lastAvailableDate &&
+      point.date <= data.asOfDate;
+    const real = available ? point.real : null;
+    const previous =
+      point.day === 1
+        ? 0
+        : index > 0 && scenario.points[index - 1].day === point.day - 1
+          ? scenario.points[index - 1].real
+          : null;
+    const row: ChartRow = {
+      day: point.day,
+      date: point.date,
+      real,
+      plan: point.plan,
+      projection: point.date >= data.asOfDate ? point.projection : null,
+      dailyReal: real !== null && previous !== null ? real - previous : null,
+      gapToPlan:
+        real !== null && point.plan !== null ? real - point.plan : null,
+    };
+    if (showHistorical)
+      data.reference.forEach((ref, i) => {
+        row[`historical_${i}`] = ref.available
+          ? (ref.cumulative[point.day - 1] ?? null)
+          : null;
+      });
+    return row;
+  });
+}
 
 const unit = (v: number | null | undefined) =>
   v == null ? "N/D" : nf.format(v);
@@ -96,10 +136,16 @@ function TooltipContent({
   label,
 }: {
   active?: boolean;
-  payload?: Array<{ name?: string; value?: unknown; color?: string }>;
+  payload?: Array<{
+    name?: string;
+    value?: unknown;
+    color?: string;
+    payload?: ChartRow;
+  }>;
   label?: unknown;
 }) {
   if (!active || !payload?.length) return null;
+  const row = payload[0]?.payload;
   return (
     <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-lg">
       <p className="font-semibold text-slate-700">Dia {String(label)}</p>
@@ -109,9 +155,28 @@ function TooltipContent({
           className="mt-1"
           style={{ color: item.color }}
         >
-          {item.name}: <strong>{unit(Number(item.value))} Leads</strong>
+          {item.name}:{" "}
+          <strong>
+            {unit(typeof item.value === "number" ? item.value : null)} Leads
+          </strong>
         </p>
       ))}
+      {row && typeof row.real === "number" ? (
+        <div className="mt-2 border-t border-slate-100 pt-2 text-slate-600">
+          <p>
+            Leads do dia:{" "}
+            <strong>
+              {unit(typeof row.dailyReal === "number" ? row.dailyReal : null)}
+            </strong>
+          </p>
+          <p>
+            Diferença acumulada vs. plano:{" "}
+            <strong>
+              {signed(typeof row.gapToPlan === "number" ? row.gapToPlan : null)}
+            </strong>
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -163,31 +228,18 @@ export function V2HistoricalLeadPaceCard({ data, actions }: Props) {
         cumulative: [],
       }));
   const rows = useMemo<ChartRow[]>(
-    () =>
-      scenario.points.map(point => {
-        const row: ChartRow = {
-          day: point.day,
-          date: point.date,
-          real: asOf == null || point.day <= asOf ? point.real : null,
-          plan: point.plan,
-          projection:
-            asOf == null || point.day >= asOf ? point.projection : null,
-        };
-        if (showHistorical)
-          data.reference.forEach((ref, i) => {
-            row[`historical_${i}`] = ref.available
-              ? (ref.cumulative[point.day - 1] ?? null)
-              : null;
-          });
-        return row;
-      }),
-    [asOf, data.reference, scenario.points, showHistorical]
+    () => buildHistoricalPaceChartRows(data, scenario, showHistorical),
+    [data, scenario, showHistorical]
   );
   const values = rows.flatMap(row =>
     Object.entries(row)
       .filter(
         ([key, value]) =>
-          key !== "day" && key !== "date" && typeof value === "number"
+          (key === "real" ||
+            key === "plan" ||
+            key === "projection" ||
+            key.startsWith("historical_")) &&
+          typeof value === "number"
       )
       .map(([, value]) => value as number)
   );
@@ -290,8 +342,8 @@ export function V2HistoricalLeadPaceCard({ data, actions }: Props) {
             Leads Plan — ritmo e projeção
           </h2>
           <p className="mt-1 max-w-3xl text-sm leading-5 text-slate-500">
-            Real acumulado desde o dia 1, plano histórico e estimativa de
-            fechamento da competência.
+            Barras do realizado acumulado desde o dia 1, comparadas ao plano
+            histórico e à estimativa de fechamento da competência.
           </p>
         </div>
         {actions ? (
@@ -389,11 +441,12 @@ export function V2HistoricalLeadPaceCard({ data, actions }: Props) {
           <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 className="font-bold text-slate-900">
-                Curva acumulada mensal
+                Realizado em barras × plano histórico
               </h3>
               <p className="text-xs text-slate-500">
-                Plano: {scenario.label || windowLabel}. Real sólido até o corte;
-                projeção tracejada a partir do último real.
+                Plano: {scenario.label || windowLabel}. Cada barra é o total
+                acumulado até aquele dia; compare sua altura à linha azul. A
+                projeção tracejada começa no último realizado.
               </p>
               <p className="mt-1 text-[11px] text-slate-400">
                 Corte da fonte:{" "}
@@ -410,125 +463,150 @@ export function V2HistoricalLeadPaceCard({ data, actions }: Props) {
             </label>
           </div>
           <div
-            className="h-[420px] w-full min-w-0 p-2 sm:p-4"
+            className="h-[420px] w-full min-w-0 overflow-x-auto p-2 focus-visible:ring-2 focus-visible:ring-red-200 sm:p-4"
             role="img"
-            aria-label="Curva acumulada de Leads, plano e projeção"
+            tabIndex={0}
+            aria-label="Barras de Leads realizados acumulados comparadas ao plano histórico e à projeção de fechamento"
           >
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart
-                data={rows}
-                margin={{ top: 12, right: 18, bottom: 8, left: 4 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis
-                  dataKey="day"
-                  type="number"
-                  domain={[1, data.daysInMonth]}
-                  allowDecimals={false}
-                  tick={{ fontSize: 11 }}
-                  label={{
-                    value: "Dia do mês",
-                    position: "insideBottom",
-                    offset: -2,
-                  }}
-                />
-                <YAxis
-                  domain={[0, yMax]}
-                  tick={{ fontSize: 11 }}
-                  tickFormatter={value => nf.format(Number(value))}
-                  width={58}
-                  label={{
-                    value: "Leads acumulados",
-                    angle: -90,
-                    position: "insideLeft",
-                  }}
-                />
-                <Tooltip content={<TooltipContent />} />
-                {cutoff != null ? (
-                  <ReferenceLine
-                    x={cutoff}
-                    stroke="#64748b"
-                    strokeDasharray="4 4"
-                    label={{ value: "Corte da fonte", position: "insideTop" }}
-                  />
-                ) : null}
-                {comparable ? (
-                  <ReferenceLine
-                    y={goal}
-                    stroke="#0f172a"
-                    strokeDasharray="6 4"
+            <div
+              className="h-full w-full"
+              style={{ minWidth: data.daysInMonth * 36 }}
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart
+                  data={rows}
+                  margin={{ top: 28, right: 18, bottom: 8, left: 4 }}
+                  barCategoryGap="32%"
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis
+                    dataKey="day"
+                    type="category"
+                    interval="preserveStartEnd"
+                    minTickGap={12}
+                    tick={{ fontSize: 11 }}
                     label={{
-                      value: `Meta ${unit(goal)}`,
-                      position: "insideTopRight",
+                      value: "Dia do mês",
+                      position: "insideBottom",
+                      offset: -2,
                     }}
                   />
-                ) : null}
-                <Line
-                  type="monotone"
-                  dataKey="plan"
-                  name="Plano"
-                  stroke={BLUE}
-                  strokeWidth={3}
-                  dot={false}
-                  connectNulls={false}
-                  isAnimationActive={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="real"
-                  name="Real"
-                  stroke={RED}
-                  strokeWidth={3}
-                  dot={false}
-                  connectNulls={false}
-                  isAnimationActive={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="projection"
-                  name="Projeção"
-                  stroke={GREEN}
-                  strokeWidth={3}
-                  strokeDasharray="7 5"
-                  dot={false}
-                  connectNulls={false}
-                  isAnimationActive={false}
-                />
-                {showHistorical
-                  ? data.reference.map((ref, i) =>
-                      ref.available && ref.cumulative.length ? (
-                        <Line
-                          key={ref.competence}
-                          type="monotone"
-                          dataKey={`historical_${i}`}
-                          name={month(ref.competence)}
-                          stroke={MUTED}
-                          strokeWidth={1.5}
-                          dot={false}
-                          connectNulls={false}
-                          isAnimationActive={false}
-                        />
-                      ) : null
-                    )
-                  : null}
-              </ComposedChart>
-            </ResponsiveContainer>
+                  <YAxis
+                    domain={[0, yMax]}
+                    tick={{ fontSize: 11 }}
+                    tickFormatter={value => nf.format(Number(value))}
+                    width={58}
+                    label={{
+                      value: "Leads acumulados",
+                      angle: -90,
+                      position: "insideLeft",
+                    }}
+                  />
+                  <Tooltip content={<TooltipContent />} />
+                  {cutoff != null ? (
+                    <ReferenceLine
+                      x={cutoff}
+                      stroke="#64748b"
+                      strokeDasharray="4 4"
+                      label={{ value: "Corte da fonte", position: "insideTop" }}
+                    />
+                  ) : null}
+                  {comparable ? (
+                    <ReferenceLine
+                      y={goal}
+                      stroke="#0f172a"
+                      strokeDasharray="6 4"
+                      label={{
+                        value: `Meta ${unit(goal)}`,
+                        position: "insideTopRight",
+                      }}
+                    />
+                  ) : null}
+                  <Bar
+                    dataKey="real"
+                    name="Realizado acumulado"
+                    fill={RED}
+                    fillOpacity={0.82}
+                    maxBarSize={28}
+                    radius={[4, 4, 0, 0]}
+                    isAnimationActive={false}
+                  >
+                    <LabelList
+                      dataKey="real"
+                      position="top"
+                      offset={8}
+                      fill="#334155"
+                      fontSize={11}
+                      fontWeight={700}
+                      stroke="#ffffff"
+                      strokeWidth={3}
+                      paintOrder="stroke"
+                      formatter={(value: unknown) =>
+                        typeof value === "number" ? unit(value) : ""
+                      }
+                    />
+                  </Bar>
+                  <Line
+                    type="monotone"
+                    dataKey="plan"
+                    name="Plano histórico"
+                    stroke={BLUE}
+                    strokeWidth={3}
+                    dot={false}
+                    connectNulls={false}
+                    isAnimationActive={false}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="projection"
+                    name="Projeção de fechamento"
+                    stroke={GREEN}
+                    strokeWidth={3}
+                    strokeDasharray="7 5"
+                    dot={false}
+                    connectNulls={false}
+                    isAnimationActive={false}
+                  />
+                  {showHistorical
+                    ? data.reference.map((ref, i) =>
+                        ref.available && ref.cumulative.length ? (
+                          <Line
+                            key={ref.competence}
+                            type="monotone"
+                            dataKey={`historical_${i}`}
+                            name={month(ref.competence)}
+                            stroke={MUTED}
+                            strokeWidth={1.5}
+                            dot={false}
+                            connectNulls={false}
+                            isAnimationActive={false}
+                          />
+                        ) : null
+                      )
+                    : null}
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
           </div>
+          <p className="px-4 pb-2 text-[11px] text-slate-500 xl:hidden">
+            Deslize o gráfico na horizontal para ver todo o mês sem sobrepor os
+            valores.
+          </p>
           <div
             className="flex flex-wrap gap-x-5 gap-y-2 border-t border-slate-100 px-4 py-3 text-xs text-slate-600"
             aria-label="Legenda do gráfico"
           >
             <span>
               <i className="mr-1 inline-block h-2 w-5 rounded bg-[#2563eb]" />
-              Plano
+              Plano histórico
             </span>
             <span>
-              <i className="mr-1 inline-block h-2 w-5 rounded bg-[#e2212d]" />
-              Real
+              <i className="mr-1 inline-block h-3 w-2 rounded-t bg-[#e2212d]" />
+              Realizado acumulado (barras)
             </span>
             <span>
               <i className="mr-1 inline-block h-0.5 w-5 border-t-2 border-dashed border-[#16a34a] align-middle" />
-              Projeção
+              Projeção de fechamento (estimativa)
             </span>
             {showHistorical
               ? data.reference
