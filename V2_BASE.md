@@ -283,3 +283,9 @@ Revisão somente leitura apontou diferença potencial entre data física e data 
 Conferência real somente leitura (01–08/11/2026): 4.068 Leads coincidem com o dashboard, mix, série diária e todas as matrizes; MG 4=1.753, MG Urban=1.458, MG S5=579, MG Cyberster=229 e IM 6=49. Recorte MG 4/Meta=865 coincide nos dois caminhos. Cobertura canônica até 08/11 e janela anterior 24–31/10 disponível; checks de invariantes aprovados. Valores são evidência de leitura, não números fixados no produto. Script/log ficam fora do Git e não contêm registros exportados.
 
 Validação: TypeScript, 452 testes/58 arquivos e build aprovados; health/manifesto HTTP 200 (sete rotas) e API sem login HTTP 401. Login inglês permanece validado; alterações salvas no repositório Manus separadamente de publicação, auto_publish=false. GitHub permanece pendente: destino autorizado oferece somente READ à conta conectada; nenhuma tentativa de contornar acesso, force push, alteração de main, troca de repositório ou envio de dados foi feita.
+
+### Conversion ao lado de Retail — 09/11/2026
+
+Resumo Sales/Vendas agora usa quatro cards no desktop, na ordem Sales goal/Meta de vendas → MTD Registration → Retail → Conversion/Conversão; a grade adapta para duas/uma coluna em telas menores. O mesmo componente Metric preserva valor percentual, referência Retail ÷ Leads e avisos de ausência/recorte não comparável, sem mudar cálculo ou dados. Oito testes de resumo e 14 de apresentação/conversão aprovados (22), TypeScript, build, health e manifesto aprovados. Sem sincronização, alteração de metas/vendas/Leads/checks/contas/V1 ou publicação.
+
+Após o usuário informar conta reconectada, foi aberto o fluxo nativo de criação GitHub com confirmação de novo destino; a confirmação foi cancelada pelo usuário. GET config/git/transfer confirmou ausência de transferência. Repositório Manus permanece canônico; nenhuma criação/transferência/push adicional ou reabertura automática foi realizada.

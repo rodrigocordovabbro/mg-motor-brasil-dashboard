@@ -254,4 +254,35 @@ describe("V2CommercialSummary", () => {
     editorState.props.onSaved();
     expect(onUpdated).toHaveBeenCalledTimes(1);
   });
+
+  it.each(["pt-BR", "en"] as const)(
+    "mantém conversão ao lado de Retail na mesma grade em %s",
+    locale => {
+      const view = V2CommercialSummary({
+        performance: performanceFixture(),
+        competence: "2026-11",
+        canManage: false,
+        onUpdated: vi.fn(),
+        locale,
+      });
+      const sales = view.props.children[1];
+      const grid = sales.props.children[1];
+      expect(grid.props.className).toContain("sm:grid-cols-2");
+      expect(grid.props.className).toContain("lg:grid-cols-4");
+      expect(
+        grid.props.children.map((child: any) => child.props.testId)
+      ).toEqual([
+        "v2-commercial-summary-sales-goal",
+        "v2-commercial-summary-registration",
+        "v2-commercial-summary-retail",
+        "v2-commercial-summary-conversion",
+      ]);
+      const html = renderSummary(performanceFixture(), { locale });
+      expect(metricValue(html, "v2-commercial-summary-registration")).toBe(
+        "90"
+      );
+      expect(metricValue(html, "v2-commercial-summary-retail")).toBe("84");
+      expect(html).toContain(locale === "en" ? "Conversion" : "Conversão");
+    }
+  );
 });

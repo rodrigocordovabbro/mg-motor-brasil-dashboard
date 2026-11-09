@@ -248,7 +248,7 @@ export function V2CommercialSummary({
         data-testid="v2-commercial-summary-sales"
       >
         <h2 className="text-sm font-bold text-teal-950">{labels.sales}</h2>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Metric
             testId="v2-commercial-summary-sales-goal"
             label={labels.salesGoal}
@@ -279,26 +279,16 @@ export function V2CommercialSummary({
             value={displayNumber(retail?.value, globalValuesAvailable)}
             detail={retailDetail}
           />
-        </div>
-
-        <div
-          className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-xl border border-teal-200/80 bg-white/70 px-3 py-2.5"
-          data-testid="v2-commercial-summary-conversion"
-        >
-          <span className="text-[10px] font-bold uppercase tracking-[0.13em] text-teal-800">
-            {labels.conversion}
-          </span>
-          <strong
-            className="text-sm font-bold text-slate-950"
-            data-testid="v2-commercial-summary-conversion-value"
-          >
-            {conversionValue === labels.notAvailable
-              ? labels.notAvailable
-              : percentFormat(totals.conversionRate!, locale)}
-          </strong>
-          <span className="basis-full text-[11px] leading-4 text-slate-500 sm:basis-auto">
-            {conversionDetail}
-          </span>
+          <Metric
+            testId="v2-commercial-summary-conversion"
+            label={labels.conversion}
+            value={
+              conversionValue === labels.notAvailable
+                ? labels.notAvailable
+                : percentFormat(totals.conversionRate!, locale)
+            }
+            detail={conversionDetail}
+          />
         </div>
       </div>
     </section>

@@ -348,3 +348,9 @@ Evidência: 452 testes/58 arquivos, TypeScript e build aprovados. Revisão somen
 - [ ] Atualizar digocordova83-cyber/v2-mgmotor, somente dashboard-v2, com todo o código atual sanitizado e após validação. Preservar mudanças remotas, sem force push/main ou troca do repositório Manus; não enviar dados/segredos/planilhas. Verificar referência enviada ou informar bloqueio exato de permissão/conexão, sem contornar restrição.
 
 Bloqueio verificado: integração ativa autenticada como rodrigocordovabbro; viewerPermission=READ no repositório digocordova83-cyber/v2-mgmotor. Não há escrita disponível, portanto não houve push ao GitHub, tentativa de contornar, troca de credencial/repositório ou alteração da main. Código completo continua preservado no Manus; cópia pendente até concessão/conexão autorizada com escrita.
+
+## Conversion ao lado de Retail — 09/11/2026
+
+- [x] Conversion/Conversão é o quarto indicador do bloco Sales/Vendas, imediatamente ao lado de Retail, na mesma grade de Sales goal → MTD Registration → Retail → Conversion em desktop; responsivo em telas menores. Mesmos valores/cálculo de Retail ÷ Leads, fontes, nomes PT/EN e N/A para ausência/recorte não comparável. Não sincronizar ou alterar Leads, metas, vendas, CRM, contas ou V1; salvar no Manus sem publicação ou transferência GitHub cancelada.
+
+Evidência: oito regressões do resumo (duas novas de ordem/grid PT/EN) e 14 regressões de apresentação/conversão aprovadas, total 22; TypeScript, build e diff-check aprovados; health/manifesto HTTP 200. Alteração limitada ao layout e testes/documentação, sem chamadas de dados ou contas. Criação GitHub cancelada pelo usuário; transferência nula confirmada, sem reabertura ou envio de código.
