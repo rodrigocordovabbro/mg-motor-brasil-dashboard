@@ -311,3 +311,127 @@ describe("manual source provenance", () => {
     expect(html).not.toContain("Origem: Arquivo");
   });
 });
+
+describe("manual and lead status colors", () => {
+  const renderFixture = () =>
+    renderToStaticMarkup(
+      React.createElement(TestControl, {
+        authenticated: true,
+        embedded: true,
+        clientMode: false,
+        canManage: true,
+      })
+    );
+
+  it("keeps a newer false audit neutral even when the imported source says OK", () => {
+    const report = fixture();
+    const cell = report.rows[0].cells[0];
+    cell.sourceManualImportedAt = "2026-11-05T12:00:00Z";
+    cell.validation = {
+      isOk: false,
+      version: 8,
+      reviewerLabel: "Wini",
+      updatedBy: "auditor-new",
+      updatedAt: "2026-11-05T12:01:00Z",
+    };
+    state.report = report;
+
+    expect(currentManualValidation(cell)).toBe(cell.validation);
+    expect(effectiveManualOk(cell)).toBe(false);
+    const html = renderFixture();
+    expect(html).toContain('aria-label="Manual Pendente');
+    expect(html).not.toContain('style="background-color:#e8f4ef');
+    expect(html).not.toContain('style="background-color:#17624f');
+  });
+
+  it("keeps a stale true audit neutral when a newer source is pending", () => {
+    const report = fixture();
+    const cell = report.rows[0].cells[0];
+    cell.sourceManual = "";
+    cell.sourceManualImportedAt = "2026-11-05T12:00:00Z";
+    cell.validation = {
+      isOk: true,
+      version: 8,
+      reviewerLabel: "Wini",
+      updatedBy: "auditor-old",
+      updatedAt: "2026-11-04T09:00:00Z",
+    };
+    state.report = report;
+
+    expect(currentManualValidation(cell)).toBeNull();
+    expect(effectiveManualOk(cell)).toBe(false);
+    const html = renderFixture();
+    expect(html).toContain('aria-label="Manual Pendente');
+    expect(html).not.toContain('style="background-color:#e8f4ef');
+    expect(html).not.toContain('style="background-color:#17624f');
+  });
+
+  it("marks source OK and current audited OK in green without using SYONET", () => {
+    const sourceOk = fixture();
+    sourceOk.rows[0].cells[0].sourceManual = "OK";
+    sourceOk.rows[0].cells[0].syonet = "NÃO";
+    sourceOk.rows[0].cells[0].validation = null;
+    state.report = sourceOk;
+    let html = renderFixture();
+    expect(html).toContain('aria-label="Manual OK');
+    expect(html).toContain('style="background-color:#e8f4ef;color:#145645"');
+
+    const auditedOk = fixture();
+    auditedOk.rows[0].cells[0].sourceManual = "";
+    auditedOk.rows[0].cells[0].validation = {
+      isOk: true,
+      version: 9,
+      reviewerLabel: "Wini",
+      updatedBy: "auditor-current",
+      updatedAt: "2026-11-05T12:01:00Z",
+    };
+    state.report = auditedOk;
+    html = renderFixture();
+    expect(html).toContain('aria-label="Manual OK');
+    expect(html).toContain('style="background-color:#e8f4ef;color:#145645"');
+  });
+
+  it("does not derive Manual OK from SYONET alone", () => {
+    const report = fixture();
+    const cell = report.rows[0].cells[0];
+    cell.sourceManual = "";
+    cell.syonet = "OK";
+    cell.validation = null;
+    state.report = report;
+
+    expect(effectiveManualOk(cell)).toBe(false);
+    const html = renderFixture();
+    expect(html).toContain('aria-label="Manual Pendente');
+    expect(html).not.toContain('style="background-color:#e8f4ef');
+    expect(html).not.toContain('style="background-color:#17624f');
+  });
+
+  it("shows a known zero volume as zero with the high-contrast OK treatment", () => {
+    const report = fixture();
+    const cell = report.rows[0].cells[0];
+    cell.volume = 0;
+    cell.sourceManual = "OK";
+    cell.validation = null;
+    state.report = report;
+
+    const html = renderFixture();
+    expect(html).toContain("OK registrado · Vol. Lead · 0");
+    expect(html).toContain('style="background-color:#17624f"');
+    expect(html).toContain(">0</span>");
+    expect(html).not.toContain("Volume indisponível na base de Leads");
+  });
+
+  it("keeps a null volume neutral while preserving Manual OK", () => {
+    const report = fixture();
+    const cell = report.rows[0].cells[0];
+    cell.volume = null;
+    cell.sourceManual = "OK";
+    cell.validation = null;
+    state.report = report;
+
+    const html = renderFixture();
+    expect(html).toContain('style="background-color:#e8f4ef;color:#145645"');
+    expect(html).toContain("Volume indisponível na base de Leads");
+    expect(html).not.toContain('style="background-color:#17624f"');
+  });
+});

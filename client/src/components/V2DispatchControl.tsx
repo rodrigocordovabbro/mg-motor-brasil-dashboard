@@ -30,6 +30,9 @@ import {
 const EXCEL_BLUE = "#1F3864";
 const GROUP_GRAY = "#D9D9D9";
 const DATE_GRAY = "#F2F2F2";
+const MANUAL_OK_BACKGROUND = "#e8f4ef";
+const MANUAL_OK_TEXT = "#145645";
+const VOLUME_OK_BACKGROUND = "#17624f";
 
 const STICKY_COLUMNS = [
   { width: 370, left: 0 },
@@ -313,16 +316,27 @@ function ManualCell({
 
   return (
     <div className="flex min-w-0 items-center justify-between gap-1">
-      <label className="flex min-w-0 items-center gap-1.5" title={statusTitle}>
+      <label
+        className={`flex min-w-0 items-center gap-1.5 ${
+          isOk ? "text-emerald-800" : "text-slate-700"
+        }`}
+        title={statusTitle}
+      >
         <input
           type="checkbox"
           checked={isOk}
           onChange={event => onToggle(cell, event.target.checked)}
           disabled={!canEditManual || saving || cell.id < 1}
           aria-label={`Manual ${statusLabel} · ${storeName} · ${cell.date}`}
-          className="h-5 w-5 shrink-0 accent-[#1F3864] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
+          className={`h-5 w-5 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 ${
+            isOk ? "accent-emerald-700" : "accent-[#1F3864]"
+          }`}
         />
-        <span className="min-w-0 whitespace-nowrap text-xs font-semibold text-slate-700">
+        <span
+          className={`min-w-0 whitespace-nowrap text-xs font-semibold ${
+            isOk ? "text-emerald-800" : "text-slate-700"
+          }`}
+        >
           {statusLabel}
         </span>
       </label>
@@ -696,6 +710,8 @@ function DispatchTable({
                           </td>,
                         ];
                       }
+                      const isOk = manualIsOk(cell);
+                      const volumeIsOk = isOk && cell.volume !== null;
                       return [
                         <td
                           key={`${cell.id}-syonet`}
@@ -707,7 +723,17 @@ function DispatchTable({
                         </td>,
                         <td
                           key={`${cell.id}-manual`}
-                          className="border-b border-r border-slate-200 px-2 py-2.5 text-slate-700"
+                          className={`border-b border-r border-slate-200 px-2 py-2.5 ${
+                            isOk ? "border-emerald-200" : "text-slate-700"
+                          }`}
+                          style={
+                            isOk
+                              ? {
+                                  backgroundColor: MANUAL_OK_BACKGROUND,
+                                  color: MANUAL_OK_TEXT,
+                                }
+                              : undefined
+                          }
                         >
                           <ManualCell
                             cell={cell}
@@ -726,14 +752,33 @@ function DispatchTable({
                         </td>,
                         <td
                           key={`${cell.id}-volume`}
-                          className="border-b border-r border-slate-200 px-2 py-2.5 text-center text-[11px] font-semibold text-slate-700"
+                          className={`border-b border-r border-slate-200 px-2 py-2.5 text-center text-[11px] font-semibold ${
+                            volumeIsOk ? "text-white" : "text-slate-700"
+                          }`}
+                          style={
+                            volumeIsOk
+                              ? { backgroundColor: VOLUME_OK_BACKGROUND }
+                              : undefined
+                          }
                           title={
-                            cell.volume === null
-                              ? "Volume indisponível na base de Leads"
-                              : `Vol. Lead · ${cell.volume}`
+                            volumeIsOk
+                              ? `OK registrado · Vol. Lead · ${numberFormat(cell.volume)}`
+                              : cell.volume === null
+                                ? "Volume indisponível na base de Leads"
+                                : `Vol. Lead · ${cell.volume}`
                           }
                         >
-                          {numberFormat(cell.volume)}
+                          {volumeIsOk ? (
+                            <span className="inline-flex items-center justify-center gap-1">
+                              <Check
+                                className="h-3.5 w-3.5 shrink-0"
+                                aria-hidden="true"
+                              />
+                              <span>{numberFormat(cell.volume)}</span>
+                            </span>
+                          ) : (
+                            numberFormat(cell.volume)
+                          )}
                         </td>,
                       ];
                     })}
@@ -799,6 +844,10 @@ function DispatchTable({
           quantidade de registros criados no dia, não volume de envio ao CRM.
           SYONET e Vol. Lead são somente leitura; apenas o check Manual grava
           uma validação.
+          <p className="mt-1">
+            Verde: Manual OK registrado. Vol. Lead é quantidade criada, não
+            comprovante de entrega
+          </p>
         </div>
       </div>
     </div>
