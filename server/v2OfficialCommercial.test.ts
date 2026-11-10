@@ -158,6 +158,83 @@ function dashboard(): V2Dashboard {
 }
 
 describe("official commercial performance", () => {
+  it("never copies weekly snapshots or raw mappings into the unmapped public contract", () => {
+    const source = row("retail:unknown", "Unmapped source", 4, [], null);
+    source.weeklySales = {
+      sourceSheet: "WEEKLY_RET",
+      sourceLabel: source.sourceLabel,
+      values: [2, 4, null, null, null, null],
+    };
+    const performance = buildOfficialCommercialPerformance(
+      dashboard(),
+      { ...filters, channel: "Meta" },
+      new Map([["sales", stored("sales", [source], 4, filters.dateTo)]])
+    );
+    const result = performance.unmapped!.find(
+      row => row.sourceLabel === "Unmapped source"
+    )!;
+    expect(result).toEqual({
+      kind: "sales",
+      key: "retail:unknown",
+      sourceLabel: "Unmapped source",
+      state: null,
+      value: 4,
+    });
+    expect(result).not.toHaveProperty("weeklySales");
+    expect(result).not.toHaveProperty("rawDealers");
+  });
+
+  it("keeps Retail weeks on unit rows, computes dealer ratios independently of the general Registration label date, and hides ratios outside the matching cut", () => {
+    const source = row(
+      "retail:unit",
+      "INDIANA SALVADOR",
+      2,
+      ["Inglaterra Salvador"],
+      "BA"
+    );
+    source.weeklySales = {
+      sourceLabel: "INDIANA SALVADOR",
+      sourceSheet: "WEEKLY_RET",
+      values: [1, 2, null, null, null, null],
+    };
+    const snapshot = stored("sales", [source], 9, filters.dateTo);
+    snapshot.registrationMtd = 12;
+    snapshot.registrationAsOf = "2026-11-05";
+    snapshot.retailMtd = 9;
+    const latest = new Map([["sales" as const, snapshot]]);
+    const matched = buildOfficialCommercialPerformance(
+      dashboard(),
+      filters,
+      latest
+    );
+    const dealer = matched.rows.find(
+      row => row.dealer === "Inglaterra Salvador"
+    )!;
+    expect(dealer.sales).toBe(2);
+    expect(dealer.conversionRate).toBe(0.5);
+    expect(dealer.leadsPerSale).toBe(2);
+    expect(dealer.weeklySales?.[0].values).toEqual([
+      1,
+      2,
+      null,
+      null,
+      null,
+      null,
+    ]);
+    const filtered = buildOfficialCommercialPerformance(
+      dashboard(),
+      { ...filters, channel: "Meta" },
+      latest
+    );
+    const hidden = filtered.rows.find(
+      row => row.dealer === "Inglaterra Salvador"
+    )!;
+    expect(hidden.sales).toBeNull();
+    expect(hidden.conversionRate).toBeNull();
+    expect(hidden.leadsPerSale).toBeNull();
+    expect(hidden.weeklySales).toBeUndefined();
+  });
+
   it("builds all official units, canonicalizes aliases, preserves unknown leads, and uses registry state", () => {
     const performance = buildOfficialCommercialPerformance(
       dashboard(),

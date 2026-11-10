@@ -123,7 +123,7 @@ O startup do container não executa migrations nem imports. O banco deve estar a
 As fontes são deliberadamente separadas para não misturar um valor geral com uma distribuição por dealer:
 
 - **Leads:** a sincronização server-side lê um snapshot da fonte Google autorizada, valida as abas permitidas, normaliza as linhas e grava em transação. O código compara hashes, atualiza somente ocorrências alteradas e mantém histórico de alterações, ator e proveniência. Uma falha faz rollback e preserva a base anterior.
-- **Metas e vendas comerciais:** o parser aceita workbooks XLSX distintos para metas de Leads, metas de vendas e vendas. Para vendas, `WEEKLY_REG` fornece o snapshot da semana selecionada; `DAILY_FUP` pode fornecer os snapshots gerais MTD Registration e Retail. Esses totais gerais não são rateados nem convertidos em linhas de dealer.
+- **Metas e vendas comerciais:** o parser aceita workbooks XLSX distintos para metas de Leads, metas de vendas e vendas. Para vendas por dealer, prioriza `WEEKLY_RET`, preserva W1–W6 e usa W4 como referência mensal quando preenchida, sem somar snapshots cumulativos. `WEEKLY_REG` é fallback legado de emplacamentos somente quando `WEEKLY_RET` não existe. `DAILY_FUP` fornece separadamente MTD Registration e Retail gerais, sem rateio ou conversão em linhas de dealer.
 - **Dispatch/CRM:** o workbook de controle é uma fonte operacional separada, com linhas, células, dias, imports e checks próprios. A validação manual registra o papel autorizado e não deve ser confundida com a fonte bruta de Leads.
 - **Banco e metas:** metas manuais ou importadas, estados de importação e auditorias ficam separados da população real de Leads. Nenhum valor corrente é fixado neste documento.
 

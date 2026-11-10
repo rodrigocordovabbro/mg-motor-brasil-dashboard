@@ -1,4 +1,4 @@
-import type { V2Dashboard, V2Filters } from "./v2Types";
+import type { V2Dashboard, V2Filters, V2WeeklySales } from "./v2Types";
 import type { UserRole } from "./accountRoles";
 
 export const COMMERCIAL_UPLOAD_KINDS = [
@@ -20,6 +20,8 @@ export type CommercialSourceRow = {
   rawDealers: string[];
   /** Raw targets retained when an immutable mapping-only revision canonicalizes them. */
   originalRawDealers?: string[];
+  /** Original W1–W6 Retail snapshots, retained without adding cumulative weeks. */
+  weeklySales?: V2WeeklySales;
 };
 
 export type CommercialPreview = {

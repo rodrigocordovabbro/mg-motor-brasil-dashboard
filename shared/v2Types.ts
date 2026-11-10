@@ -14,6 +14,12 @@ export type V2Filters = {
 };
 export type V2Count = { label: string; count: number };
 export type V2DealerRegistryItem = { name: string; state: string | null };
+export type V2WeeklySales = {
+  sourceLabel: string;
+  sourceSheet: "WEEKLY_RET";
+  /** Cumulative source snapshots W1–W6. Null is not a zero sale. W4 is the monthly reference. */
+  values: (number | null)[];
+};
 export type V2CommercialGroupRecord = {
   kind: "lead-goals" | "sales-goals" | "sales";
   key: string;
@@ -21,6 +27,7 @@ export type V2CommercialGroupRecord = {
   dealers: string[];
   value: number | null;
   leads: number;
+  weeklySales?: V2WeeklySales;
 };
 export type V2Lead = {
   id: number;
@@ -143,6 +150,8 @@ export type V2Dashboard = {
       sales: number | null;
       salesGoal: number | null;
       conversionRate: number | null;
+      leadsPerSale?: number | null;
+      weeklySales?: V2WeeklySales[];
     }[];
     totals: {
       leads: number;

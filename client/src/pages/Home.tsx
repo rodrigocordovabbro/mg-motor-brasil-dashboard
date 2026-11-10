@@ -1,4 +1,4 @@
-import { ROLE_LABELS } from "@shared/accountRoles";
+import { ROLE_LABELS, resolveDashboardLocale } from "@shared/accountRoles";
 import { trpc as v2Trpc } from "@/lib/trpc";
 import type { V2AuthUser } from "@/components/V2LeadsDashboard";
 import { useQueryClient } from "@tanstack/react-query";
@@ -111,6 +111,16 @@ function BrandMark({
       </div>
     </div>
   );
+}
+
+function roleLabel(role: V2AuthUser["role"], locale: "pt-BR" | "en"): string {
+  if (locale === "en") {
+    if (role === "admin") return "Administrator";
+    if (role === "client_admin") return "Client Admin";
+    if (role === "bbro") return "BBRO";
+    return "Client";
+  }
+  return ROLE_LABELS[role ?? "client"];
 }
 
 function LoginScreen({ onLoggedIn }: { onLoggedIn: () => Promise<void> }) {
@@ -327,17 +337,14 @@ function Topbar({
               onClick={() => onModuleChange("users")}
               className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-[11px] font-bold transition sm:flex-none sm:gap-2 sm:px-3 sm:text-xs ${module === "users" ? "bg-red-50 text-[#e2212d]" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"}`}
             >
-              <ShieldCheck className="h-4 w-4 shrink-0" /> Usuários
+              <ShieldCheck className="h-4 w-4 shrink-0" />
+              {locale === "en" ? "Users" : "Usuários"}
             </button>
           ) : null}
         </nav>
         <div className="order-2 flex items-center gap-2 sm:order-3">
           <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] text-amber-700 sm:px-2.5 sm:tracking-[0.12em]">
-            {locale === "en"
-              ? user.role === "client_admin"
-                ? "Client Admin"
-                : "Client"
-              : ROLE_LABELS[user.role ?? "client"]}
+            {roleLabel(user.role, locale)}
           </span>
           {canManage ? (
             <button
@@ -345,9 +352,13 @@ function Topbar({
               aria-pressed={clientMode}
               onClick={() => onClientModeChange(!clientMode)}
               title={
-                clientMode
-                  ? "Modo apresentação ativo: contatos individuais ficam ocultos"
-                  : "Modo operação ativo: contatos individuais visíveis"
+                locale === "en"
+                  ? clientMode
+                    ? "Presentation mode active: individual contacts are hidden"
+                    : "Operations mode active: individual contacts are visible"
+                  : clientMode
+                    ? "Modo apresentação ativo: contatos individuais ficam ocultos"
+                    : "Modo operação ativo: contatos individuais visíveis"
               }
               className={`inline-flex min-h-9 items-center gap-1.5 rounded-xl border px-2.5 py-2 text-[11px] font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 sm:px-3 sm:text-xs ${clientMode ? "border-red-100 bg-red-50 text-[#b41b26]" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
             >
@@ -356,7 +367,13 @@ function Topbar({
               ) : (
                 <EyeOff className="h-3.5 w-3.5" aria-hidden="true" />
               )}
-              {clientMode ? "Modo apresentação" : "Modo operação"}
+              {locale === "en"
+                ? clientMode
+                  ? "Presentation mode"
+                  : "Operations mode"
+                : clientMode
+                  ? "Modo apresentação"
+                  : "Modo operação"}
             </button>
           ) : null}
           <div className="hidden text-right md:block">
@@ -407,7 +424,7 @@ function AuthenticatedDashboard({
   const canManage = user.role === "admin";
   const overviewOnly = user.role === "client" || user.role === undefined;
   const isClientProfile = overviewOnly || user.role === "client_admin";
-  const locale: "pt-BR" | "en" = isClientProfile ? "en" : "pt-BR";
+  const locale = resolveDashboardLocale(user.role, user.username);
   const activeModule =
     overviewOnly || (module === "users" && !canManage) ? "leads" : module;
   const [clientMode, setClientMode] = useState(() =>
@@ -470,7 +487,10 @@ function AuthenticatedDashboard({
   };
 
   return (
-    <div className="min-h-screen bg-[#f0f1f4]">
+    <div
+      lang={locale === "en" ? "en" : "pt-BR"}
+      className="min-h-screen bg-[#f0f1f4]"
+    >
       <Topbar
         user={user}
         module={activeModule}
@@ -492,7 +512,7 @@ function AuthenticatedDashboard({
               role="status"
               className="rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-500"
             >
-              Carregando painel…
+              {locale === "en" ? "Loading dashboard…" : "Carregando painel…"}
             </div>
           }
         >

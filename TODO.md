@@ -2,8 +2,18 @@
 
 > **Registro acumulado de resultados e evidências datadas.** Itens antigos descrevem a etapa em que foram registrados; decisões e pendências superadas não são o contrato atual. Consulte o [README](README.md) e os [guias técnicos](docs/ARQUITETURA.md). O canônico atual é o GitHub privado `rodrigocordovabbro/mg-motor-brasil-dashboard` (`dashboard-v2`/trabalho, `main`/checkpoints), confirmado em 09/11/2026; tentativas bloqueadas/destinos anteriores são históricos. A publicação continua separada.
 
+## Correção solicitada em 10/11/2026 — idioma Thiago e Retail por dealer
+
+- [x] Verificar a conta Thiago e manter suas abas autorizadas em inglês; login sempre em inglês, sem alterar papéis ou privilégios para resolver idioma.
+- [x] Ler vendas por concessionária da tabela WEEKLY_RET/weekly target achievement — retail do upload manual; preservar valores por semana, usar W4 como referência mensal quando preenchida e não inventar zero em semana vazia nem somar snapshots cumulativos.
+- [x] Preservar MTD Registration e Retail gerais separados, datas reais e D-1 America/Sao_Paulo; incluir conversão e Leads necessários por venda no escopo compatível.
+- [x] Conciliar lojas por de-para explícito sem reescrever os nomes originais da planilha nem ratear grupos; informar as concessionárias de vendas não encontradas no dashboard.
+- [x] Conferir o arquivo recebido, testes isolados, TypeScript/build e revisão read-only; salvar no GitHub canônico sem publicar o site.
+
+Evidências de 10/11: Thiago confirmado como `client_admin` ativo, sem alteração de conta. Arquivo comercial confirmado uma vez como snapshot imutável `210001`, corte por loja 09/11/2026/W2; 32 fontes com de-para, nenhuma sem conciliação. Retail geral 109, Registration 115 e soma W2 por fonte 110 foram preservados; W4 continua vazia/N/D. Grupos continuam coletivos e unidades EM BREVE ficam fora da tabela. O leitor real do dashboard confirmou, por exemplo, Inglaterra Salvador 5, Iguauto Fortaleza 3, Potenza Recreio 5 e Tecar SIA Brasília 13; zeros de Curitiba/DRSUL são da própria fonte. Revisão read-only corrigida com remoção de metadados administrativos dos clientes e de semanas em `unmapped`; a visão agregada de dealers no Overview Cliente permanece autorizada e preservada. Suíte completa: 474 testes/62 arquivos; após ajustes finais, 66 testes afetados/8 arquivos, TypeScript e build aprovados. Sem migration, sync Google ou publicação nesta correção.
+
 - [x] Novo recurso `mgmotorsv2` com banco/servidor próprios, sem anexar ou editar o projeto V1.
-- [x] Origem GitHub autorizada em `dashboard-v2`, commit-base `dfad96cb1d015384d0425ce0f91ac308da0c8eb5`. Código de módulos originais preservado em `legacy/`, sem dados operacionais/credenciais. Escopo ativo limitado depois pelo usuário a Leads e Plano de Mídia.
+- [x] Origem GitHub autorizada em `dashboard-v2`, commit-base `dfad96cb1d015384d0425ce0f91ac308da0c8eb5`. Código de módulos originais preservados em `legacy/`, sem dados operacionais/credenciais. Escopo ativo limitado depois pelo usuário a Leads e Plano de Mídia.
 - [x] Interface branca inspirada nos screenshots fornecidos, identidade MG e V2/homologação. Abas Leads: Visão Geral, Regiões, Horários, Modelos, Lojas & CRM e Leads. Filtros reais por período/modelo/canal/campanha/concessionária/busca; não copiar números das imagens.
 - [x] Primeira aba mantém KPIs, pacing, barras diárias por canal com real/pace acumulados, distribuição e acompanhamento simplificado por dealer: Leads, metas, vendas e conversão. Sem investimento alocado ou CPL estimado nesse quadro.
 - [x] Plano de Mídia preservado em aba separada com fontes, conteúdo e cálculos originais autorizados; valores servidos pela API protegida, não pelo bundle público.

@@ -295,12 +295,21 @@ function CardHeading({
 }
 
 function EmptyDistribution({
-  label = "Sem dados disponíveis no período.",
+  label,
+  locale = "pt-BR",
 }: {
   label?: string;
+  locale?: LeadsLocale;
 }) {
   return (
-    <div className="px-5 py-8 text-center text-xs text-slate-400">{label}</div>
+    <div className="px-5 py-8 text-center text-xs text-slate-400">
+      {label ??
+        tr(
+          locale,
+          "Sem dados disponíveis no período.",
+          "No data available for this period."
+        )}
+    </div>
   );
 }
 
@@ -308,14 +317,16 @@ function DistributionList({
   items,
   formatter,
   limit = 7,
+  locale = "pt-BR",
 }: {
   items: V2DistributionItem[];
   formatter?: (label: string) => string;
   limit?: number;
+  locale?: LeadsLocale;
 }) {
   const visible = items.slice(0, limit);
   const max = Math.max(...visible.map(item => item.count), 0);
-  if (!visible.length) return <EmptyDistribution />;
+  if (!visible.length) return <EmptyDistribution locale={locale} />;
   return (
     <div className="space-y-3 px-5 py-4">
       {visible.map((item, index) => (
@@ -328,7 +339,7 @@ function DistributionList({
               {formatter ? formatter(item.label) : item.label}
             </span>
             <strong className="shrink-0 text-slate-900">
-              {numberFormat(item.count)}
+              {numberFormat(item.count, locale)}
             </strong>
           </div>
           <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
@@ -455,7 +466,8 @@ function NotConfiguredPanel({
             {tr(locale, "Período consultado", "Selected period")}
           </p>
           <p className="mt-1 text-sm font-semibold text-slate-800">
-            {fullDate(data.period.dateFrom)} a {fullDate(data.period.dateTo)}
+            {fullDate(data.period.dateFrom, locale)} {tr(locale, "a", "to")}{" "}
+            {fullDate(data.period.dateTo, locale)}
           </p>
         </div>
       </div>
@@ -1610,7 +1622,9 @@ function DealerPerformanceCard({
       <div className="border-t border-slate-100 px-5 py-4 text-xs leading-5 text-slate-500">
         {available ? (
           <span>
-            {performance.sourceName ? `Fonte: ${performance.sourceName}. ` : ""}
+            {performance.sourceName
+              ? `${tr(locale, "Fonte", "Source")}: ${performance.sourceName}. `
+              : ""}
             {performance.updatedAt
               ? formatImportedAt(performance.updatedAt, locale)
               : tr(
@@ -1946,6 +1960,7 @@ function OverviewTab({
             <DistributionList
               items={data.channels}
               limit={data.channels.length}
+              locale={locale}
             />
           </Card>
         ) : null}
@@ -1962,6 +1977,7 @@ function OverviewTab({
                   b.count - a.count || a.label.localeCompare(b.label, "pt-BR")
               )}
             limit={10}
+            locale={locale}
           />
         </Card>
       </div>
@@ -2020,7 +2036,7 @@ function RegionsTab({
           icon={MapPin}
         />
         <div className="max-h-[520px] overflow-y-auto">
-          <DistributionList items={data.states} limit={28} />
+          <DistributionList items={data.states} limit={28} locale={locale} />
         </div>
       </Card>
       <Card className="overflow-hidden">
@@ -2034,7 +2050,7 @@ function RegionsTab({
           )}
           icon={MapPin}
         />
-        <DistributionList items={data.cities} limit={12} />
+        <DistributionList items={data.cities} limit={12} locale={locale} />
       </Card>
       <Card className="overflow-hidden lg:col-span-2">
         <CardHeading
@@ -2128,7 +2144,7 @@ function CrmDonut({
             />
             {item.label}
             <strong className="ml-2 text-slate-900">
-              {numberFormat(item.count)}
+              {numberFormat(item.count, locale)}
             </strong>
           </div>
         ))}

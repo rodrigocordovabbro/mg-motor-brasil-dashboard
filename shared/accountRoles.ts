@@ -15,6 +15,27 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   bbro: "BBRO",
 };
 
+export type DashboardLocale = "pt-BR" | "en";
+
+const ENGLISH_DASHBOARD_USERNAMES = new Set(["thiago"]);
+
+export function normalizeUsernameForLocale(value: unknown): string {
+  return typeof value === "string"
+    ? value.trim().toLocaleLowerCase("en-US")
+    : "";
+}
+
+/** Resolves presentation language without changing the account's permissions. */
+export function resolveDashboardLocale(
+  role: unknown,
+  username: unknown
+): DashboardLocale {
+  return isClientProfile(role) ||
+    ENGLISH_DASHBOARD_USERNAMES.has(normalizeUsernameForLocale(username))
+    ? "en"
+    : "pt-BR";
+}
+
 /**
  * Unknown values are deliberately normalized to the least-privileged profile.
  * This keeps old rows and malformed session data on the overview-only path.

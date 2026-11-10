@@ -39,6 +39,10 @@ export function requireManualValidator(
     });
 }
 export function dashboardForClient(data: V2Dashboard): V2Dashboard {
+  const { sources: _commercialSources, ...publicPerformance } =
+    data.dealerPerformance as V2Dashboard["dealerPerformance"] & {
+      sources?: unknown;
+    };
   const models = new Map<string, number>();
   for (const row of data.models) {
     const label = resolveOfficialModel(row.label) ?? UNIDENTIFIED_MODEL;
@@ -73,7 +77,8 @@ export function dashboardForClient(data: V2Dashboard): V2Dashboard {
       })),
     },
     dealerPerformance: {
-      ...data.dealerPerformance,
+      ...publicPerformance,
+      sourceName: null,
       warnings: [],
       unmapped: [],
       unreconciledDealers: [],
@@ -81,7 +86,10 @@ export function dashboardForClient(data: V2Dashboard): V2Dashboard {
         (group, index) => ({
           ...group,
           key: `collective-${index + 1}`,
-          sourceLabel: "Meta coletiva da rede",
+          sourceLabel:
+            group.kind === "sales"
+              ? "Collective network sales"
+              : "Collective network goal",
         })
       ),
     },
@@ -91,7 +99,8 @@ export function dashboardForClient(data: V2Dashboard): V2Dashboard {
 /**
  * Read-only projection for the new Client profile. It deliberately keeps only
  * aggregate Overview data: options remain available to preserve the existing
- * filter contract and dealer performance is aggregate-only. Individual Leads and restricted-tab
+ * filter contract, including the subsequently authorized aggregate dealer table.
+ * Dealer rows are explicitly whitelisted; Individual Leads and restricted-tab
  * analysis are removed before the response leaves the server.
  */
 export function dashboardForOverviewClient(data: V2Dashboard): V2Dashboard {

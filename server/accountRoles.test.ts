@@ -13,6 +13,8 @@ import {
   isOverviewOnlyClient,
   normalizeUserRole,
   ROLE_LABELS,
+  normalizeUsernameForLocale,
+  resolveDashboardLocale,
 } from "../shared/accountRoles";
 
 describe("shared account roles", () => {
@@ -58,5 +60,14 @@ describe("shared account roles", () => {
     expect(canAccessRegions("role-inexistente")).toBe(false);
     expect(canAccessLeads("role-inexistente")).toBe(false);
     expect(isAdministrator("role-inexistente")).toBe(false);
+  });
+
+  it("resolve inglês sem misturar idioma com layout ou permissões", () => {
+    expect(resolveDashboardLocale("client", "cliente")).toBe("en");
+    expect(resolveDashboardLocale("client_admin", "thiago")).toBe("en");
+    expect(resolveDashboardLocale("admin", "  Thiago  ")).toBe("en");
+    expect(normalizeUsernameForLocale("  Thiago ")).toBe("thiago");
+    expect(resolveDashboardLocale("bbro", "bbro")).toBe("pt-BR");
+    expect(isClientProfile("admin")).toBe(false);
   });
 });

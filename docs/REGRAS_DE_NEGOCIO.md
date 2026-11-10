@@ -158,15 +158,16 @@ As cargas comerciais são separadas por competência e tipo: `lead-goals`, `sale
 - Meta mensal de Leads é salva por competência. Override manual vigente prevalece sobre reimportação; uma importação serve como default quando não há override manual.
 - Meta total de vendas é separada e só a conta proprietária `rodrigo` pode editá-la. Ela altera o headline global, não vendas reais por dealer, metas por loja, metas coletivas ou os snapshots de `DAILY_FUP`/`WEEKLY_REG`.
 
-### 7.2 `WEEKLY_REG`: vendas por unidade
+### 7.2 `WEEKLY_RET`: Retail por unidade e semana
 
-A fonte de vendas por concessionária é obrigatoriamente a aba `WEEKLY_REG`, com `CUSTOMER_NAME` e exatamente uma coluna selecionada entre `W1_Reg` e `W6_Reg`.
+A fonte prioritária de vendas por concessionária é `WEEKLY_RET`, com `CUSTOMER_NAME` e colunas `W1_Retail` a `W6_Retail`. O nome original é preservado; o de-para explícito liga unidades/grupos sem reescrita ou rateio.
 
-- `sourceWeek` explícito escolhe uma única coluna; sem ele, a semana é derivada do dia de `asOf` e limitada a W6.
-- O valor por unidade é o snapshot da coluna escolhida, nunca a soma de semanas, `TARGET`, outra aba genérica de vendas ou `DAILY_FUP`.
+- `sourceWeek` explícito escolhe a coluna ativa. Sem ele, a semana deriva de `asOf`; no Retail, o fechamento é limitado a W4, referência mensal quando preenchida. W5/W6 podem ser escolhidas explicitamente e continuam preservadas.
+- W1–W6 são preservadas em `weeklySales` e mostradas por fonte/loja. O valor ativo é o snapshot escolhido, nunca a soma cumulativa das semanas, `TARGET` ou `DAILY_FUP`. W4 vazia permanece indisponível; não recebe zero, meta ou valor de outra semana.
 - Célula vazia permanece `null`; zero informado permanece zero. O total soma somente linhas conhecidas; se nenhuma linha tiver valor conhecido, o total é indisponível.
 - `asOf` deve pertencer à competência e não ultrapassar D-1.
-- A ausência de `WEEKLY_REG` rejeita a carga, mesmo que o arquivo tenha uma aba `Sales` ou valores em `DAILY_FUP`.
+- `WEEKLY_REG` é fallback legado de emplacamentos somente quando `WEEKLY_RET` não existe. Um Retail malformado rejeita a carga, sem substituição silenciosa. A ausência das duas abas rejeita a importação por loja.
+- Conversão por dealer é `vendas / Leads`; Leads por venda é `Leads / vendas`, com denominadores válidos e corte comparável. O Retail por dealer depende de seu `asOf`, não da data do Registration geral. Filtros de modelo/canal/campanha/busca ou várias competências não recebem semanas nem razões de uma fonte global incompatível.
 
 ### 7.3 `DAILY_FUP`: Retail e Registration separados
 

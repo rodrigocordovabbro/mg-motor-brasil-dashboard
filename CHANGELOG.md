@@ -2,6 +2,14 @@
 
 Este documento resume mudanças do código e da documentação. Uma entrega listada não comprova, por si só, publicação, conectividade externa ou estado futuro dos dados. Entradas anteriores são históricas; o estado vigente está no [README](README.md) e nos [guias técnicos](docs/ARQUITETURA.md).
 
+## 10/11/2026 — Idioma Thiago e Retail por concessionária
+
+Idioma separado das permissões: Cliente/ADM Cliente e o username normalizado Thiago recebem inglês, sem alteração de papéis. Corrigidos defaults de idioma, datas, contadores, estados vazios e rótulos do dashboard; login permanece em inglês.
+
+Vendas por concessionária passam a priorizar `WEEKLY_RET`, preservando W1–W6 no snapshot JSON e W4 como referência mensal quando preenchida. `WEEKLY_REG` fica como fallback legado somente na ausência da aba Retail. A visão semanal mantém nomes originais e de-para, não soma snapshots cumulativos, não rateia grupos e não converte ausência em zero. Conversão e Leads por venda por unidade respeitam o corte próprio do Retail e os filtros compatíveis. Totais gerais Retail/Registration continuam separados.
+
+Validação desta correção: **474 testes em 62 arquivos**; após os ajustes finais de privacidade e visibilidade, **66 testes afetados em 8 arquivos**, TypeScript e build aprovados. Metadados administrativos de importação não são enviados aos clientes; `unmapped` não carrega snapshots semanais internos. Nenhuma migration, sincronização de Leads ou mudança de perfil foi feita. O upload comercial recebido foi confirmado em snapshot próprio, sem alterar metas manuais. Gravação de dados comerciais é separada do checkpoint; publicação não foi solicitada nesta correção.
+
 ## 09/11/2026 — Repositório atual e revisão documental
 
 O projeto foi conectado ao novo repositório **privado** [rodrigocordovabbro/mg-motor-brasil-dashboard](https://github.com/rodrigocordovabbro/mg-motor-brasil-dashboard), com `main` e `dashboard-v2`. O GitHub passou a ser o repositório canônico do WebDev; bancos, contas e segredos não foram enviados. Destinos anteriores e tentativas bloqueadas permanecem somente como histórico.

@@ -231,7 +231,7 @@ O botão [`V2LeadsExportButton.tsx`](../client/src/components/V2LeadsExportButto
 
 O arquivo contém todos os registros do recorte aplicado, não somente a página atual. O modo de apresentação mascara nomes; para papéis não-admin a apresentação agrupa UF conforme a projeção autorizada. O gerador usa BOM UTF-8, CRLF, separador `;`, proteção contra injeção de fórmula e limites técnicos de linhas/bytes. Não há URL pública de exportação nem acesso por uma rota sem sessão.
 
-## 7. Comercial: Retail geral, Registration e WEEKLY_REG
+## 7. Comercial: Retail geral, Registration e snapshots por dealer
 
 O parser e o serviço comercial distinguem claramente o total geral da rede da leitura por dealer.
 
@@ -239,7 +239,8 @@ O parser e o serviço comercial distinguem claramente o total geral da rede da l
 
 - `lead-goals`: metas de Leads por fonte comercial, com total da própria carga quando presente;
 - `sales-goals`: metas de vendas por dealer/grupo, em arquivo próprio;
-- `sales`: exige a aba `WEEKLY_REG` com `CUSTOMER_NAME` e uma coluna `W1_Reg` a `W6_Reg`, escolhida por `sourceWeek` ou derivada de `asOf`. O parser lê somente essa coluna, não soma W1–W6 e cria linhas por dealer/fonte;
+- `sales`: prioriza `WEEKLY_RET`, com `CUSTOMER_NAME` e `W1_Retail` a `W6_Retail`. Preserva os seis snapshots em `rowsJson.weeklySales`, sem nova tabela ou migration; a coluna ativa é escolhida por `sourceWeek`/`asOf` e W4 é a referência mensal quando preenchida. Sem escolha explícita, o fechamento Retail fica limitado a W4. Um `WEEKLY_RET` malformado não recorre silenciosamente a emplacamentos;
+- `WEEKLY_REG`: fallback legado somente quando `WEEKLY_RET` não existe; mantém sua coluna `W1_Reg` a `W6_Reg` e não passa a representar Retail por renomeação;
 - `DAILY_FUP`: somente metadados gerais no bloco `Current Month` das primeiras linhas permitidas.
 
 No `DAILY_FUP`, `MTD Registration` é o registro geral de emplacamentos e `Retail` é o total geral de Retail. Nenhum dos dois é transformado em linha de dealer. O header ativo de Retail é exatamente `Retail`; `MTD Retail`/`Retail MTD` são identificados como alias legado e não são tratados como uma nova fonte geral válida. A data `registrationAsOf`/`retailAsOf` vem do rótulo de arquivo quando confiável e permanece independente do `asOf` semanal por dealer.
@@ -248,9 +249,9 @@ A carga `sales` grava `retailMtd`/`retailAsOf` e `registrationMtd`/`registration
 
 ### 7.2 Performance e comparação
 
-[`getCommercialPerformance`](../server/v2Commercial.ts) usa snapshots mais recentes por `kind` e competência, metas manuais e registry de dealers. As linhas de dealer recebem vendas de `WEEKLY_REG` quando o período cobre a competência desde o dia 1 até `asOf`, sem filtro incompatível. Fora dessa condição, vendas/conversão por dealer permanecem indisponíveis; o serviço não inventa rateio.
+[`getCommercialPerformance`](../server/v2Commercial.ts) usa snapshots mais recentes por `kind` e competência, metas manuais e registry de dealers. As linhas recebem o snapshot ativo de `WEEKLY_RET` (ou fallback legado) quando o período cobre a competência desde o dia 1 até `asOf`, sem filtro incompatível. A tabela semanal mostra a fonte original, W1–W6, W4/Mês, conversão e Leads por venda. Semanas vazias são N/D. Grupos são coletivos, sem rateio; filtros incompatíveis ocultam as semanas e razões por unidade.
 
-O total executivo `sales` e a razão global usam o Retail geral quando disponível. O serviço emite o aviso de que o total geral Retail não foi distribuído entre lojas. A conversão por linha só é calculada quando a compatibilidade temporal e de fonte está confirmada. Mapeamentos coletivos, dealers extras e rótulos não conciliados permanecem rastreáveis; não há inferência por substring.
+O total executivo `sales` e a razão global usam o Retail geral quando disponível. Divergências com a soma de lojas permanecem explícitas, sem ajuste de dados. Conversão por unidade é `vendas / Leads`; Leads por venda é `Leads / vendas`, somente com valores positivos e corte comparável. Para `WEEKLY_RET`, o corte semanal é independente da data rotulada do Registration geral; a proteção temporal legada permanece no fallback. Mapeamentos coletivos, extras e rótulos não conciliados são rastreáveis, sem inferência por substring.
 
 `preview` não grava. `commit` faz o parse novamente, registra snapshot e mapping hash em transação, cria extras confirmados quando necessário e invalida as consultas. `remove` faz soft-remove da última revisão com `expectedImportId`; snapshots históricos não são apagados e uma revisão removida não reaparece por fallback automático.
 

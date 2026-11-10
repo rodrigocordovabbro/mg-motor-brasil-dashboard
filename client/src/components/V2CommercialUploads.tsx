@@ -75,7 +75,7 @@ const SOURCE_CONFIGS: SourceConfig[] = [
   {
     kind: "sales",
     title: "Atualizar vendas",
-    eyebrow: "Vendas por dealer · WEEKLY_REG",
+    eyebrow: "Retail por dealer · WEEKLY_RET",
     previewValueLabel: "Vendas",
   },
 ];
@@ -140,7 +140,7 @@ function emptyDraft(kind: UploadKind, month: string): Draft {
       Math.max(
         1,
         Math.min(
-          6,
+          4,
           Math.ceil(
             Number(defaultSalesDate(month, getDashboardCutoffDate()).slice(8)) /
               7
@@ -313,7 +313,9 @@ function SourceCard({
               </span>
             </label>
             <label className="block">
-              <span className="v2-label">Coluna de vendas — WEEKLY_REG</span>
+              <span className="v2-label">
+                Snapshot semanal de Retail — WEEKLY_RET
+              </span>
               <select
                 value={draft.sourceWeek}
                 disabled={busy}
@@ -322,13 +324,17 @@ function SourceCard({
               >
                 {[1, 2, 3, 4, 5, 6].map(week => (
                   <option key={week} value={week}>
-                    W{week}_Reg — semana {week}
+                    W{week}_Retail — semana {week}
+                    {week === 4 ? " · referência mensal" : ""}
                   </option>
                 ))}
               </select>
               <span className="mt-1 block text-[11px] leading-4 text-slate-400">
-                Leia a coluna preenchida do arquivo. Não somamos snapshots
-                acumulados de semanas diferentes.
+                Todas as semanas são preservadas. W4 é a referência do mês
+                quando preenchida; a coluna selecionada deve conter o snapshot
+                real do corte. Sem somar semanas ou converter células vazias em
+                zero. Arquivos antigos sem WEEKLY_RET continuam no fallback
+                WEEKLY_REG.
               </span>
             </label>
           </div>
@@ -419,7 +425,14 @@ function SourceCard({
           ) : null}
           {status?.asOf ? <p>Data de corte: {status.asOf}</p> : null}
           {status?.sourceWeek ? (
-            <p>Coluna ativa: W{status.sourceWeek}_Reg</p>
+            <p>
+              Coluna ativa: W{status.sourceWeek}_
+              {status.warnings.some(warning =>
+                warning.startsWith("Fonte de vendas: WEEKLY_RET")
+              )
+                ? "Retail"
+                : "Reg"}
+            </p>
           ) : null}
           {status?.warnings.length ? (
             <ul className="mt-1 space-y-0.5 text-amber-700">
@@ -673,7 +686,7 @@ export default function V2CommercialUploads({
             Math.max(
               1,
               Math.min(
-                6,
+                4,
                 Math.ceil(
                   Number(defaultSalesDate(nextMonth, cutoff).slice(8)) / 7
                 )

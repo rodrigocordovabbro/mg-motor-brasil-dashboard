@@ -725,6 +725,72 @@ function dailyFupReferenceWarning(workbook: ExcelJS.Workbook): string | null {
   return `Referência DAILY_FUP: MTD Registration = ${registration}; emplacamentos não substituem o total Retail.`;
 }
 
+function findWeeklyRetailSheet(
+  workbook: ExcelJS.Workbook
+): ExcelJS.Worksheet | null {
+  return (
+    workbook.worksheets.find(sheet => compact(sheet.name) === "weeklyret") ??
+    null
+  );
+}
+
+function parseWeeklyRetailSales(
+  weekly: ExcelJS.Worksheet,
+  sourceWeek: number
+): { rows: CommercialSourceRow[]; total: number | null; warnings: string[] } {
+  const label = `W${sourceWeek}_Retail`;
+  const header = findHeader(weekly, [
+    ["customer_name", "customer name"],
+    [label],
+  ]);
+  if (!header)
+    fail(`a aba WEEKLY_RET precisa conter CUSTOMER_NAME e ${label}.`);
+  const nameColumn = firstColumn(header, ["customer_name", "customer name"])!;
+  const rows: CommercialSourceRow[] = [];
+  for (let number = header.rowNumber + 1; number <= weekly.rowCount; number++) {
+    const sourceLabel = textOf(cellValue(weekly.getCell(number, nameColumn)));
+    if (!sourceLabel.trim() || isTotalLabel(sourceLabel)) continue;
+    const values = [1, 2, 3, 4, 5, 6].map(week => {
+      const column = firstColumn(header, [`W${week}_Retail`]);
+      return column
+        ? parseInteger(
+            cellValue(weekly.getCell(number, column)),
+            `W${week}_Retail na aba ${weekly.name}, linha ${number}`
+          )
+        : null;
+    });
+    rows.push({
+      ...makeRow(
+        `${weekly.name}:${label}:${number}`,
+        sourceLabel,
+        values[sourceWeek - 1],
+        null
+      ),
+      weeklySales: { sourceSheet: "WEEKLY_RET", sourceLabel, values },
+    });
+  }
+  if (!rows.length) fail("nenhuma linha nomeada de WEEKLY_RET foi encontrada.");
+  const known = rows.filter(row => row.value != null);
+  const warnings = [
+    `Fonte de vendas: WEEKLY_RET, coluna ${label}. Snapshots acumulados W1–W6 preservados; não somamos semanas. W4_Retail é a referência mensal, quando preenchida.`,
+  ];
+  if (rows.some(row => row.weeklySales?.values[3] == null))
+    warnings.push(
+      "A referência mensal W4_Retail ainda está incompleta; semanas vazias permanecem indisponíveis, sem substituir por zero ou pela meta."
+    );
+  if (known.length !== rows.length)
+    warnings.push(
+      `Fonte de vendas parcial: ${rows.length - known.length} de ${rows.length} linhas de WEEKLY_RET, coluna ${label}, estão sem valor.`
+    );
+  return {
+    rows,
+    total: known.length
+      ? known.reduce((sum, row) => sum + row.value!, 0)
+      : null,
+    warnings,
+  };
+}
+
 function parseWeeklyRegSales(
   workbook: ExcelJS.Workbook,
   sourceWeek: number
@@ -1038,7 +1104,7 @@ export async function parseCommercialWorkbook(
 ): Promise<ParsedCommercialWorkbook> {
   parseCompetence(competence);
   const parsedAsOf = parseAsOf(asOf);
-  const selectedSourceWeek =
+  let selectedSourceWeek =
     kind === "sales" ? selectSourceWeek(parsedAsOf, sourceWeek) : undefined;
   if (parsedAsOf && parsedAsOf.slice(0, 7) !== competence)
     fail("a data de referência precisa pertencer à competência selecionada.");
@@ -1053,11 +1119,20 @@ export async function parseCommercialWorkbook(
   };
   if (kind === "lead-goals") result = parseLeadGoals(workbook);
   else if (kind === "sales") {
-    if (!findWeeklyRegSheet(workbook))
-      fail(
-        "Envie a aba WEEKLY_REG com CUSTOMER_NAME e W1_Reg até W6_Reg; outras abas não são fontes de vendas por concessionária."
+    const retailSheet = findWeeklyRetailSheet(workbook);
+    if (retailSheet && sourceWeek == null)
+      selectedSourceWeek = Math.min(4, selectedSourceWeek!);
+    if (retailSheet)
+      result = parseWeeklyRetailSales(
+        retailSheet,
+        selectedSourceWeek as number
       );
-    result = parseWeeklyRegSales(workbook, selectedSourceWeek as number);
+    else if (findWeeklyRegSheet(workbook))
+      result = parseWeeklyRegSales(workbook, selectedSourceWeek as number);
+    else
+      fail(
+        "Envie WEEKLY_RET com CUSTOMER_NAME e W1_Retail até W6_Retail. WEEKLY_REG é somente o fallback legado de emplacamentos; DAILY_FUP não distribui vendas por concessionária."
+      );
   } else result = parseGenericRows(workbook, kind);
   const registration =
     kind === "sales"
@@ -1083,7 +1158,7 @@ export async function parseCommercialWorkbook(
     retail.retailMtd != null &&
     result.total != null &&
     retail.retailMtd !== result.total
-      ? `Total geral Retail MTD = ${retail.retailMtd}; soma conhecida de WEEKLY_REG = ${result.total} permanece somente como referência por loja.`
+      ? `Total geral Retail MTD = ${retail.retailMtd}; soma conhecida de ${findWeeklyRetailSheet(workbook) ? "WEEKLY_RET" : "WEEKLY_REG"} = ${result.total} permanece somente como referência por loja.`
       : null;
   return {
     kind,

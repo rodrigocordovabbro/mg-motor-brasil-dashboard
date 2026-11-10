@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import V2SalesGoalEditor from "./V2SalesGoalEditor";
 import type { V2Dashboard } from "@shared/v2Types";
+import V2DealerWeeklySales from "./V2DealerWeeklySales";
 
 export type V2CommercialSummaryProps = {
   performance: V2Dashboard["dealerPerformance"];
@@ -291,6 +292,7 @@ export function V2CommercialSummary({
           />
         </div>
       </div>
+      <V2DealerWeeklySales performance={performance} locale={locale} />
     </section>
   );
 }

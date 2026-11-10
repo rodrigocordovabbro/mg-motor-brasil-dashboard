@@ -504,6 +504,30 @@ function jsonRows(value: unknown): CommercialSourceRow[] {
             )
           : [],
         ...(original?.length ? { originalRawDealers: original } : {}),
+        ...(row.weeklySales &&
+        typeof row.weeklySales === "object" &&
+        (row.weeklySales as Record<string, unknown>).sourceSheet ===
+          "WEEKLY_RET" &&
+        Array.isArray((row.weeklySales as Record<string, unknown>).values) &&
+        ((row.weeklySales as Record<string, unknown>).values as unknown[])
+          .length === 6
+          ? {
+              weeklySales: {
+                sourceSheet: "WEEKLY_RET" as const,
+                sourceLabel: row.sourceLabel,
+                values: (
+                  (row.weeklySales as Record<string, unknown>)
+                    .values as unknown[]
+                ).map(value =>
+                  typeof value === "number" &&
+                  Number.isSafeInteger(value) &&
+                  value >= 0
+                    ? value
+                    : null
+                ),
+              },
+            }
+          : {}),
       },
     ];
   });
@@ -789,6 +813,11 @@ function mappingSha256(
     hash.update(
       JSON.stringify(["retail", retailMtd ?? null, retailAsOf ?? null])
     );
+  const weekly = rows
+    .filter(row => row.weeklySales)
+    .map(row => [row.key, row.weeklySales])
+    .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+  if (weekly.length) hash.update(JSON.stringify(["weeklyRetail", weekly]));
   return hash.digest("hex");
 }
 
@@ -1334,6 +1363,7 @@ function sourceRecord(
     dealers,
     value: source.value,
     leads,
+    ...(source.weeklySales ? { weeklySales: source.weeklySales } : {}),
   };
 }
 
@@ -1416,7 +1446,8 @@ function buildCommercialRows(
     kind: CommercialUploadKind,
     source: CommercialSourceRow
   ): void => {
-    if (kind === "sales" && source.value === null) return;
+    if (kind === "sales" && source.value === null && !source.weeklySales)
+      return;
     const targets = sourceTargets(source, registryExtras);
     if (!targets.length) {
       if (isExplicitlyUnmappedCommercialLabel(source.sourceLabel))
@@ -1424,7 +1455,13 @@ function buildCommercialRows(
           `${source.sourceLabel} (${source.value ?? "sem valor"}) não pertence ao cadastro oficial e permaneceu sem unidade.`
         );
       if (!(kind === "sales-goals" && source.sourceLabel === "GLOBAL"))
-        unmapped.push({ kind, ...source });
+        unmapped.push({
+          kind,
+          key: source.key,
+          sourceLabel: source.sourceLabel,
+          state: source.state,
+          value: source.value,
+        });
       return;
     }
     const isCollective = targets.length > 1;
@@ -1463,7 +1500,14 @@ function buildCommercialRows(
         warnings.push(
           `MetaVendas de ${source.sourceLabel} não foi alocada: o vínculo atravessa grupos diferentes.`
         );
-      else unmapped.push({ kind, ...source });
+      else
+        unmapped.push({
+          kind,
+          key: source.key,
+          sourceLabel: source.sourceLabel,
+          state: source.state,
+          value: source.value,
+        });
       return;
     }
     const row = matches[0];
@@ -1476,7 +1520,11 @@ function buildCommercialRows(
           ? row.salesGoal
           : (row.salesGoal ?? 0) + source.value
         : null;
-    else row.sales = (row.sales ?? 0) + (source.value ?? 0);
+    else {
+      if (source.value != null) row.sales = (row.sales ?? 0) + source.value;
+      if (source.weeklySales)
+        row.weeklySales = [...(row.weeklySales ?? []), source.weeklySales];
+    }
   };
 
   if (leadImport)
@@ -1510,7 +1558,10 @@ function buildCommercialRows(
     if (group.kind === "sales" && !salesCompatible) group.value = null;
     if (group.kind !== "sales" && (!singleMonth || nonDealerNarrowed))
       group.value = null;
+    if (!singleMonth || nonDealerNarrowed) delete group.weeklySales;
   }
+  if (!singleMonth || nonDealerNarrowed)
+    for (const row of work) delete row.weeklySales;
   if (!salesCompatible) for (const row of work) row.sales = null;
   for (const row of work) {
     row.conversionRate =
@@ -1637,12 +1688,24 @@ export function buildOfficialCommercialPerformance(
             registrationDate <= filters.dateTo
         );
   const conversionCompatible =
-    built.salesCompatible && registrationDateCompatible;
-  for (const row of built.work)
+    built.salesCompatible &&
+    (built.salesImport?.rows.some(
+      row => row.weeklySales?.sourceSheet === "WEEKLY_RET"
+    ) ||
+      registrationDateCompatible);
+  for (const row of built.work) {
     row.conversionRate =
       conversionCompatible && row.sales != null && row.leads > 0
         ? row.sales / row.leads
         : null;
+    row.leadsPerSale =
+      conversionCompatible &&
+      row.sales != null &&
+      row.sales > 0 &&
+      row.leads > 0
+        ? row.leads / row.sales
+        : null;
+  }
   const outputRows = built.work.map(
     ({
       aliases: _aliases,

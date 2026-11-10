@@ -307,6 +307,32 @@ describe("permissões na API", () => {
     vi.mocked(getV2Dashboard).mockResolvedValue(d as any);
     expect((await caller().leads.dashboard(filters)).notes).toEqual(d.notes);
   });
+  it.each(["client", "client_admin"] as const)(
+    "remove metadados de arquivo da resposta do perfil %s sem alterar os totais",
+    async role => {
+      state.role = role;
+      const d = dashboard();
+      d.dealerPerformance.sourceName = "IMPORT_SOURCE_PRIVATE.xlsx";
+      (d.dealerPerformance as any).sources = [
+        {
+          kind: "sales",
+          fileName: "IMPORT_SOURCE_PRIVATE.xlsx",
+          id: 880011,
+          warnings: ["IMPORT_METADATA_PRIVATE"],
+        },
+      ];
+      vi.mocked(getV2Dashboard).mockResolvedValue(d as any);
+      const result = await caller().leads.dashboard(filters);
+      expect(result.dealerPerformance.sourceName).toBeNull();
+      expect((result.dealerPerformance as any).sources).toBeUndefined();
+      expect(result.dealerPerformance.totals).toEqual(
+        d.dealerPerformance.totals
+      );
+      expect(JSON.stringify(result)).not.toContain("IMPORT_SOURCE_PRIVATE");
+      expect(JSON.stringify(result)).not.toContain("IMPORT_METADATA_PRIVATE");
+      expect((d.dealerPerformance as any).sources).toHaveLength(1);
+    }
+  );
   it("cliente recebe dealers agregados na Visão Geral, sem Leads individuais ou análises restritas", async () => {
     const d = dashboard();
     d.states = BRAZILIAN_STATES.slice(0, 12).map((state, index) => ({
