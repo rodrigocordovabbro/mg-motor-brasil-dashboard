@@ -619,7 +619,10 @@ export function V2HistoricalLeadPaceCard({
           </p>
         </div>
         {actions ? (
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <div
+            data-overview-pdf-exclude
+            className="flex shrink-0 flex-wrap items-center gap-2"
+          >
             {actions}
           </div>
         ) : null}
@@ -734,7 +737,10 @@ export function V2HistoricalLeadPaceCard({
                   : t(locale, "nullValue")}
               </p>
             </div>
-            <label className="flex items-center gap-2 text-xs font-medium text-slate-600">
+            <label
+              data-overview-pdf-exclude
+              className="flex items-center gap-2 text-xs font-medium text-slate-600"
+            >
               <input
                 type="checkbox"
                 checked={showHistorical}
@@ -877,7 +883,10 @@ export function V2HistoricalLeadPaceCard({
               </ResponsiveContainer>
             </div>
           </div>
-          <p className="px-4 pb-2 text-[11px] text-slate-500 xl:hidden">
+          <p
+            data-overview-pdf-exclude
+            className="px-4 pb-2 text-[11px] text-slate-500 xl:hidden"
+          >
             {t(locale, "scrollHint")}
           </p>
           <div
@@ -917,7 +926,10 @@ export function V2HistoricalLeadPaceCard({
           </div>
         </div>
         {!clientView ? (
-          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+          <div
+            data-overview-pdf-exclude
+            className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]"
+          >
             <div>
               <h3 className="mb-2 font-bold text-slate-900">
                 {t(locale, "referenceMonths")}

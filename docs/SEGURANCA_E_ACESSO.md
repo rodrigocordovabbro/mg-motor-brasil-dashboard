@@ -159,6 +159,14 @@ A rota `leads.exportCSV` usa [`server/v2LeadsExport.ts`](../server/v2LeadsExport
 
 **Limitação importante:** `clientMode` é uma flag de apresentação do request, não uma autorização por papel. O servidor não força máscara de nome apenas por o papel ser `client_admin` ou `bbro`; a UI desses perfis passa atualmente `clientMode=false`. Portanto, não documentar “CSV sempre mascarado” sem uma mudança de código que imponha essa regra no backend.
 
+### 6.1 Resumo PDF da Overview — 10/11/2026
+
+O botão [`V2OverviewPdfButton.tsx`](../client/src/components/V2OverviewPdfButton.tsx) está disponível na Overview de todos os perfis autenticados, inclusive `client`. Não chama `leads.exportCSV` e não libera qualquer outra rota ou aba. [`overviewPdf.ts`](../client/src/lib/overviewPdf.ts) clona exclusivamente a raiz marcada da Overview já autorizada e prepara um documento local isolado para a impressão nativa/Salvar como PDF; não consulta novamente a API e não faz upload público ou envio a terceiros.
+
+A clonagem remove controles, importação, diagnósticos/notas da fonte, metadados privados de arquivos e tooltips. Filtros textuais de busca não aparecem com o conteúdo original. A exportação conserva gráficos/valores do snapshot carregado, idioma, período e D-1 São Paulo; recorte inválido/futuro é rejeitado e o botão permanece bloqueado enquanto os dados estão atualizando. Os Top 10 e Bottom 10 usam apenas as unidades com conversão comparável no agregado autorizado; sem contato pessoal, preenchimento fictício, rateio de coletivos ou unidades EM BREVE. Alteração de layout para impressão ocorre no clone, não no dashboard.
+
+Depois de salvo pelo usuário, o PDF contém informação comercial agregada: cabe a quem compartilha escolher destinatários autorizados. Resumo em PDF não equivale a anonimização ou a autorização pública dos dados.
+
 ## 7. Diagnóstico administrativo agregado
 
 `leads.modelInsights`, implementado em [`server/v2AdminModelInsights.ts`](../server/v2AdminModelInsights.ts), é exclusivo do Admin e só é carregado pela UI quando a aba de análise é autorizada e a fonte está pronta. O retorno contém agregados de modelo, versão, estado, canal, dealer e campanha, matrizes, séries diárias, cobertura da fonte, comparação com janela anterior, gaps de qualidade e oportunidades de mix.

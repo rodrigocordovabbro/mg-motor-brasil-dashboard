@@ -2,6 +2,14 @@
 
 Este documento resume mudanças do código e da documentação. Uma entrega listada não comprova, por si só, publicação, conectividade externa ou estado futuro dos dados. Entradas anteriores são históricas; o estado vigente está no [README](README.md) e nos [guias técnicos](docs/ARQUITETURA.md).
 
+## 10/11/2026 — PDF da Overview para todos os perfis
+
+Adicionado **Gerar PDF / Export PDF** na Overview para Admin, ADM Cliente/Thiago, Cliente e BBRO, usando a impressão nativa/Salvar como PDF do navegador. O resumo utiliza o layout branco MG atual, indicadores, curva histórica e gráficos já carregados, período/filtros aplicados e corte D-1 São Paulo. O clone isolado preserva SVGs, amplia áreas de scroll e permite paginação de tabelas, sem alterar o dashboard ou consultar dados adicionais.
+
+Incluídos **Top 10 e Bottom 10 por conversão** com os agregados autorizados das unidades elegíveis: sem dados fictícios, valores copiados do exemplo antigo, rateio de grupos ou EM BREVE. Venda zero conhecida é elegível, ausência não vira zero e recortes sem conversão comparável exibem indisponibilidade. Interface e resumo acompanham PT/EN.
+
+A exportação remove contatos/Leads individuais, controles, importações, metadados privados de arquivos e notas administrativas; busca textual aparece apenas como filtro aplicado. Geração bloqueada durante atualização. Não há upload público, envio automático, alteração de perfil, migration, sync ou escrita de dados nesta entrega. Validação: **497 testes em 65 arquivos**, TypeScript e build aprovados; impressão Chromium com fixture isolado confirmou escala SVG após exclusões, última linha da tabela, rankings, valores indisponíveis e limpeza pós-impressão. Código salvo no GitHub é separado de publicação do site.
+
 ## 10/11/2026 — Idioma Thiago e Retail por concessionária
 
 Idioma separado das permissões: Cliente/ADM Cliente e o username normalizado Thiago recebem inglês, sem alteração de papéis. Corrigidos defaults de idioma, datas, contadores, estados vazios e rótulos do dashboard; login permanece em inglês.

@@ -2,6 +2,16 @@
 
 > **Registro acumulado de resultados e evidências datadas.** Itens antigos descrevem a etapa em que foram registrados; decisões e pendências superadas não são o contrato atual. Consulte o [README](README.md) e os [guias técnicos](docs/ARQUITETURA.md). O canônico atual é o GitHub privado `rodrigocordovabbro/mg-motor-brasil-dashboard` (`dashboard-v2`/trabalho, `main`/checkpoints), confirmado em 09/11/2026; tentativas bloqueadas/destinos anteriores são históricos. A publicação continua separada.
 
+## Exportação PDF da Overview — 10/11/2026
+
+- [x] Disponibilizar o botão Gerar PDF / Export PDF na Overview para todos os perfis autenticados, inclusive Thiago/ADM Cliente, Cliente, BBRO e Administrador, sem conceder acesso a abas ou dados adicionais.
+- [x] Gerar o resumo compartilhável da Overview com identidade MG, período/filtros aplicados, corte D-1 America/Sao_Paulo, indicadores, curva/gráficos e acompanhamento comercial que o usuário já visualiza; preservar idiomas PT/EN, Retail e Registration separados e valores indisponíveis sem inventar dados.
+- [x] Reutilizar o fluxo de impressão/Salvar como PDF do dashboard anterior com páginas legíveis, gráficos e tabelas sem recorte de scroll; não incluir Leads individuais, contatos, contas, controles de edição, arquivos de importação, notas técnicas ou dados de outras abas.
+- [x] Usar o PDF de exemplo enviado somente como referência: manter nosso layout e os gráficos novos, especialmente Top 10 e Bottom 10 de dealers pela conversão comparável. Usar os dados atuais autorizados do recorte, sem copiar números do exemplo, duplicar/ratear grupos, incluir EM BREVE ou converter ausências em zero; publicar o código no GitHub como solicitado, sem confundir isso com publicação do site. Salvamento desta entrega ocorre no próximo avanço normal de main/dashboard-v2; consultar Git para o SHA final.
+- [x] Impedir geração durante atualização ou sem dados válidos; informar preparação/erro e orientar Salvar como PDF sem subir o relatório a storage público ou enviar a terceiros. Conferir testes isolados, TypeScript/build, revisão somente leitura e salvar no GitHub canônico sem publicar.
+
+Evidência: **497 testes em 65 arquivos**, TypeScript/build aprovados. Revisão somente leitura confirmou acesso/idioma e correções de pareamento SVG e teste estrutural. Chromium com fixtures isolados confirmou gráfico completo, última linha da tabela, valores intactos, ausência de dados privados, snapshot sem modificar o DOM da tela e limpeza afterprint. Componentes reais de curva/rankings também renderizados: Top 10 e Bottom 10 juntos em uma página, sem itens omitidos. Nenhuma escrita de banco, importação, sync, migration ou publicação nesta entrega.
+
 ## Correção solicitada em 10/11/2026 — idioma Thiago e Retail por dealer
 
 - [x] Verificar a conta Thiago e manter suas abas autorizadas em inglês; login sempre em inglês, sem alterar papéis ou privilégios para resolver idioma.

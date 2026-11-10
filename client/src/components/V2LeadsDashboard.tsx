@@ -17,6 +17,8 @@ import { V2LeadsReloadButton } from "./V2LeadsReloadButton";
 import { V2HistoricalLeadPaceCard } from "./V2HistoricalLeadPaceCard";
 import { V2LeadsExportButton } from "./V2LeadsExportButton";
 import { V2CommercialSummary } from "./V2CommercialSummary";
+import { V2OverviewPdfButton } from "./V2OverviewPdfButton";
+import { V2OverviewDealerRankings } from "./V2OverviewDealerRankings";
 import { resolveBrazilianState } from "@shared/stateRegistry";
 import {
   LeadsSectionNavigation,
@@ -1075,7 +1077,10 @@ function UnmatchedLeadDetails({
 }) {
   if (!rows.length) return null;
   return (
-    <details className="mx-5 mb-4 rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-xs">
+    <details
+      data-overview-pdf-exclude
+      className="mx-5 mb-4 rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-xs"
+    >
       <summary className="cursor-pointer font-semibold text-amber-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
         {tr(
           locale,
@@ -1350,14 +1355,17 @@ function DealerPerformanceCard({
         }
       />
       {canManage ? (
-        <V2CommercialUploads
-          competence={data.pacing.competence}
-          onUpdated={onUpdated}
-          canManage={canManage}
-        />
+        <div data-overview-pdf-exclude>
+          <V2CommercialUploads
+            competence={data.pacing.competence}
+            onUpdated={onUpdated}
+            canManage={canManage}
+          />
+        </div>
       ) : null}
       {performance.warnings?.length ? (
         <div
+          data-overview-pdf-exclude
           className="mx-5 mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900"
           role="status"
         >
@@ -1373,7 +1381,10 @@ function DealerPerformanceCard({
       ) : null}
       <UnmatchedLeadDetails rows={unmatchedLeadRows} locale={locale} />
       {performance.unmapped?.length ? (
-        <details className="mx-5 mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs">
+        <details
+          data-overview-pdf-exclude
+          className="mx-5 mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs"
+        >
           <summary className="cursor-pointer font-semibold text-slate-700">
             {performance.unmapped.length}{" "}
             {tr(
@@ -1444,7 +1455,10 @@ function DealerPerformanceCard({
         }
       />
       <GroupedGoalsDetails groups={groupedGoals} locale={locale} />
-      <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-end">
+      <div
+        data-overview-pdf-exclude
+        className="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-end"
+      >
         <label className="min-w-0 flex-1">
           <span className="v2-label">
             {tr(
@@ -1619,7 +1633,10 @@ function DealerPerformanceCard({
           )}
         </span>
       </div>
-      <div className="border-t border-slate-100 px-5 py-4 text-xs leading-5 text-slate-500">
+      <div
+        data-overview-pdf-exclude
+        className="border-t border-slate-100 px-5 py-4 text-xs leading-5 text-slate-500"
+      >
         {available ? (
           <span>
             {performance.sourceName
@@ -1864,6 +1881,7 @@ function OverviewTab({
   clientView = false,
   overviewOnly = false,
   filters,
+  busy = false,
   locale = "pt-BR",
 }: {
   data: V2LeadsResponse;
@@ -1873,122 +1891,138 @@ function OverviewTab({
   clientView?: boolean;
   overviewOnly?: boolean;
   filters: V2DashboardFilters;
+  busy?: boolean;
   locale?: "pt-BR" | "en";
 }) {
+  const overviewPdfRef = useRef<HTMLDivElement>(null);
   return (
     <div className="space-y-4">
-      {data.historicalPace ? (
-        <V2HistoricalLeadPaceCard
-          data={data.historicalPace}
-          clientView={clientView}
-          locale={locale}
-          actions={
-            <div className="flex flex-wrap items-center gap-2">
-              <V2LeadsReloadButton
-                competence={data.pacing.competence}
-                onReload={onReloadMonth}
-                syncExternal={canManage}
-                showFeedback={false}
-                locale={locale}
-              />
-              {canManage ? (
-                <V2MonthlyGoalEditor
-                  competence={data.pacing.competence}
-                  onUpdated={onGoalUpdated}
-                  canManage={canManage}
-                />
-              ) : null}
-            </div>
-          }
-        />
-      ) : (
-        <PacingCard
+      <div className="flex justify-end">
+        <V2OverviewPdfButton
+          rootRef={overviewPdfRef}
           data={data}
-          onUpdated={onGoalUpdated}
-          onReloadMonth={onReloadMonth}
-          canManage={canManage}
+          filters={filters}
+          busy={busy}
           locale={locale}
         />
-      )}
-      <Card className="overflow-hidden">
-        <CardHeading
-          eyebrow={tr(locale, "Evolução diária", "Daily evolution")}
-          title={tr(
-            locale,
-            "Leads por dia e canal",
-            "Leads by day and channel"
-          )}
-          description={
-            data.historicalPace
-              ? tr(
-                  locale,
-                  "Barras por canal e realizado acumulado do período. O plano e a projeção mensal estão na curva histórica acima.",
-                  "Bars by channel and cumulative actuals for the period. The plan and monthly projection are in the historical curve above."
-                )
-              : tr(
-                  locale,
-                  "Barras empilhadas com o real acumulado e o pace retornado pela API.",
-                  "Stacked bars with cumulative actuals and the pace returned by the API."
-                )
-          }
-          icon={TrendingUp}
-        />
-        <DailyChart
-          daily={data.daily}
-          showPace={!data.historicalPace}
-          locale={locale}
-        />
-      </Card>
-      {canManage && !clientView ? (
-        <V2ModelDeliveryCard
-          items={data.models}
-          total={data.summary.total}
-          locale={locale}
-        />
-      ) : null}
-      <div className={`grid gap-4 ${clientView ? "" : "lg:grid-cols-2"}`}>
-        {!clientView ? (
-          <Card className="overflow-hidden">
-            <CardHeading
-              title={tr(
-                locale,
-                "Distribuição por canal",
-                "Channel distribution"
-              )}
-              icon={BarChart3}
-            />
-            <DistributionList
-              items={data.channels}
-              limit={data.channels.length}
-              locale={locale}
-            />
-          </Card>
-        ) : null}
+      </div>
+      <div ref={overviewPdfRef} data-overview-pdf-root className="space-y-4">
+        {data.historicalPace ? (
+          <V2HistoricalLeadPaceCard
+            data={data.historicalPace}
+            clientView={clientView}
+            locale={locale}
+            actions={
+              <div className="flex flex-wrap items-center gap-2">
+                <V2LeadsReloadButton
+                  competence={data.pacing.competence}
+                  onReload={onReloadMonth}
+                  syncExternal={canManage}
+                  showFeedback={false}
+                  locale={locale}
+                />
+                {canManage ? (
+                  <V2MonthlyGoalEditor
+                    competence={data.pacing.competence}
+                    onUpdated={onGoalUpdated}
+                    canManage={canManage}
+                  />
+                ) : null}
+              </div>
+            }
+          />
+        ) : (
+          <PacingCard
+            data={data}
+            onUpdated={onGoalUpdated}
+            onReloadMonth={onReloadMonth}
+            canManage={canManage}
+            locale={locale}
+          />
+        )}
         <Card className="overflow-hidden">
           <CardHeading
-            title={tr(locale, "Top 10 estados", "Top 10 states")}
-            icon={MapPin}
+            eyebrow={tr(locale, "Evolução diária", "Daily evolution")}
+            title={tr(
+              locale,
+              "Leads por dia e canal",
+              "Leads by day and channel"
+            )}
+            description={
+              data.historicalPace
+                ? tr(
+                    locale,
+                    "Barras por canal e realizado acumulado do período. O plano e a projeção mensal estão na curva histórica acima.",
+                    "Bars by channel and cumulative actuals for the period. The plan and monthly projection are in the historical curve above."
+                  )
+                : tr(
+                    locale,
+                    "Barras empilhadas com o real acumulado e o pace retornado pela API.",
+                    "Stacked bars with cumulative actuals and the pace returned by the API."
+                  )
+            }
+            icon={TrendingUp}
           />
-          <DistributionList
-            items={[...data.states]
-              .filter(item => resolveBrazilianState(item.label) !== null)
-              .sort(
-                (a, b) =>
-                  b.count - a.count || a.label.localeCompare(b.label, "pt-BR")
-              )}
-            limit={10}
+          <DailyChart
+            daily={data.daily}
+            showPace={!data.historicalPace}
             locale={locale}
           />
         </Card>
+        {canManage && !clientView ? (
+          <V2ModelDeliveryCard
+            items={data.models}
+            total={data.summary.total}
+            locale={locale}
+          />
+        ) : null}
+        <div className={`grid gap-4 ${clientView ? "" : "lg:grid-cols-2"}`}>
+          {!clientView ? (
+            <Card className="overflow-hidden">
+              <CardHeading
+                title={tr(
+                  locale,
+                  "Distribuição por canal",
+                  "Channel distribution"
+                )}
+                icon={BarChart3}
+              />
+              <DistributionList
+                items={data.channels}
+                limit={data.channels.length}
+                locale={locale}
+              />
+            </Card>
+          ) : null}
+          <Card className="overflow-hidden">
+            <CardHeading
+              title={tr(locale, "Top 10 estados", "Top 10 states")}
+              icon={MapPin}
+            />
+            <DistributionList
+              items={[...data.states]
+                .filter(item => resolveBrazilianState(item.label) !== null)
+                .sort(
+                  (a, b) =>
+                    b.count - a.count || a.label.localeCompare(b.label, "pt-BR")
+                )}
+              limit={10}
+              locale={locale}
+            />
+          </Card>
+        </div>
+        <DealerPerformanceCard
+          data={data}
+          onUpdated={onGoalUpdated}
+          canManage={overviewOnly ? false : canManage}
+          filters={filters}
+          locale={locale}
+        />
+        {data.notes.length ? (
+          <Notes notes={data.notes} locale={locale} />
+        ) : null}
+        <V2OverviewDealerRankings data={data} locale={locale} />
       </div>
-      <DealerPerformanceCard
-        data={data}
-        onUpdated={onGoalUpdated}
-        canManage={overviewOnly ? false : canManage}
-        filters={filters}
-        locale={locale}
-      />
-      {data.notes.length ? <Notes notes={data.notes} locale={locale} /> : null}
     </div>
   );
 }
@@ -2001,7 +2035,10 @@ function Notes({
   locale?: LeadsLocale;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
+    <div
+      data-overview-pdf-exclude
+      className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4"
+    >
       <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
         <CircleHelp className="h-4 w-4 text-slate-400" />{" "}
         {tr(locale, "Notas da fonte", "Source notes")}
@@ -2857,6 +2894,7 @@ export default function V2LeadsDashboard({
                     clientView={clientView}
                     overviewOnly={overviewOnly}
                     filters={applied}
+                    busy={dashboardQuery.isFetching || refreshBusy}
                     locale={locale}
                   />
                 ) : null}

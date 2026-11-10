@@ -335,6 +335,52 @@ describe("client presentation UI", () => {
 
   it.each([
     {
+      name: "admin",
+      canManage: true,
+      clientView: false,
+      overviewOnly: false,
+      locale: "pt-BR" as const,
+    },
+    {
+      name: "client_admin / Thiago",
+      canManage: false,
+      clientView: true,
+      overviewOnly: false,
+      locale: "en" as const,
+    },
+    {
+      name: "client",
+      canManage: false,
+      clientView: true,
+      overviewOnly: true,
+      locale: "en" as const,
+    },
+    {
+      name: "bbro",
+      canManage: false,
+      clientView: false,
+      overviewOnly: false,
+      locale: "pt-BR" as const,
+    },
+  ])(
+    "enables the Overview PDF for $name without changing their visible data",
+    ({ name: _name, ...props }) => {
+      const html = renderDashboard(props);
+      expect(html).toContain('data-testid="overview-pdf-button"');
+      expect(html).toContain("data-overview-pdf-root");
+      expect(html).toContain(
+        props.locale === "en" ? "Export PDF" : "Gerar PDF"
+      );
+      const button = html.match(
+        /<button[^>]*data-testid="overview-pdf-button"[^>]*>/
+      )?.[0];
+      expect(button).toBeDefined();
+      expect(button).not.toMatch(/\sdisabled(?:=|\s|>)/);
+    }
+  );
+
+  it.each([
+    {
       name: "administrator operational view",
       props: {
         canManage: true,

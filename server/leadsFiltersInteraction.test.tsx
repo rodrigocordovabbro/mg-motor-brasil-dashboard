@@ -763,7 +763,16 @@ it.each([true, false])(
     });
     const overview = findOverview(canManage);
     const tree = overview.type(overview.props);
-    const first = tree.props.children[0];
+    const pdfButton = findElement(
+      tree,
+      element => element.type?.name === "V2OverviewPdfButton"
+    );
+    expect(pdfButton).not.toBeNull();
+    const printableOverview = findElement(
+      tree,
+      element => element.props["data-overview-pdf-root"] !== undefined
+    );
+    const first = printableOverview.props.children[0];
     expect(first.type.name).toBe("V2HistoricalLeadPaceCard");
     expect(first.props.data).toBe(history);
     expect(

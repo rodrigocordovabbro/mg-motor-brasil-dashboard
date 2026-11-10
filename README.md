@@ -147,6 +147,14 @@ A exportação CSV:
 - protege campos textuais contra injeção de fórmulas de planilha;
 - no modo cliente, mascara nomes; para perfis não administradores, a apresentação de UF é agrupada.
 
+### Resumo PDF da Overview
+
+Na **Overview**, todos os perfis autenticados (`admin`, `client_admin`, `client` e `bbro`) têm o botão **Gerar PDF / Export PDF**. Com o recorte aplicado e os dados carregados, clique e escolha **Salvar como PDF** na janela nativa de impressão. O arquivo usa o layout MG atual em A4 paisagem, idioma da interface, período/corte D-1 São Paulo, filtros aplicados, indicadores e gráficos atuais, vendas e resumo por dealer.
+
+O relatório acrescenta **Top 10 e Bottom 10 por conversão** das unidades elegíveis do recorte: usa a taxa comparável já retornada pelo dashboard, inclui venda zero real, exclui fonte indisponível, unidades sem Leads, nomes não conciliados, lojas EM BREVE e grupos sem vendas alocadas. São até 10 por lista, sem inventar unidades ou preencher ausência com zero; listas podem se sobrepor quando há poucas unidades. O snapshot comercial e o período de comparação continuam explicitados, sem confundir conversão executiva com coorte matched.
+
+O PDF é preparado localmente, não faz nova consulta nem amplia privilégios. Não exporta Leads individuais/contatos, contas, uploads, nomes privados de arquivos ou notas administrativas. A busca textual aparece apenas como filtro aplicado, não com seu texto. A geração fica bloqueada durante atualização; fonte não configurada não oferece um relatório vazio como se fosse dado real. O resumo acompanha a Overview e os filtros/ordenação internos visíveis das tabelas; não é exportação da base integral CSV. Não há upload público nem envio automático do arquivo.
+
 ## Segurança e acesso
 
 Todas as operações V2, exceto as rotas públicas de sessão, passam pela leitura de sessão e recebem `Cache-Control: private, no-store`. Os routers aplicam o papel no servidor; esconder uma aba no frontend não é a barreira de autorização.
