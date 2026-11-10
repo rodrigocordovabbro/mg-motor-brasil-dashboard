@@ -28,6 +28,8 @@ describe("Overview PDF button", () => {
     expect(html).toContain('data-testid="overview-pdf-button"');
     expect(html).toContain("Export PDF");
     expect(html).toContain("Save as PDF");
+    expect(html).toContain("4-page Overview");
+    expect(html).toContain("latest stored dashboard data");
     expect(html).not.toMatch(/<button[^>]*\sdisabled(?:=|\s|>)/);
     expect(html).toContain("data-overview-pdf-exclude");
   });

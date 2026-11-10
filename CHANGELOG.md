@@ -2,6 +2,14 @@
 
 Este documento resume mudanças do código e da documentação. Uma entrega listada não comprova, por si só, publicação, conectividade externa ou estado futuro dos dados. Entradas anteriores são históricas; o estado vigente está no [README](README.md) e nos [guias técnicos](docs/ARQUITETURA.md).
 
+## 10/11/2026 — Exportador no modelo aprovado de quatro páginas
+
+O botão PDF passa a gerar capa, Leads com curva acumulada, gráfico diário por canal e vendas com Top 10/Bottom 10, em A4 paisagem e no idioma da interface. Cards usam números menores e peso suave; tabela Daily totals e card Peak daily volume não são incluídos. O modelo não contém imagens ou indicadores estáticos do arquivo de referência.
+
+No clique, a mesma consulta `leads.dashboard` é relida com a autorização e filtros vigentes. A preparação aguarda a versão renderizada correspondente e preserva seus SVGs e legendas; números, metas, projeções, datas e rankings vêm do agregado recebido. O cenário histórico escolhido na tela permanece coerente com os indicadores do relatório. Falha de leitura ou mudança de recorte/snapshot bloqueia a exportação. Dados armazenados mais recentes não são uma promessa de sincronização Google: exportar não chama imports, sync ou mutations de negócio, não amplia acesso e não envia o PDF a serviços públicos. Salvamento no GitHub permanece separado da publicação do site.
+
+Validação: **513 testes em 67 arquivos** na suíte completa e, após os ajustes finais da revisão somente leitura, **70 testes afetados em 7 arquivos**, TypeScript/build aprovados. Chromium isolado confirmou quatro páginas, refetch antes de exportar, alterações dinâmicas dos valores, gráficos e rankings sem cortes e limpeza pós-impressão. Corrigidos casos de forecast filtrado/atrasado, competência mensal, canais do Overview Cliente, ausência versus zero confirmado e versão das entradas que definem elegibilidade comercial. Nenhuma fonte foi sincronizada e nenhum dado ou PDF operacional foi versionado.
+
 ## 10/11/2026 — PDF da Overview para todos os perfis
 
 Adicionado **Gerar PDF / Export PDF** na Overview para Admin, ADM Cliente/Thiago, Cliente e BBRO, usando a impressão nativa/Salvar como PDF do navegador. O resumo utiliza o layout branco MG atual, indicadores, curva histórica e gráficos já carregados, período/filtros aplicados e corte D-1 São Paulo. O clone isolado preserva SVGs, amplia áreas de scroll e permite paginação de tabelas, sem alterar o dashboard ou consultar dados adicionais.

@@ -1,9 +1,15 @@
-import type { V2Filters } from "@shared/v2Types";
+import type { V2Dashboard, V2Filters } from "@shared/v2Types";
+import {
+  buildOverviewPdfReport,
+  buildOverviewPdfReportCss,
+} from "./overviewPdfReport";
+import { getOverviewPdfSnapshotVersion } from "./overviewPdfSnapshot";
 
 export type OverviewPdfLocale = "pt-BR" | "en";
 
 export type PrintOverviewPdfInput = {
   root: HTMLElement;
+  data: V2Dashboard;
   locale: OverviewPdfLocale;
   dateFrom: string;
   dateTo: string;
@@ -952,6 +958,15 @@ export async function printOverviewPdf(
 ): Promise<void> {
   const sourceDocument = input.root.ownerDocument;
   validateOverviewPdfDateRange(input);
+  if (
+    input.data.status !== "READY" ||
+    input.data.period.dateFrom !== input.dateFrom ||
+    input.data.period.dateTo !== input.dateTo ||
+    input.root.dataset.overviewPdfVersion !==
+      getOverviewPdfSnapshotVersion(input.data)
+  ) {
+    throw new Error("The Overview and PDF snapshot do not match.");
+  }
   const metadata = buildOverviewPdfMetadata({
     locale: input.locale,
     dateFrom: input.dateFrom,
@@ -991,17 +1006,16 @@ export async function printOverviewPdf(
     );
     const printCss = printDocument.createElement("style");
     printCss.setAttribute("data-overview-pdf-print-css", "true");
-    printCss.textContent = buildOverviewPdfPrintCss();
+    printCss.textContent = `${buildOverviewPdfPrintCss()}\n${buildOverviewPdfReportCss()}`;
     printDocument.head.appendChild(printCss);
 
-    const documentShell = printDocument.createElement("main");
-    documentShell.className = "overview-pdf-document";
-    documentShell.appendChild(buildHeaderDocument(printDocument, metadata));
-
-    const content = printDocument.createElement("section");
-    content.className = "overview-pdf-content";
-    content.appendChild(printDocument.importNode(clone, true));
-    documentShell.appendChild(content);
+    const documentShell = buildOverviewPdfReport({
+      document: printDocument,
+      clone,
+      data: input.data,
+      metadata,
+      locale: input.locale,
+    });
     printDocument.body.appendChild(documentShell);
 
     sourceDocument.title = metadata.title;

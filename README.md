@@ -1,6 +1,6 @@
 # MG Motor Brasil — dashboard
 
-> **Estado documental:** 09/11/2026
+> **Estado documental:** 10/11/2026
 
 Painel comercial para acompanhar Leads, metas, vendas, dealers, regiões, CRM, plano de mídia e controles operacionais da MG Motor Brasil. O sistema separa dados reais, metas, projeções e fontes sem cobertura: ausência de fonte ou de período não é convertida automaticamente em zero.
 
@@ -36,7 +36,7 @@ A tela de login é sempre em inglês. Depois da autenticação, Administrador e 
 | --------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `admin`         | Administrador       | Operação administrativa, gestão de contas, imports, metas e insights por modelo conforme as autorizações específicas de cada endpoint. |
 | `bbro`          | BBRO                | Leitura dos módulos permitidos em PT-BR e validação do Manual/CRM; não faz gestão de contas nem acessa insights por modelo.            |
-| `client`        | Client              | Somente o Overview, com agregados de dealers e sem Leads individuais, abas restritas, exportação ou escrita.                           |
+| `client`        | Client              | Somente Overview e seu PDF agregado, sem Leads individuais, abas restritas, CSV ou escrita.                                           |
 | `client_admin`  | Client Admin        | Todas as leituras permitidas ao perfil cliente, em inglês, sem escrita e sem a análise administrativa por modelo.                      |
 
 `client_admin` pode consultar as áreas de leitura liberadas, incluindo Leads, regiões/CRM, plano de mídia, dispatch e exportação conforme o recorte autorizado. Operações de importação, metas, projeções, contas e validação manual não são liberadas a esse perfil. O cliente comum permanece no Overview agregado; não deve ser tratado como um terceiro papel ou como um Administrador reduzido.
@@ -107,7 +107,7 @@ Os comandos declarados no `package.json` são:
 | `pnpm dev:static`   | Servidor Vite estático na porta definida por `PORT` ou `3000`.                             |
 | `pnpm build:static` | Build estático com Vite.                                                                   |
 
-Essa lista foi conferida no `package.json`; nenhum desses comandos de instalação, migration, importação ou teste real foi executado nesta revisão. A última suíte funcional aprovada registrou **463 testes em 60 arquivos**. Esse número é evidência anterior, não resultado desta revisão.
+Essa lista foi conferida no `package.json`. A revisão documental de 09/11 não executou instalação, migration, importação ou testes funcionais e referenciou a evidência anterior de **463 testes em 60 arquivos**. As verificações posteriores de funcionalidades, incluindo PDF, estão datadas no [CHANGELOG](CHANGELOG.md) e no [TODO](TODO.md); não confundir esses resultados nem o salvamento de código com atualização de fontes ou publicação.
 
 Para uma execução em container, o arquivo atual define o fluxo de build e runtime:
 
@@ -149,11 +149,13 @@ A exportação CSV:
 
 ### Resumo PDF da Overview
 
-Na **Overview**, todos os perfis autenticados (`admin`, `client_admin`, `client` e `bbro`) têm o botão **Gerar PDF / Export PDF**. Com o recorte aplicado e os dados carregados, clique e escolha **Salvar como PDF** na janela nativa de impressão. O arquivo usa o layout MG atual em A4 paisagem, idioma da interface, período/corte D-1 São Paulo, filtros aplicados, indicadores e gráficos atuais, vendas e resumo por dealer.
+Na **Overview**, todos os perfis autenticados (`admin`, `client_admin`, `client` e `bbro`) têm o botão **Gerar PDF / Export PDF**. Com o recorte aplicado e os dados carregados, clique e escolha **Salvar como PDF** na janela nativa de impressão. O modelo usa fundo branco MG, cards com números menores e peso suave, A4 paisagem e o idioma da interface, em **quatro páginas**: capa; Leads com curva acumulada, plano e projeção; gráfico diário por canal; vendas e Top 10/Bottom 10. Não inclui tabela Daily totals nem card Peak daily volume.
 
 O relatório acrescenta **Top 10 e Bottom 10 por conversão** das unidades elegíveis do recorte: usa a taxa comparável já retornada pelo dashboard, inclui venda zero real, exclui fonte indisponível, unidades sem Leads, nomes não conciliados, lojas EM BREVE e grupos sem vendas alocadas. São até 10 por lista, sem inventar unidades ou preencher ausência com zero; listas podem se sobrepor quando há poucas unidades. O snapshot comercial e o período de comparação continuam explicitados, sem confundir conversão executiva com coorte matched.
 
-O PDF é preparado localmente, não faz nova consulta nem amplia privilégios. Não exporta Leads individuais/contatos, contas, uploads, nomes privados de arquivos ou notas administrativas. A busca textual aparece apenas como filtro aplicado, não com seu texto. A geração fica bloqueada durante atualização; fonte não configurada não oferece um relatório vazio como se fosse dado real. O resumo acompanha a Overview e os filtros/ordenação internos visíveis das tabelas; não é exportação da base integral CSV. Não há upload público nem envio automático do arquivo.
+Cada clique relê `leads.dashboard` com os mesmos filtros e a autorização da sessão e aguarda a renderização correspondente. Valores, metas, projeções, fontes, datas e rankings vêm desse agregado atual; os gráficos são SVGs do mesmo snapshot da tela, sem imagens ou números fixos do PDF de exemplo. A leitura é dos **dados persistidos mais recentes**: exportar não importa arquivos nem sincroniza a planilha Google. A atualização da fonte externa continua sendo uma operação distinta e a data real disponível permanece explícita.
+
+O PDF é preparado localmente e não amplia privilégios. Não exporta Leads individuais/contatos, contas, uploads, nomes privados de arquivos ou notas administrativas. A busca textual aparece apenas como filtro aplicado, não com seu texto. A geração fica bloqueada durante atualização, em falha de leitura ou se filtros/snapshot mudarem durante a preparação; fonte não configurada não oferece um relatório vazio como se fosse dado real. Os rankings são calculados sobre o recorte autorizado completo, independentemente da paginação/ordenação visual da tabela. Não é exportação da base integral CSV e não há upload público nem envio automático do arquivo.
 
 ## Segurança e acesso
 

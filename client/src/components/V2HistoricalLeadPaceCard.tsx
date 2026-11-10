@@ -604,6 +604,7 @@ export function V2HistoricalLeadPaceCard({
   return (
     <section
       data-testid="historical-lead-pace-card"
+      data-overview-pdf-scenario={scenario.key}
       className="w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
     >
       <header className="flex flex-col gap-4 border-b border-slate-100 px-5 py-5 lg:flex-row lg:items-start lg:justify-between">
@@ -890,6 +891,7 @@ export function V2HistoricalLeadPaceCard({
             {t(locale, "scrollHint")}
           </p>
           <div
+            data-overview-pdf-legend
             className="flex flex-wrap gap-x-5 gap-y-2 border-t border-slate-100 px-4 py-3 text-xs text-slate-600"
             aria-label={t(locale, "legend")}
           >

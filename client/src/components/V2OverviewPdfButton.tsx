@@ -1,23 +1,31 @@
 import { useRef, useState, type RefObject } from "react";
 import { FileDown, LoaderCircle } from "lucide-react";
 import type { V2Dashboard, V2Filters } from "@shared/v2Types";
+import {
+  getOverviewPdfSnapshotVersion,
+  waitForOverviewPdfSnapshot,
+} from "@/lib/overviewPdfSnapshot";
 
 export function V2OverviewPdfButton({
   rootRef,
   data,
   filters,
+  onRefresh,
   busy = false,
   locale = "pt-BR",
 }: {
   rootRef: RefObject<HTMLDivElement | null>;
   data: V2Dashboard;
   filters: V2Filters;
+  onRefresh?: () => Promise<V2Dashboard>;
   busy?: boolean;
   locale?: "pt-BR" | "en";
 }) {
   const [preparing, setPreparing] = useState(false);
   const [error, setError] = useState(false);
   const locked = useRef(false);
+  const current = useRef({ data, filters, busy, locale });
+  current.current = { data, filters, busy, locale };
   const en = locale === "en";
   const disabled = busy || preparing || data.status !== "READY";
   const generate = async () => {
@@ -25,15 +33,47 @@ export function V2OverviewPdfButton({
     locked.current = true;
     setPreparing(true);
     setError(false);
+    const requestedFilters = JSON.stringify(filters);
+    const originalVersion = getOverviewPdfSnapshotVersion(data);
     try {
+      // Read the authorized persisted dashboard; this never invokes the Google sync/import route.
+      const snapshot = onRefresh ? await onRefresh() : data;
+      if (
+        snapshot.status !== "READY" ||
+        snapshot.period.dateFrom !== filters.dateFrom ||
+        snapshot.period.dateTo !== filters.dateTo
+      ) {
+        throw new Error(
+          "The refreshed dashboard does not match the requested period."
+        );
+      }
+      const root = rootRef.current;
+      if (!root) throw new Error("The Overview was closed.");
+      const version = getOverviewPdfSnapshotVersion(snapshot);
+      await waitForOverviewPdfSnapshot(
+        root,
+        version,
+        version !== originalVersion
+      );
+      if (
+        JSON.stringify(current.current.filters) !== requestedFilters ||
+        current.current.locale !== locale ||
+        current.current.busy ||
+        getOverviewPdfSnapshotVersion(current.current.data) !== version
+      ) {
+        throw new Error(
+          "The Overview or its filters changed during PDF preparation."
+        );
+      }
       const { printOverviewPdf } = await import("@/lib/overviewPdf");
       await printOverviewPdf({
-        root: rootRef.current,
+        root,
+        data: snapshot,
         locale,
-        dateFrom: data.period.dateFrom,
-        dateTo: data.period.dateTo,
-        cutoff: data.period.cutoffDate,
-        latestLeadDate: data.source.latestLeadDate ?? null,
+        dateFrom: snapshot.period.dateFrom,
+        dateTo: snapshot.period.dateTo,
+        cutoff: snapshot.period.cutoffDate,
+        latestLeadDate: snapshot.source.latestLeadDate ?? null,
         filters,
       });
     } catch {
@@ -74,8 +114,8 @@ export function V2OverviewPdfButton({
         aria-live="polite"
       >
         {en
-          ? "Overview summary for sharing. Choose “Save as PDF” in the print dialog."
-          : "Resumo da Overview para compartilhar. Escolha “Salvar como PDF” na janela de impressão."}
+          ? "4-page Overview with the latest stored dashboard data. Choose “Save as PDF” in the print dialog."
+          : "Overview de 4 páginas com os dados armazenados mais recentes. Escolha “Salvar como PDF” na janela de impressão."}
       </p>
       {error ? (
         <p role="alert" className="max-w-lg text-xs text-red-700">

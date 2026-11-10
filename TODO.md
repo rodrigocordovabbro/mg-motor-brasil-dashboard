@@ -2,6 +2,15 @@
 
 > **Registro acumulado de resultados e evidências datadas.** Itens antigos descrevem a etapa em que foram registrados; decisões e pendências superadas não são o contrato atual. Consulte o [README](README.md) e os [guias técnicos](docs/ARQUITETURA.md). O canônico atual é o GitHub privado `rodrigocordovabbro/mg-motor-brasil-dashboard` (`dashboard-v2`/trabalho, `main`/checkpoints), confirmado em 09/11/2026; tentativas bloqueadas/destinos anteriores são históricos. A publicação continua separada.
 
+## Exportador dinâmico no layout aprovado — 10/11/2026
+
+- [x] Aplicar ao botão PDF o último modelo aprovado em quatro páginas: capa; Leads e gráfico acumulado com realizado/plano/projeção; distribuição diária por canal; vendas e Top 10/Bottom 10. Cards menores, peso tipográfico suave e fundo branco; sem tabela Daily totals nem card Peak daily volume.
+- [x] Gerar os valores, metas, curvas, datas, filtros, projeções e rankings exclusivamente do snapshot autorizado do dashboard em cada exportação, sem números ou screenshots fixos do modelo, sem preenchimento de ausências como zero e sem misturar Registration/Retail ou datas de fontes diferentes.
+- [x] Fazer leitura atualizada do dashboard no clique sem importar ou sincronizar a fonte Google; preservar papéis e filtros, aguardar a renderização coerente dos gráficos e bloquear a geração se leitura, período ou versão não estiverem válidos. Distinguir dados atuais persistidos de fonte externa ainda não atualizada.
+- [x] Preservar login/idioma, exportação para todos os perfis e sanitização sem contatos, termos pessoais de busca, arquivos privados, controles administrativos ou outras abas. Testar, documentar e salvar no GitHub canônico sem publicar o site.
+
+Evidência de 10/11: suíte completa de **513 testes/67 arquivos**; depois dos dois ajustes finais da revisão read-only, **70 testes afetados/7 arquivos**, TypeScript e build aprovados. Impressão pelo botão real em Chromium com requisições interceptadas confirmou duas leituras (inicial + refetch), mudanças de valores no PDF, exatamente quatro páginas, SVGs completos, vinte dealers, fontes/datas explícitas e cleanup `afterprint`, sem mutations. Fonte atrasada mantém estimativa retornada com ressalva; competência mensal não é somada ao total multimensal; canais usam somente agregados diários autorizados quando o resumo de distribuição não é retornado. Ausência de cobertura exibe N/A, zero confirmado permanece zero e a versão de ranking inclui disponibilidade/cadastro. Código e documentação salvos por avanço normal no canônico; consultar Git para SHA. Nenhum PDF, agregado privado, script de validação, dado de Leads, credencial, importação, sync, migration ou publicação faz parte desta entrega.
+
 ## Exportação PDF da Overview — 10/11/2026
 
 - [x] Disponibilizar o botão Gerar PDF / Export PDF na Overview para todos os perfis autenticados, inclusive Thiago/ADM Cliente, Cliente, BBRO e Administrador, sem conceder acesso a abas ou dados adicionais.

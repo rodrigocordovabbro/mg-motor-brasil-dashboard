@@ -19,6 +19,7 @@ import { V2LeadsExportButton } from "./V2LeadsExportButton";
 import { V2CommercialSummary } from "./V2CommercialSummary";
 import { V2OverviewPdfButton } from "./V2OverviewPdfButton";
 import { V2OverviewDealerRankings } from "./V2OverviewDealerRankings";
+import { getOverviewPdfSnapshotVersion } from "@/lib/overviewPdfSnapshot";
 import { resolveBrazilianState } from "@shared/stateRegistry";
 import {
   LeadsSectionNavigation,
@@ -231,12 +232,15 @@ function statusTone(status: V2LeadsResponse["pacing"]["status"]) {
 function Card({
   children,
   className = "",
+  pdfChart,
 }: {
   children: ReactNode;
   className?: string;
+  pdfChart?: "daily";
 }) {
   return (
     <section
+      data-overview-pdf-chart={pdfChart}
       className={`rounded-2xl border border-slate-200/80 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)] ${className}`}
     >
       {children}
@@ -1724,7 +1728,10 @@ function DailyChart({
     );
   return (
     <div className="px-3 pb-5 pt-3 sm:px-5">
-      <div className="mb-3 flex flex-wrap gap-x-4 gap-y-2 text-[11px] text-slate-500">
+      <div
+        data-overview-pdf-legend
+        className="mb-3 flex flex-wrap gap-x-4 gap-y-2 text-[11px] text-slate-500"
+      >
         {channelKeys.map((key, index) => (
           <span key={key} className="inline-flex items-center gap-1.5">
             <i
@@ -1877,6 +1884,7 @@ function OverviewTab({
   data,
   onGoalUpdated,
   onReloadMonth,
+  onRefreshPdf,
   canManage,
   clientView = false,
   overviewOnly = false,
@@ -1887,6 +1895,7 @@ function OverviewTab({
   data: V2LeadsResponse;
   onGoalUpdated: () => void;
   onReloadMonth: () => Promise<LeadsReloadResult>;
+  onRefreshPdf?: () => Promise<V2LeadsResponse>;
   canManage: boolean;
   clientView?: boolean;
   overviewOnly?: boolean;
@@ -1902,11 +1911,17 @@ function OverviewTab({
           rootRef={overviewPdfRef}
           data={data}
           filters={filters}
+          onRefresh={onRefreshPdf}
           busy={busy}
           locale={locale}
         />
       </div>
-      <div ref={overviewPdfRef} data-overview-pdf-root className="space-y-4">
+      <div
+        ref={overviewPdfRef}
+        data-overview-pdf-root
+        data-overview-pdf-version={getOverviewPdfSnapshotVersion(data)}
+        className="space-y-4"
+      >
         {data.historicalPace ? (
           <V2HistoricalLeadPaceCard
             data={data.historicalPace}
@@ -1940,7 +1955,7 @@ function OverviewTab({
             locale={locale}
           />
         )}
-        <Card className="overflow-hidden">
+        <Card className="overflow-hidden" pdfChart="daily">
           <CardHeading
             eyebrow={tr(locale, "Evolução diária", "Daily evolution")}
             title={tr(
@@ -2615,6 +2630,18 @@ export default function V2LeadsDashboard({
     setApplied(current => ({ ...current, page }));
   };
   const refresh = () => void dashboardQuery.refetch();
+  const refreshForPdf = async (): Promise<V2LeadsResponse> => {
+    if (refreshBusy || activeReloadLock.current) {
+      throw new Error("The dashboard source is still updating.");
+    }
+    const result = await dashboardQuery.refetch({ throwOnError: true });
+    if (!result.data || result.data.status !== "READY") {
+      throw new Error(
+        "An authorized current dashboard snapshot is unavailable."
+      );
+    }
+    return result.data;
+  };
   const reloadMonthlyBase: LeadsReloadHandler = onStage => {
     const activeReload = activeReloadLock.current;
     if (activeReload) return activeReload;
@@ -2890,6 +2917,7 @@ export default function V2LeadsDashboard({
                     data={data}
                     onGoalUpdated={refresh}
                     onReloadMonth={reloadMonthlyBase}
+                    onRefreshPdf={refreshForPdf}
                     canManage={canManage}
                     clientView={clientView}
                     overviewOnly={overviewOnly}
