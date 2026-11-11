@@ -92,6 +92,13 @@ function find(node: any, predicate: (x: any) => boolean): any {
   }
   return null;
 }
+function text(node: any): string {
+  if (node == null || typeof node === "boolean") return "";
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(text).join("");
+  if (node?.props) return text(node.props.children);
+  return "";
+}
 function root() {
   mocks.index = 0;
   mocks.refIndex = 0;
@@ -159,6 +166,15 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 describe("progresso real do arquivo comercial", () => {
+  it("orienta o upload para Registration/WEEKLY_REG e a referência W4_Reg", () => {
+    const rendered = text(view());
+    expect(rendered).toContain("Registration por dealer · WEEKLY_REG");
+    expect(rendered).toContain(
+      "Snapshot semanal de Registration (emplacamentos) — WEEKLY_REG"
+    );
+    expect(rendered).toContain("W4_Reg — semana 4 · referência mensal");
+    expect(rendered).not.toContain("WEEKLY_RET");
+  });
   it("mantém prévia/importação desabilitadas até 100% e só confirma após prévia válida", async () => {
     card().props.onFile(file());
     const r = MockReader.all[0];

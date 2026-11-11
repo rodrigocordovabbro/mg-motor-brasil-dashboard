@@ -75,7 +75,7 @@ const SOURCE_CONFIGS: SourceConfig[] = [
   {
     kind: "sales",
     title: "Atualizar vendas",
-    eyebrow: "Retail por dealer · WEEKLY_RET",
+    eyebrow: "Registration por dealer · WEEKLY_REG",
     previewValueLabel: "Vendas",
   },
 ];
@@ -314,7 +314,7 @@ function SourceCard({
             </label>
             <label className="block">
               <span className="v2-label">
-                Snapshot semanal de Retail — WEEKLY_RET
+                Snapshot semanal de Registration (emplacamentos) — WEEKLY_REG
               </span>
               <select
                 value={draft.sourceWeek}
@@ -324,7 +324,7 @@ function SourceCard({
               >
                 {[1, 2, 3, 4, 5, 6].map(week => (
                   <option key={week} value={week}>
-                    W{week}_Retail — semana {week}
+                    W{week}_Reg — semana {week}
                     {week === 4 ? " · referência mensal" : ""}
                   </option>
                 ))}
@@ -333,8 +333,8 @@ function SourceCard({
                 Todas as semanas são preservadas. W4 é a referência do mês
                 quando preenchida; a coluna selecionada deve conter o snapshot
                 real do corte. Sem somar semanas ou converter células vazias em
-                zero. Arquivos antigos sem WEEKLY_RET continuam no fallback
-                WEEKLY_REG.
+                zero. WEEKLY_REG é a fonte ativa de Registration; os avisos
+                retornados pela fonte permanecem visíveis abaixo.
               </span>
             </label>
           </div>
@@ -427,9 +427,7 @@ function SourceCard({
           {status?.sourceWeek ? (
             <p>
               Coluna ativa: W{status.sourceWeek}_
-              {status.warnings.some(warning =>
-                warning.startsWith("Fonte de vendas: WEEKLY_RET")
-              )
+              {status.warnings.some(warning => warning.includes("WEEKLY_RET"))
                 ? "Retail"
                 : "Reg"}
             </p>

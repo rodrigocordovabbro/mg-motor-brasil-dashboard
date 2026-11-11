@@ -1,3 +1,4 @@
+import { getDealerSalesKind } from "@shared/commercialScope";
 import {
   buildOverviewDealerRankings,
   type OverviewDealerRanking,
@@ -13,6 +14,16 @@ export function V2OverviewDealerRankings({
 }) {
   const en = locale === "en";
   const rankings = buildOverviewDealerRankings(data);
+  const dealerSalesKind = getDealerSalesKind(data.dealerPerformance);
+  const dealerSalesLabel =
+    dealerSalesKind === "registration"
+      ? en
+        ? "Registration"
+        : "Emplacamentos"
+      : dealerSalesKind === "retail"
+        ? "Retail"
+        : null;
+  const dealerSalesSuffix = dealerSalesLabel ? ` · ${dealerSalesLabel}` : "";
   const fmt = new Intl.NumberFormat(en ? "en-US" : "pt-BR", {
     maximumFractionDigits: 0,
   });
@@ -55,7 +66,8 @@ export function V2OverviewDealerRankings({
                 </strong>
               </div>
               <p className="mt-1 text-[11px] text-slate-500">
-                {fmt.format(row.sales)} {en ? "sales" : "vendas"} ·{" "}
+                {fmt.format(row.sales)}{" "}
+                {dealerSalesLabel ?? (en ? "sales" : "vendas")} ·{" "}
                 {fmt.format(row.leads)} Leads
               </p>
               <div className="mt-2 h-1.5 rounded-full bg-slate-100">
@@ -90,13 +102,13 @@ export function V2OverviewDealerRankings({
         </p>
         <h2 className="mt-1 text-xl font-bold text-slate-950">
           {en
-            ? "Dealer conversion — Top 10 & Bottom 10"
-            : "Conversão por dealer — Top 10 e Bottom 10"}
+            ? `Dealer conversion — Top 10 & Bottom 10${dealerSalesSuffix}`
+            : `Conversão por dealer — Top 10 e Bottom 10${dealerSalesSuffix}`}
         </h2>
         <p className="mt-2 text-xs leading-5 text-slate-500">
           {en
-            ? "Sales snapshot ÷ Leads for the comparable period; executive comparison, not a matched cohort. Upcoming units, unavailable values, units without Leads and unallocated collective sales are excluded. A real zero sale remains eligible."
-            : "Snapshot de vendas ÷ Leads do período comparável; comparação executiva, não coorte matched. Exclui unidades EM BREVE, valores indisponíveis, unidades sem Leads e vendas coletivas sem rateio. Venda zero real continua elegível."}
+            ? `${dealerSalesLabel ? `${dealerSalesLabel} ` : ""}sales snapshot ÷ Leads for the comparable period; executive comparison, not a matched cohort. Upcoming units, unavailable values, units without Leads and unallocated collective sales are excluded. A real zero sale remains eligible.`
+            : `${dealerSalesLabel ? `${dealerSalesLabel} ` : ""}snapshot de vendas ÷ Leads do período comparável; comparação executiva, não coorte matched. Exclui unidades EM BREVE, valores indisponíveis, unidades sem Leads e vendas coletivas sem rateio. Venda zero real continua elegível.`}
         </p>
         <p className="mt-1 text-xs text-slate-500">
           {fmt.format(rankings.eligibleCount)}{" "}

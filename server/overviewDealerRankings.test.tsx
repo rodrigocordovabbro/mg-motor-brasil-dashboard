@@ -119,6 +119,18 @@ describe("Overview dealer rankings", () => {
     expect(html).not.toContain("Unknown private source");
     expect(html).not.toContain("EM BREVE");
   });
+  it("labels dealer ratios as Registration when the active dealer snapshot is REG", () => {
+    const data = fixture();
+    data.dealerPerformance.dealerSalesKind = "registration";
+    const html = renderToStaticMarkup(
+      <V2OverviewDealerRankings data={data} locale="en" />
+    );
+    expect(html).toContain(
+      "Dealer conversion — Top 10 &amp; Bottom 10 · Registration"
+    );
+    expect(html).toContain("5 Registration");
+    expect(html).not.toContain("5 Retail");
+  });
   it("shows absence instead of filling a leaderboard with fake zeroes", () => {
     const data = fixture();
     data.dealerPerformance.available = false;

@@ -220,6 +220,26 @@ describe("Overview PDF report model", () => {
     expect(model.sales.retail).toBeNull();
     expect(model.sales.registration).toBeNull();
   });
+  it("labels dealer rankings as Registration without changing the separate general totals", () => {
+    const data = fixture();
+    data.dealerPerformance.dealerSalesKind = "registration";
+    data.dealerPerformance.generalRegistrationMTD = {
+      value: 151,
+      asOf: "2026-11-09",
+      sourceSheet: "DAILY_FUP",
+      label: "MTD Registration",
+    };
+    data.dealerPerformance.generalRetailMTD = {
+      value: 144,
+      asOf: "2026-11-09",
+      sourceSheet: "DAILY_FUP",
+      label: "Retail",
+    };
+    const model = buildOverviewPdfReportModel(data, "en");
+    expect(model.sales.dealerSalesKind).toBe("registration");
+    expect(model.sales.registration).toBe(151);
+    expect(model.sales.retail).toBe(144);
+  });
   it("never invents a forecast when the historical scenario is unavailable", () => {
     const data = fixture();
     data.historicalPace!.last3Months.status = "NO_HISTORY";

@@ -1,4 +1,8 @@
 import {
+  getDealerSalesKind,
+  isMonthToDateCommercialPeriod,
+} from "@shared/commercialScope";
+import {
   describeLeadsReload,
   LeadsReloadVersionNotConfirmedError,
   type LeadsReloadResult,
@@ -1448,7 +1452,7 @@ function DealerPerformanceCard({
         onUpdated={onUpdated}
         locale={locale}
         generalComparable={
-          filters.dateFrom.slice(0, 7) === filters.dateTo.slice(0, 7) &&
+          isMonthToDateCommercialPeriod(filters) &&
           ![
             filters.model,
             filters.channel,
@@ -1521,7 +1525,11 @@ function DealerPerformanceCard({
                 {tr(locale, "Meta leads · unidade", "Lead goal · unit")}
               </th>
               <th className="px-4 py-3 text-right">
-                {tr(locale, "Vendas", "Sales")}
+                {getDealerSalesKind(performance) === "registration"
+                  ? tr(locale, "Vendas · Registration", "Sales · Registration")
+                  : getDealerSalesKind(performance) === "retail"
+                    ? tr(locale, "Vendas · Retail", "Sales · Retail")
+                    : tr(locale, "Vendas", "Sales")}
               </th>
               <th className="px-4 py-3 text-right">
                 {tr(locale, "Meta vendas · unidade", "Sales goal · unit")}

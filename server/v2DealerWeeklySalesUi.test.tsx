@@ -46,6 +46,26 @@ describe("weekly Retail presentation", () => {
     expect(html).toContain("N/A");
     expect(html).not.toContain("Conversão");
   });
+  it("renders Registration labels for a WEEKLY_REG snapshot and preserves the source label", () => {
+    const registration = {
+      ...performance,
+      dealerSalesKind: "registration" as const,
+      rows: performance.rows.map(row => ({
+        ...row,
+        weeklySales: row.weeklySales?.map(weekly => ({
+          ...weekly,
+          sourceSheet: "WEEKLY_REG" as const,
+        })),
+      })),
+    };
+    const html = renderToStaticMarkup(
+      <V2DealerWeeklySales performance={registration} locale="en" />
+    );
+    expect(html).toContain("Weekly Registration by dealer");
+    expect(html).toContain('aria-label="Weekly Registration by dealer"');
+    expect(html).toContain("DEALER ORIGINAL");
+    expect(html).not.toContain("Weekly Retail by dealer");
+  });
   it("does not allocate collective Retail among linked dealer units", () => {
     const grouped = {
       ...performance,
@@ -71,6 +91,7 @@ describe("weekly Retail presentation", () => {
     );
     expect(html).toContain("collective, no allocation");
     expect(html).toContain("Loja A / Loja B");
+    expect(html).toContain("10%");
   });
   it("does not show invented weekly data for a legacy snapshot", () => {
     expect(

@@ -1,3 +1,4 @@
+import { getDealerSalesKind } from "@shared/commercialScope";
 import { showDealerInCommercialTable } from "@shared/dealerPresentation";
 import type { V2Dashboard, V2WeeklySales } from "@shared/v2Types";
 
@@ -9,6 +10,14 @@ export default function V2DealerWeeklySales({
   locale?: "pt-BR" | "en";
 }) {
   const en = locale === "en";
+  // Preserve the legacy component wording when an old fixture has no source metadata.
+  const dealerSalesKind = getDealerSalesKind(performance) ?? "retail";
+  const registration = dealerSalesKind === "registration";
+  const salesLabel = registration
+    ? en
+      ? "Registration"
+      : "Emplacamentos"
+    : "Retail";
   const number = (value: number | null | undefined, digits = 0) =>
     value == null
       ? en
@@ -78,19 +87,21 @@ export default function V2DealerWeeklySales({
     <details className="mt-4 rounded-xl border border-slate-200 bg-white" open>
       <summary className="cursor-pointer px-4 py-3 text-sm font-bold text-slate-900">
         {en
-          ? "Weekly Retail by dealer — monthly reference: W4"
-          : "Retail por dealer e semana — referência do mês: W4"}
+          ? `Weekly ${salesLabel} by dealer — monthly reference: W4`
+          : `${salesLabel} por dealer e semana — referência do mês: W4`}
       </summary>
       <p className="px-4 pb-3 text-xs leading-5 text-slate-500">
         {en
-          ? "W1–W6 are cumulative source snapshots, not weekly additions. W4 is the monthly reference when filled; missing weeks stay N/A. Group sales are not split among stores. Conversion and leads per sale use only a comparable lead period."
-          : "W1–W6 são snapshots acumulados da fonte, não parcelas para somar. W4 é a referência mensal quando preenchida; semana vazia permanece N/D. Vendas de grupo não são rateadas entre lojas. Conversão e Leads por venda usam somente o período de Leads comparável."}
+          ? `W1–W6 are cumulative ${salesLabel} source snapshots, not weekly additions. W4 is the monthly reference when filled; missing weeks stay N/A. Group sales are not split among stores. Conversion and leads per sale use only a comparable lead period.`
+          : `W1–W6 são snapshots acumulados de ${salesLabel}, não parcelas para somar. W4 é a referência mensal quando preenchida; semana vazia permanece N/D. Vendas de grupo não são rateadas entre lojas. Conversão e Leads por venda usam somente o período de Leads comparável.`}
       </p>
       <div className="overflow-x-auto">
         <table
           className="w-full min-w-[1100px] text-left text-xs"
           aria-label={
-            en ? "Weekly Retail by dealer" : "Retail semanal por concessionária"
+            en
+              ? `Weekly ${salesLabel} by dealer`
+              : `${salesLabel} semanal por concessionária`
           }
         >
           <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-wide text-slate-500">

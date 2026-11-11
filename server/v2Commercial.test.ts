@@ -69,11 +69,13 @@ describe("V2 commercial workbook parser", () => {
         "CUSTOMER",
         "CUSTOMER_NAME",
         "TARGET",
+        "%W1_Reg",
         "W1_Reg",
+        "%W2_Reg",
         "W2_Reg",
       ]);
-      weekly.addRow(["SP", "A", "Dealer A", 583, 9, 12]);
-      weekly.addRow(["SP", "B", "Dealer B", 999, 8, 3]);
+      weekly.addRow(["SP", "A", "Dealer A", 583, 0.5, 9, 0.6, 12]);
+      weekly.addRow(["SP", "B", "Dealer B", 999, 0.4, 8, 0.3, 3]);
     });
     const parsed = await parseCommercialWorkbook(
       "sales",
@@ -91,9 +93,66 @@ describe("V2 commercial workbook parser", () => {
       "WEEKLY_REG:W2_Reg:3",
     ]);
     expect(parsed.rows.every(row => row.state === null)).toBe(true);
+    expect(parsed.rows[0].weeklySales).toEqual({
+      sourceSheet: "WEEKLY_REG",
+      sourceLabel: "Dealer A",
+      values: [9, 12, null, null, null, null],
+    });
     expect(parsed.warnings[0]).toBe(
-      "Fonte de vendas: WEEKLY_REG, coluna W2_Reg. Os valores são o snapshot desta coluna, não a soma das semanas nem DAILY_FUP."
+      "Fonte de vendas: WEEKLY_REG, coluna W2_Reg. Snapshots acumulados W1–W6 preservados; não somamos semanas nem usamos TARGET. W4_Reg é a referência mensal, quando preenchida."
     );
+  });
+
+  it("rejects a percentage-only REG header instead of treating the ratio as sales", async () => {
+    const base64 = await workbookBase64(workbook => {
+      const weekly = workbook.addWorksheet("WEEKLY_REG");
+      weekly.addRow(["CUSTOMER_NAME", "%W1_Reg"]);
+      weekly.addRow(["Dealer ratio only", 0.5]);
+    });
+    await expect(
+      parseCommercialWorkbook(
+        "sales",
+        "2026-11",
+        "2026-11-04",
+        "percentage-only.xlsx",
+        base64
+      )
+    ).rejects.toThrow("WEEKLY_REG");
+  });
+
+  it("reads cached formula and sharedFormula results without evaluating absent caches", async () => {
+    const base64 = await workbookBase64(workbook => {
+      const weekly = workbook.addWorksheet("WEEKLY_REG");
+      weekly.addRow(["CUSTOMER_NAME", "W1_Reg", "W2_Reg"]);
+      weekly.addRow(["Dealer cached", null, null]);
+      (
+        weekly.fillFormula as unknown as (
+          range: string,
+          formula: string,
+          results: number[],
+          shareType: "shared"
+        ) => void
+      )("B2:C2", "5", [5, 0], "shared");
+      weekly.addRow(["Dealer without cache", null, null]);
+      weekly.getCell("B3").value = { sharedFormula: "B2" } as never;
+    });
+    const parsed = await parseCommercialWorkbook(
+      "sales",
+      "2026-11",
+      "2026-11-04",
+      "shared-formula.xlsx",
+      base64
+    );
+    expect(parsed.rows.map(row => row.value)).toEqual([5, null]);
+    expect(parsed.rows[0].weeklySales?.values).toEqual([
+      5,
+      0,
+      null,
+      null,
+      null,
+      null,
+    ]);
+    expect(parsed.rows[1].weeklySales?.values[0]).toBeNull();
   });
 
   it("defaults Nov 04 to W1 and preserves blank selected-week values as null", async () => {
@@ -102,6 +161,7 @@ describe("V2 commercial workbook parser", () => {
       weekly.addRow(["CUSTOMER_NAME", "W1_Reg", "W2_Reg"]);
       weekly.addRow(["Dealer A", 4, 12]);
       weekly.addRow(["Dealer B", null, 3]);
+      weekly.addRow(["Dealer C zero", 0, 0]);
     });
     const parsed = await parseCommercialWorkbook(
       "sales",
@@ -112,7 +172,15 @@ describe("V2 commercial workbook parser", () => {
     );
     expect(parsed.sourceWeek).toBe(1);
     expect(parsed.total).toBe(4);
-    expect(parsed.rows.map(row => row.value)).toEqual([4, null]);
+    expect(parsed.rows.map(row => row.value)).toEqual([4, null, 0]);
+    expect(parsed.rows[0].weeklySales?.values).toEqual([
+      4,
+      12,
+      null,
+      null,
+      null,
+      null,
+    ]);
     expect(parsed.warnings.join(" ")).toContain("Fonte de vendas parcial");
   });
 

@@ -20,7 +20,7 @@ export type CommercialSourceRow = {
   rawDealers: string[];
   /** Raw targets retained when an immutable mapping-only revision canonicalizes them. */
   originalRawDealers?: string[];
-  /** Original W1–W6 Retail snapshots, retained without adding cumulative weeks. */
+  /** Original W1–W6 Registration or Retail snapshots, retained without adding cumulative weeks. */
   weeklySales?: V2WeeklySales;
 };
 

@@ -109,8 +109,21 @@ function textOf(value: unknown): string {
 
 function cellValue(cell: ExcelJS.Cell): unknown {
   const value = cell.value as unknown;
-  if (value && typeof value === "object" && "formula" in value)
-    return (value as { result?: unknown }).result;
+  if (
+    value &&
+    typeof value === "object" &&
+    ("formula" in value || "sharedFormula" in value)
+  ) {
+    const result = (value as { result?: unknown }).result;
+    if (result !== undefined) return result;
+    // ExcelJS's public value getter drops a cached shared-formula result of 0
+    // because it copies only truthy model fields; read the cached model value
+    // without evaluating the formula, while absent caches remain null.
+    return (
+      (cell as ExcelJS.Cell & { model?: { result?: unknown } }).model?.result ??
+      null
+    );
+  }
   return value;
 }
 
@@ -734,24 +747,79 @@ function findWeeklyRetailSheet(
   );
 }
 
+type WeeklySnapshotSuffix = "Reg" | "Retail";
+
+function weeklySnapshotColumn(
+  worksheet: ExcelJS.Worksheet,
+  header: HeaderInfo,
+  week: number,
+  suffix: WeeklySnapshotSuffix
+): number | null {
+  const expected = compact(`W${week}_${suffix}`);
+  for (let column = 1; column <= worksheet.columnCount; column++) {
+    const rawHeader = textOf(
+      cellValue(worksheet.getCell(header.rowNumber, column))
+    ).trim();
+    // `%Wn_Reg`/`%Wn_Ret` are ratios and may compact to the same key as the
+    // quantity header. Never use them as dealer sales snapshots.
+    if (!rawHeader || rawHeader.includes("%")) continue;
+    if (compact(rawHeader) === expected) return column;
+  }
+  return null;
+}
+
+function findWeeklyHeaderWithSnapshot(
+  worksheet: ExcelJS.Worksheet,
+  sourceWeek: number,
+  suffix: WeeklySnapshotSuffix
+): {
+  header: HeaderInfo;
+  nameColumn: number;
+  selectedColumn: number;
+} | null {
+  for (
+    let rowNumber = 1;
+    rowNumber <= Math.min(MAX_HEADER_ROWS, worksheet.rowCount);
+    rowNumber++
+  ) {
+    const header = headerInfo(worksheet, rowNumber);
+    const nameColumn = firstColumn(header, ["customer_name", "customer name"]);
+    const selectedColumn = weeklySnapshotColumn(
+      worksheet,
+      header,
+      sourceWeek,
+      suffix
+    );
+    if (nameColumn != null && selectedColumn != null)
+      return { header, nameColumn, selectedColumn };
+  }
+  return null;
+}
+
 function parseWeeklyRetailSales(
   weekly: ExcelJS.Worksheet,
   sourceWeek: number
 ): { rows: CommercialSourceRow[]; total: number | null; warnings: string[] } {
   const label = `W${sourceWeek}_Retail`;
-  const header = findHeader(weekly, [
-    ["customer_name", "customer name"],
-    [label],
-  ]);
-  if (!header)
+  const weeklyHeader = findWeeklyHeaderWithSnapshot(weekly, sourceWeek, "Retail");
+  if (!weeklyHeader)
     fail(`a aba WEEKLY_RET precisa conter CUSTOMER_NAME e ${label}.`);
-  const nameColumn = firstColumn(header, ["customer_name", "customer name"])!;
+  const nameColumn = weeklyHeader.nameColumn;
   const rows: CommercialSourceRow[] = [];
-  for (let number = header.rowNumber + 1; number <= weekly.rowCount; number++) {
+  for (
+    let number = weeklyHeader.header.rowNumber + 1;
+    number <= weekly.rowCount;
+    number++
+  ) {
     const sourceLabel = textOf(cellValue(weekly.getCell(number, nameColumn)));
     if (!sourceLabel.trim() || isTotalLabel(sourceLabel)) continue;
     const values = [1, 2, 3, 4, 5, 6].map(week => {
-      const column = firstColumn(header, [`W${week}_Retail`]);
+      const column = weeklySnapshotColumn(
+        weekly,
+        weeklyHeader.header,
+        week,
+        "Retail"
+      );
       return column
         ? parseInteger(
             cellValue(weekly.getCell(number, column)),
@@ -798,24 +866,15 @@ function parseWeeklyRegSales(
   const weekly = findWeeklyRegSheet(workbook);
   if (!weekly) fail("a aba WEEKLY_REG não foi encontrada.");
   const selectedColumnLabel = `W${sourceWeek}_Reg`;
-  const weeklyHeader = findHeader(weekly, [
-    ["customer_name", "customer name"],
-    [selectedColumnLabel],
-  ]);
+  const weeklyHeader = findWeeklyHeaderWithSnapshot(weekly, sourceWeek, "Reg");
   if (!weeklyHeader)
     fail(
       `a aba WEEKLY_REG precisa conter CUSTOMER_NAME e ${selectedColumnLabel} para o snapshot selecionado.`
     );
-  const customerNameColumn = firstColumn(weeklyHeader, [
-    "customer_name",
-    "customer name",
-  ]);
-  const salesColumn = firstColumn(weeklyHeader, [selectedColumnLabel]);
-  if (!customerNameColumn || !salesColumn)
-    fail("o cabeçalho WEEKLY_REG está incompleto.");
+  const customerNameColumn = weeklyHeader.nameColumn;
 
   const warnings: string[] = [
-    `Fonte de vendas: WEEKLY_REG, coluna ${selectedColumnLabel}. Os valores são o snapshot desta coluna, não a soma das semanas nem DAILY_FUP.`,
+    `Fonte de vendas: WEEKLY_REG, coluna ${selectedColumnLabel}. Snapshots acumulados W1–W6 preservados; não somamos semanas nem usamos TARGET. W4_Reg é a referência mensal, quando preenchida.`,
   ];
   const dailyReference = dailyFupReferenceWarning(workbook);
   if (dailyReference) warnings.push(dailyReference);
@@ -824,7 +883,7 @@ function parseWeeklyRegSales(
   let knownCount = 0;
   let blankCount = 0;
   for (
-    let rowNumber = weeklyHeader.rowNumber + 1;
+    let rowNumber = weeklyHeader.header.rowNumber + 1;
     rowNumber <= weekly.rowCount;
     rowNumber++
   ) {
@@ -834,25 +893,41 @@ function parseWeeklyRegSales(
     // CUSTOMER_NAME is the business label; unnamed footer/target rows are not
     // dealer sales rows, even if they contain a TARGET value.
     if (!sourceLabel.trim() || isTotalLabel(sourceLabel)) continue;
-    const value = parseInteger(
-      cellValue(weekly.getCell(rowNumber, salesColumn)),
-      `${selectedColumnLabel} na aba ${weekly.name}, linha ${rowNumber}`
-    );
+    const values = [1, 2, 3, 4, 5, 6].map(week => {
+      const column = weeklySnapshotColumn(
+        weekly,
+        weeklyHeader.header,
+        week,
+        "Reg"
+      );
+      return column
+        ? parseInteger(
+            cellValue(weekly.getCell(rowNumber, column)),
+            `W${week}_Reg na aba ${weekly.name}, linha ${rowNumber}`
+          )
+        : null;
+    });
+    const value = values[sourceWeek - 1];
     if (value == null) blankCount++;
     else {
       knownTotal += value;
       knownCount++;
     }
-    rows.push(
-      makeRow(
+    rows.push({
+      ...makeRow(
         `${weekly.name}:${selectedColumnLabel}:${rowNumber}`,
         sourceLabel,
         value,
         null
-      )
-    );
+      ),
+      weeklySales: { sourceSheet: "WEEKLY_REG", sourceLabel, values },
+    });
   }
   if (!rows.length) fail("nenhuma linha nomeada de WEEKLY_REG foi encontrada.");
+  if (rows.some(row => row.weeklySales?.values[3] == null))
+    warnings.push(
+      "A referência mensal W4_Reg ainda está incompleta; semanas vazias permanecem indisponíveis, sem substituir por zero ou pela meta."
+    );
   if (blankCount && knownCount) {
     warnings.push(
       `Fonte de vendas parcial: ${blankCount} de ${rows.length} linhas de WEEKLY_REG, coluna ${selectedColumnLabel}, estão sem valor; o total soma somente as linhas conhecidas.`
@@ -1117,22 +1192,35 @@ export async function parseCommercialWorkbook(
     total: number | null;
     warnings: string[];
   };
+  let selectedSalesSource: "WEEKLY_REG" | "WEEKLY_RET" | null = null;
   if (kind === "lead-goals") result = parseLeadGoals(workbook);
   else if (kind === "sales") {
-    const retailSheet = findWeeklyRetailSheet(workbook);
-    if (retailSheet && sourceWeek == null)
-      selectedSourceWeek = Math.min(4, selectedSourceWeek!);
-    if (retailSheet)
-      result = parseWeeklyRetailSales(
-        retailSheet,
-        selectedSourceWeek as number
-      );
-    else if (findWeeklyRegSheet(workbook))
+    const registrationSheet = findWeeklyRegSheet(workbook);
+    if (registrationSheet) {
+      selectedSalesSource = "WEEKLY_REG";
+      if (sourceWeek == null)
+        selectedSourceWeek = Math.min(4, selectedSourceWeek!);
+      // An existing WEEKLY_REG is authoritative. If its selected snapshot is
+      // malformed, parseWeeklyRegSales throws rather than silently using RET.
       result = parseWeeklyRegSales(workbook, selectedSourceWeek as number);
-    else
-      fail(
-        "Envie WEEKLY_RET com CUSTOMER_NAME e W1_Retail até W6_Retail. WEEKLY_REG é somente o fallback legado de emplacamentos; DAILY_FUP não distribui vendas por concessionária."
-      );
+    } else {
+      const retailSheet = findWeeklyRetailSheet(workbook);
+      if (retailSheet && sourceWeek == null)
+        selectedSourceWeek = Math.min(4, selectedSourceWeek!);
+      if (retailSheet) {
+        selectedSalesSource = "WEEKLY_RET";
+        result = parseWeeklyRetailSales(
+          retailSheet,
+          selectedSourceWeek as number
+        );
+        result.warnings.unshift(
+          "WEEKLY_REG não foi encontrada; WEEKLY_RET foi usada como fallback de compatibilidade histórica para vendas por dealer."
+        );
+      } else
+        fail(
+          "Envie WEEKLY_REG com CUSTOMER_NAME e W1_Reg até W6_Reg. WEEKLY_RET é aceita somente como fallback legado de Retail; DAILY_FUP não distribui vendas por concessionária."
+        );
+    }
   } else result = parseGenericRows(workbook, kind);
   const registration =
     kind === "sales"
@@ -1158,7 +1246,7 @@ export async function parseCommercialWorkbook(
     retail.retailMtd != null &&
     result.total != null &&
     retail.retailMtd !== result.total
-      ? `Total geral Retail MTD = ${retail.retailMtd}; soma conhecida de ${findWeeklyRetailSheet(workbook) ? "WEEKLY_RET" : "WEEKLY_REG"} = ${result.total} permanece somente como referência por loja.`
+      ? `Total geral Retail MTD = ${retail.retailMtd}; soma conhecida de ${selectedSalesSource ?? "WEEKLY_REG"} = ${result.total} permanece somente como referência por loja.`
       : null;
   return {
     kind,

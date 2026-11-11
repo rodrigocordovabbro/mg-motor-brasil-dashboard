@@ -20,6 +20,7 @@ export function getOverviewPdfSnapshotVersion(data: V2Dashboard): string {
       ),
     sales: {
       available: data.dealerPerformance?.available,
+      dealerSalesKind: data.dealerPerformance?.dealerSalesKind,
       totals: data.dealerPerformance?.totals,
       rows: data.dealerPerformance?.rows,
       registration: data.dealerPerformance?.generalRegistrationMTD,

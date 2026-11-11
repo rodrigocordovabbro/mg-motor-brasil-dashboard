@@ -2,6 +2,18 @@
 
 > **Registro acumulado de resultados e evidências datadas.** Itens antigos descrevem a etapa em que foram registrados; decisões e pendências superadas não são o contrato atual. Consulte o [README](README.md) e os [guias técnicos](docs/ARQUITETURA.md). O canônico atual é o GitHub privado `rodrigocordovabbro/mg-motor-brasil-dashboard` (`dashboard-v2`/trabalho, `main`/checkpoints), confirmado em 09/11/2026; tentativas bloqueadas/destinos anteriores são históricos. A publicação continua separada.
 
+## Registration por dealer — 11/11/2026
+
+- [x] Ler vendas por dealer prioritariamente de WEEKLY_REG/CUSTOMER_NAME/Wn_Reg, conforme pedido atual, inclusive quando WEEKLY_RET está presente. Preservar W1–W6, W4 como referência mensal quando preenchida, zeros reais e ausência em branco; nunca somar snapshots nem usar TARGET como vendas.
+- [x] Identificar Registration nas tabelas, conversões, rankings e PDF sem rotular esses valores como Retail. Manter os totais gerais Registration e Retail de DAILY_FUP separados e com datas próprias; proteger comparação de períodos/filtros e preservar fontes Retail históricas sem reescrevê-las.
+- [x] Aplicar o arquivo enviado somente como nova importação comercial auditável, preservando metas, Leads, nomes originais e de-para explícito. Manter grupos coletivos sem duplicar/ratear lojas e informar fontes não conciliadas.
+- [x] Investigar em leitura somente a diferença de 370 Leads na tela versus 257 no arquivo da Iguauto, sem inventar motivo, reimportar ou mudar regra de Leads.
+- [x] Validar testes, TypeScript/build e revisão read-only; salvar código/documentação no GitHub canônico sem versionar arquivo operacional nem publicar o site. O salvamento desta entrega ocorre no avanço normal seguinte das branches; consultar Git para o SHA final.
+
+Evidência de 11/11: **530 testes/68 arquivos**, TypeScript e build aprovados; 288 links locais/âncoras válidos. Corrigida colisão de `%Wn_Reg` com `Wn_Reg`, que fazia o parser escolher taxas em vez de quantidades; fórmulas usam somente cache. A revisão read-only identificou e os testes cobriram guards de competência iniciada no dia 1, reconciliação da mesma natureza/data somente em escopo global, grupos contados uma vez e identidade compartilhada entre tabela, semanal, rankings, PDF e versão de snapshot. Importação auditável `240001`: 32 fontes, nenhuma não conciliada, W2_Reg soma 144, W4 vazia; Registration geral 151 e Retail geral 144, rotulados em 11/11, preservados separadamente do corte semanal 10/11. A leitura real do dashboard confirmou todas as 32 fontes e a identidade Registration para Cliente; source de Leads e imports de metas permaneceram intactos. Exemplos por unidade: Iguauto 3, Inglaterra 12, Tecar SIA 11 e Potenza 15 emplacamentos.
+
+Diagnóstico somente leitura da Iguauto confirmou **257 Leads** na exportação, contagem física/canônica e getter atual para cortes 08/11, 09/11 e 10/11; fonte disponível termina em 08/11. **370 não foi reproduzido** e a causa exata permanece não confirmada; não foi inventado dado nem reimportada a base para fechar a diferença. Nenhuma migration, mudança de conta, sincronização Google ou publicação nesta entrega. Dados comerciais no banco compartilhado são distintos do código salvo e da versão publicada; próximos uploads do site publicado só usam o parser novo após publicação desse código.
+
 ## Exportador dinâmico no layout aprovado — 10/11/2026
 
 - [x] Aplicar ao botão PDF o último modelo aprovado em quatro páginas: capa; Leads e gráfico acumulado com realizado/plano/projeção; distribuição diária por canal; vendas e Top 10/Bottom 10. Cards menores, peso tipográfico suave e fundo branco; sem tabela Daily totals nem card Peak daily volume.

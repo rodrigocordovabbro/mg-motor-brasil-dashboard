@@ -1,3 +1,7 @@
+import {
+  getDealerSalesKind,
+  isMonthToDateCommercialPeriod,
+} from "@shared/commercialScope";
 import type { V2Dashboard } from "@shared/v2Types";
 import { buildOverviewDealerRankings } from "@shared/overviewDealerRankings";
 import type { OverviewPdfLocale, OverviewPdfMetadata } from "./overviewPdf";
@@ -12,6 +16,7 @@ export type OverviewPdfReportInput = {
 
 type ReportLocale = OverviewPdfLocale;
 type NullableNumber = number | null;
+type DealerSalesKind = "registration" | "retail";
 export type OverviewPdfHistoricalScenarioKey = "lastMonth" | "last3Months";
 
 type ReportChannel = {
@@ -68,6 +73,7 @@ export type OverviewPdfReportModel = {
     conversionRate: NullableNumber;
     registrationAsOf: string | null;
     retailAsOf: string | null;
+    dealerSalesKind: DealerSalesKind | null;
     comparable: boolean;
   };
   rankings: ReturnType<typeof buildOverviewDealerRankings>;
@@ -227,6 +233,16 @@ function localeCode(locale: ReportLocale): "pt-BR" | "en-US" {
 
 function finite(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function dealerSalesLabel(
+  kind: DealerSalesKind | null,
+  locale: ReportLocale
+): string | null {
+  if (kind === "registration")
+    return locale === "en" ? "Registration" : "Emplacamentos";
+  if (kind === "retail") return "Retail";
+  return null;
 }
 
 function dateOnly(value: string | null | undefined): string | null {
@@ -465,7 +481,8 @@ export function buildOverviewPdfReportModel(
       registrationAsOf:
         data.dealerPerformance.generalRegistrationMTD?.asOf ?? null,
       retailAsOf: data.dealerPerformance.generalRetailMTD?.asOf ?? null,
-      comparable,
+      dealerSalesKind: getDealerSalesKind(data.dealerPerformance),
+      comparable: comparable && isMonthToDateCommercialPeriod(data.period),
     },
     rankings: buildOverviewDealerRankings(data),
   };
@@ -1070,7 +1087,8 @@ function buildRankingTable(
   for (const label of [
     copy(model.locale).dealer,
     copy(model.locale).leadsShort,
-    copy(model.locale).salesShort,
+    dealerSalesLabel(model.sales.dealerSalesKind, model.locale) ??
+      copy(model.locale).salesShort,
     copy(model.locale).conversion,
   ]) {
     addText(document, headerRow, "th", label);
@@ -1147,20 +1165,38 @@ function buildSalesPageContent(
   rankingSummary.textContent = `${model.rankings.eligibleCount} ${c.eligible}`;
   content.appendChild(rankingSummary);
   const rankingGrid = element(document, "div", "overview-pdf-ranking-grid");
-  rankingGrid.appendChild(
-    buildRankingTable(document, model.rankings.top, model, c.top)
+  const rankingSalesLabel = dealerSalesLabel(
+    model.sales.dealerSalesKind,
+    model.locale
   );
   rankingGrid.appendChild(
-    buildRankingTable(document, model.rankings.bottom, model, c.bottom)
+    buildRankingTable(
+      document,
+      model.rankings.top,
+      model,
+      rankingSalesLabel ? `${c.top} · ${rankingSalesLabel}` : c.top
+    )
+  );
+  rankingGrid.appendChild(
+    buildRankingTable(
+      document,
+      model.rankings.bottom,
+      model,
+      rankingSalesLabel ? `${c.bottom} · ${rankingSalesLabel}` : c.bottom
+    )
   );
   content.appendChild(rankingGrid);
   addText(
     document,
     content,
     "p",
-    model.locale === "en"
-      ? "Retail excludes Test Drive and Direct Sales. Rates are executive comparisons, not matched cohorts. Known zero sales remain eligible; unavailable values, upcoming units and unallocated collective sales are excluded. Lists may overlap when fewer than 20 units are eligible."
-      : "Retail exclui Test Drive e Direct Sales. Taxas são comparações executivas, não coortes matched. Venda zero real é elegível; ausências, unidades EM BREVE e coletivos sem rateio são excluídos. Listas podem se repetir quando há menos de 20 unidades elegíveis.",
+    model.sales.dealerSalesKind === "registration"
+      ? model.locale === "en"
+        ? "Registration sales by dealer. Rates are executive comparisons, not matched cohorts. Known zero sales remain eligible; unavailable values, upcoming units and unallocated collective sales are excluded. Lists may overlap when fewer than 20 units are eligible."
+        : "Emplacamentos por dealer. Taxas são comparações executivas, não coortes matched. Venda zero real é elegível; ausências, unidades EM BREVE e coletivos sem rateio são excluídos. Listas podem se repetir quando há menos de 20 unidades elegíveis."
+      : model.locale === "en"
+        ? "Retail excludes Test Drive and Direct Sales. Rates are executive comparisons, not matched cohorts. Known zero sales remain eligible; unavailable values, upcoming units and unallocated collective sales are excluded. Lists may overlap when fewer than 20 units are eligible."
+        : "Retail exclui Test Drive e Direct Sales. Taxas são comparações executivas, não coortes matched. Venda zero real é elegível; ausências, unidades EM BREVE e coletivos sem rateio são excluídos. Listas podem se repetir quando há menos de 20 unidades elegíveis.",
     "overview-pdf-ranking-summary"
   );
   return content;

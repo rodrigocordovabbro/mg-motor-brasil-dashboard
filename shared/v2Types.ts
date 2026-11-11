@@ -16,8 +16,8 @@ export type V2Count = { label: string; count: number };
 export type V2DealerRegistryItem = { name: string; state: string | null };
 export type V2WeeklySales = {
   sourceLabel: string;
-  sourceSheet: "WEEKLY_RET";
-  /** Cumulative source snapshots W1–W6. Null is not a zero sale. W4 is the monthly reference. */
+  sourceSheet: "WEEKLY_REG" | "WEEKLY_RET";
+  /** Cumulative source snapshots W1–W6. Null is not a zero sale; W4_Reg/W4_Retail is the monthly reference when filled. */
   values: (number | null)[];
 };
 export type V2CommercialGroupRecord = {
@@ -117,6 +117,8 @@ export type V2Dashboard = {
   recent: { rows: V2Lead[]; total: number; page: number; pageSize: number };
   dealerPerformance: {
     salesGoalOrigin?: "manual" | "imported" | "unavailable";
+    /** Dealer snapshot metric; independent of the general DAILY_FUP Retail ratio. */
+    dealerSalesKind?: "registration" | "retail" | null;
     generalRegistrationMTD?: {
       value: number;
       asOf: string | null;

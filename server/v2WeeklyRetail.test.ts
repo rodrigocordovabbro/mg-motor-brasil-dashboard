@@ -39,11 +39,19 @@ function retail(book: ExcelJS.Workbook) {
 }
 
 describe("Weekly Retail source", () => {
-  it("prioritizes WEEKLY_RET over WEEKLY_REG and keeps cumulative snapshots and original names", async () => {
+  it("prioritizes WEEKLY_REG over WEEKLY_RET and keeps cumulative snapshots and original names", async () => {
     const base64 = await file(book => {
       const reg = book.addWorksheet("WEEKLY_REG");
-      reg.addRow(["CUSTOMER_NAME", "W2_Reg"]);
-      reg.addRow(["Wrong registration dealer", 999]);
+      reg.addRow([
+        "CUSTOMER_NAME",
+        "W1_Reg",
+        "W2_Reg",
+        "W3_Reg",
+        "W4_Reg",
+        "W5_Reg",
+        "W6_Reg",
+      ]);
+      reg.addRow(["Wrong registration dealer", null, 999]);
       retail(book);
     });
     const parsed = await parseCommercialWorkbook(
@@ -54,19 +62,87 @@ describe("Weekly Retail source", () => {
       base64
     );
     expect(parsed.sourceWeek).toBe(2);
-    expect(parsed.total).toBe(5);
-    expect(parsed.rows).toHaveLength(2);
-    expect(parsed.rows.map(row => row.value)).toEqual([5, 0]);
-    expect(parsed.rows[0].sourceLabel).toBe("  Concessionária Original  ");
+    expect(parsed.total).toBe(999);
+    expect(parsed.rows).toHaveLength(1);
+    expect(parsed.rows.map(row => row.value)).toEqual([999]);
+    expect(parsed.rows[0].sourceLabel).toBe("Wrong registration dealer");
     expect(parsed.rows[0].weeklySales?.values).toEqual([
-      3,
-      5,
+      null,
+      999,
       null,
       null,
       null,
       null,
     ]);
-    expect(parsed.rows[0].key).toContain("WEEKLY_RET:W2_Retail");
+    expect(parsed.rows[0].weeklySales?.sourceSheet).toBe("WEEKLY_REG");
+    expect(parsed.rows[0].key).toContain("WEEKLY_REG:W2_Reg");
+    expect(parsed.warnings[0]).toContain("WEEKLY_REG");
+  });
+  it("preserves REG W1-W6, including zero, without summing snapshots", async () => {
+    const base64 = await file(book => {
+      const sheet = book.addWorksheet("WEEKLY_REG");
+      sheet.addRow([
+        "CUSTOMER_NAME",
+        "W1_Reg",
+        "W2_Reg",
+        "W3_Reg",
+        "W4_Reg",
+        "W5_Reg",
+        "W6_Reg",
+      ]);
+      sheet.addRow(["Dealer zero", 0, 2, 3, 4, 5, 6]);
+      sheet.addRow(["Dealer stored", 1, 2, 3, 4, 5, 6]);
+    });
+    const parsed = await parseCommercialWorkbook(
+      "sales",
+      "2026-11",
+      "2026-11-28",
+      "registration.xlsx",
+      base64,
+      1
+    );
+    expect(parsed.total).toBe(1);
+    expect(parsed.rows.map(row => row.value)).toEqual([0, 1]);
+    expect(parsed.rows[0].weeklySales?.values).toEqual([0, 2, 3, 4, 5, 6]);
+    expect(parsed.rows[0].weeklySales?.sourceSheet).toBe("WEEKLY_REG");
+
+    const explicitSix = await parseCommercialWorkbook(
+      "sales",
+      "2026-11",
+      "2026-11-28",
+      "registration.xlsx",
+      base64,
+      6
+    );
+    expect(explicitSix.sourceWeek).toBe(6);
+    expect(explicitSix.rows.map(row => row.value)).toEqual([6, 6]);
+  });
+  it("does not turn a blank REG W4 into zero or an earlier snapshot", async () => {
+    const base64 = await file(book => {
+      const sheet = book.addWorksheet("WEEKLY_REG");
+      sheet.addRow([
+        "CUSTOMER_NAME",
+        "W1_Reg",
+        "W2_Reg",
+        "W3_Reg",
+        "W4_Reg",
+        "W5_Reg",
+        "W6_Reg",
+      ]);
+      sheet.addRow(["Dealer blank month", 4, 5, 6, null, 8, 9]);
+    });
+    const parsed = await parseCommercialWorkbook(
+      "sales",
+      "2026-11",
+      "2026-11-28",
+      "registration.xlsx",
+      base64,
+      4
+    );
+    expect(parsed.total).toBeNull();
+    expect(parsed.rows[0].value).toBeNull();
+    expect(parsed.rows[0].weeklySales?.values).toEqual([4, 5, 6, null, 8, 9]);
+    expect(parsed.warnings.join(" ")).toContain("W4_Reg");
   });
   it("uses the actual W4 monthly reference, never TARGET or a sum of weeks", async () => {
     const base64 = await file(book => {
@@ -115,12 +191,14 @@ describe("Weekly Retail source", () => {
     expect(parsed.rows.every(row => row.value === null)).toBe(true);
     expect(parsed.rows[0].weeklySales?.values[1]).toBe(5);
   });
-  it("does not silently fall back to Registration when an existing Retail sheet is malformed", async () => {
+  it("does not silently fall back to Retail when an existing Registration sheet is malformed", async () => {
     const base64 = await file(book => {
-      book.addWorksheet("WEEKLY_RET").addRow(["CUSTOMER_NAME", "TARGET"]);
       const reg = book.addWorksheet("WEEKLY_REG");
-      reg.addRow(["CUSTOMER_NAME", "W2_Reg"]);
-      reg.addRow(["Dealer", 8]);
+      reg.addRow(["CUSTOMER_NAME", "TARGET"]);
+      reg.addRow(["Malformed registration", 8]);
+      const retailSheet = book.addWorksheet("WEEKLY_RET");
+      retailSheet.addRow(["CUSTOMER_NAME", "W2_Retail"]);
+      retailSheet.addRow(["Legacy retail", 8]);
     });
     await expect(
       parseCommercialWorkbook(
@@ -130,7 +208,7 @@ describe("Weekly Retail source", () => {
         "retail.xlsx",
         base64
       )
-    ).rejects.toThrow("WEEKLY_RET");
+    ).rejects.toThrow("WEEKLY_REG");
   });
   it("keeps general Retail and Registration separate from the dealer sum", async () => {
     const base64 = await file(book => {
@@ -159,6 +237,9 @@ describe("Weekly Retail source", () => {
     expect(parsed.rows[0].value).toBe(5);
     expect(parsed.warnings.join(" ")).toContain(
       "soma conhecida de WEEKLY_RET = 5"
+    );
+    expect(parsed.warnings.join(" ")).toContain(
+      "WEEKLY_RET foi usada como fallback de compatibilidade histórica"
     );
   });
 });

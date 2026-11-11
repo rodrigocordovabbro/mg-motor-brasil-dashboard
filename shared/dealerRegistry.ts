@@ -328,6 +328,10 @@ source(["ONNE SJRP/SP"], ["Onne São José do Rio Preto"]);
 source(["BDG/MG"], ["Euroville Belo Horizonte"]);
 source(["BDG JF/MG"], ["Euroville Juiz de Fora"]);
 source(["BDG UBE/MG"], ["Euroville Uberlândia"]);
+source(
+  ["EUROVILLE BH/JF/UB"],
+  ["Euroville Belo Horizonte", "Euroville Juiz de Fora", "Euroville Uberlândia"]
+);
 source(["INGLATERRA/BA"], ["Inglaterra Salvador"]);
 source(["IGUAUTO/CE"], ["Iguauto Fortaleza"]);
 source(["DAO SILVEIRA/RN"], ["Dão Silveira Natal Midway Mall"]);

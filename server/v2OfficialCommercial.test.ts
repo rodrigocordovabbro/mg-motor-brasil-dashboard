@@ -158,6 +158,248 @@ function dashboard(): V2Dashboard {
 }
 
 describe("official commercial performance", () => {
+  it("does not compare monthly goals or general sales to a lead period starting mid-month", () => {
+    const snapshot = stored(
+      "sales",
+      [row("unit", "INDIANA SALVADOR", 2, ["Inglaterra Salvador"], "BA")],
+      144,
+      filters.dateTo
+    );
+    snapshot.retailMtd = 144;
+    const performance = buildOfficialCommercialPerformance(
+      dashboard(),
+      { ...filters, dateFrom: "2026-11-02" },
+      new Map([
+        ["sales", snapshot],
+        [
+          "lead-goals",
+          stored(
+            "lead-goals",
+            [
+              row(
+                "goal",
+                "INDIANA SALVADOR",
+                50,
+                ["Inglaterra Salvador"],
+                "BA"
+              ),
+            ],
+            50
+          ),
+        ],
+        [
+          "sales-goals",
+          stored(
+            "sales-goals",
+            [row("goal", "INDIANA SALVADOR", 5, ["Inglaterra Salvador"], "BA")],
+            5
+          ),
+        ],
+      ]),
+      780
+    );
+    expect(performance.totals).toMatchObject({
+      sales: null,
+      conversionRate: null,
+      salesGoal: null,
+      leadGoal: null,
+    });
+    expect(
+      performance.rows.find(row => row.dealer === "Inglaterra Salvador")
+    ).toMatchObject({ sales: null, salesGoal: null, leadGoal: null });
+  });
+
+  it("compares only the same metric and date, counts collective sources once, and omits distribution warnings under filters", () => {
+    const unit = row(
+      "WEEKLY_REG:unit",
+      "INDIANA SALVADOR",
+      3,
+      ["Inglaterra Salvador"],
+      "BA"
+    );
+    unit.weeklySales = {
+      sourceSheet: "WEEKLY_REG",
+      sourceLabel: unit.sourceLabel,
+      values: [1, 3, null, null, null, null],
+    };
+    const group = row("WEEKLY_REG:group", "BALTIC BARUERI/GUARULHOS", 5);
+    group.weeklySales = {
+      sourceSheet: "WEEKLY_REG",
+      sourceLabel: group.sourceLabel,
+      values: [2, 5, null, null, null, null],
+    };
+    const snapshot = stored("sales", [unit, group], 144, filters.dateTo);
+    snapshot.registrationMtd = 8;
+    snapshot.registrationAsOf = filters.dateTo;
+    snapshot.retailMtd = 144;
+    snapshot.retailAsOf = filters.dateTo;
+    const latest = new Map([["sales" as const, snapshot]]);
+    const general = buildOfficialCommercialPerformance(
+      dashboard(),
+      filters,
+      latest
+    );
+    expect(
+      general.warnings.some(
+        warning =>
+          warning.includes("difere do snapshot") ||
+          warning.includes("não distribuído")
+      )
+    ).toBe(false);
+    const divergent = buildOfficialCommercialPerformance(
+      dashboard(),
+      filters,
+      new Map([["sales", { ...snapshot, registrationMtd: 9 }]])
+    );
+    expect(
+      divergent.warnings.some(warning =>
+        warning.includes("Registration difere")
+      )
+    ).toBe(true);
+    expect(
+      divergent.warnings.some(warning => warning.includes("Retail difere"))
+    ).toBe(false);
+    const narrowed = buildOfficialCommercialPerformance(
+      dashboard(),
+      { ...filters, dealer: "Inglaterra Salvador" },
+      latest
+    );
+    expect(
+      narrowed.warnings.some(
+        warning =>
+          warning.includes("difere do snapshot") ||
+          warning.includes("não distribuído")
+      )
+    ).toBe(false);
+    const otherDate = buildOfficialCommercialPerformance(
+      dashboard(),
+      filters,
+      new Map([
+        [
+          "sales",
+          { ...snapshot, registrationMtd: 9, registrationAsOf: "2026-11-05" },
+        ],
+      ])
+    );
+    expect(
+      otherDate.warnings.some(warning =>
+        warning.includes("não foram equiparados")
+      )
+    ).toBe(true);
+    expect(
+      otherDate.warnings.some(warning =>
+        warning.includes("Registration difere")
+      )
+    ).toBe(false);
+  });
+
+  it("maps the explicit EUROVILLE BH/JF/UB source to one collective Registration snapshot without rewriting its label", () => {
+    const group = row(
+      "WEEKLY_REG:W2_Reg:7",
+      "EUROVILLE BH/JF/UB",
+      12,
+      [],
+      "MG"
+    );
+    group.weeklySales = {
+      sourceSheet: "WEEKLY_REG",
+      sourceLabel: group.sourceLabel,
+      values: [7, 12, null, null, null, null],
+    };
+    const performance = buildOfficialCommercialPerformance(
+      dashboard(),
+      filters,
+      new Map([["sales", stored("sales", [group], 144, filters.dateTo)]])
+    );
+    expect(performance.unmapped).toEqual([]);
+    expect(performance.groupedGoals).toContainEqual(
+      expect.objectContaining({
+        sourceLabel: "EUROVILLE BH/JF/UB",
+        dealers: [
+          "Euroville Belo Horizonte",
+          "Euroville Juiz de Fora",
+          "Euroville Uberlândia",
+        ],
+        value: 12,
+      })
+    );
+    expect(
+      performance.rows
+        .filter(row => row.dealer.startsWith("Euroville"))
+        .every(row => row.sales === null)
+    ).toBe(true);
+    expect(group.sourceLabel).toBe("EUROVILLE BH/JF/UB");
+  });
+
+  it("keeps Registration weekly dealer values separate from general Retail and uses the weekly cut for ratios", () => {
+    const unit = row(
+      "WEEKLY_REG:W2_Reg:3",
+      "INDIANA SALVADOR",
+      3,
+      ["Inglaterra Salvador"],
+      "BA"
+    );
+    unit.weeklySales = {
+      sourceSheet: "WEEKLY_REG",
+      sourceLabel: unit.sourceLabel,
+      values: [1, 3, null, null, null, null],
+    };
+    const collective = row(
+      "WEEKLY_REG:W2_Reg:4",
+      "BALTIC BARUERI/GUARULHOS",
+      5
+    );
+    collective.weeklySales = {
+      sourceSheet: "WEEKLY_REG",
+      sourceLabel: collective.sourceLabel,
+      values: [3, 5, null, null, null, null],
+    };
+    const snapshot = stored("sales", [unit, collective], 144, filters.dateTo);
+    snapshot.registrationMtd = 151;
+    snapshot.registrationAsOf = "2026-11-05";
+    snapshot.retailMtd = 144;
+    snapshot.retailAsOf = "2026-11-05";
+    const latest = new Map([["sales" as const, snapshot]]);
+    const performance = buildOfficialCommercialPerformance(
+      dashboard(),
+      filters,
+      latest
+    );
+    expect(performance.dealerSalesKind).toBe("registration");
+    expect(
+      performance.rows.find(row => row.dealer === "Inglaterra Salvador")
+    ).toMatchObject({ sales: 3, conversionRate: 0.75, leadsPerSale: 4 / 3 });
+    expect(performance.generalRegistrationMTD?.value).toBe(151);
+    expect(performance.generalRetailMTD?.value).toBe(144);
+    expect(performance.totals.sales).toBe(144);
+    expect(
+      performance.groupedGoals?.find(row => row.kind === "sales")?.weeklySales
+        ?.sourceSheet
+    ).toBe("WEEKLY_REG");
+    expect(
+      performance.rows
+        .filter(row => row.dealer.startsWith("Baltic"))
+        .every(row => row.sales === null)
+    ).toBe(true);
+    const mismatched = buildOfficialCommercialPerformance(
+      dashboard(),
+      { ...filters, dateTo: "2026-11-03" },
+      latest
+    );
+    expect(
+      mismatched.rows.find(row => row.dealer === "Inglaterra Salvador")
+    ).toMatchObject({ sales: null, conversionRate: null, leadsPerSale: null });
+    const narrowed = buildOfficialCommercialPerformance(
+      dashboard(),
+      { ...filters, model: "MG 4" },
+      latest
+    );
+    expect(
+      narrowed.rows.find(row => row.dealer === "Inglaterra Salvador")
+        ?.weeklySales
+    ).toBeUndefined();
+  });
+
   it("never copies weekly snapshots or raw mappings into the unmapped public contract", () => {
     const source = row("retail:unknown", "Unmapped source", 4, [], null);
     source.weeklySales = {

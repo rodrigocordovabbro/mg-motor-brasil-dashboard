@@ -5,6 +5,7 @@ import type {
   ResultSetHeader,
 } from "mysql2/promise";
 import { getDashboardCutoffDate } from "../shared/dashboardDates";
+import { isMonthToDateCommercialPeriod } from "../shared/commercialScope";
 import {
   OFFICIAL_DEALERS,
   officialDealer,
@@ -506,14 +507,16 @@ function jsonRows(value: unknown): CommercialSourceRow[] {
         ...(original?.length ? { originalRawDealers: original } : {}),
         ...(row.weeklySales &&
         typeof row.weeklySales === "object" &&
-        (row.weeklySales as Record<string, unknown>).sourceSheet ===
-          "WEEKLY_RET" &&
+        ["WEEKLY_REG", "WEEKLY_RET"].includes(
+          String((row.weeklySales as Record<string, unknown>).sourceSheet)
+        ) &&
         Array.isArray((row.weeklySales as Record<string, unknown>).values) &&
         ((row.weeklySales as Record<string, unknown>).values as unknown[])
           .length === 6
           ? {
               weeklySales: {
-                sourceSheet: "WEEKLY_RET" as const,
+                sourceSheet: (row.weeklySales as Record<string, unknown>)
+                  .sourceSheet as "WEEKLY_REG" | "WEEKLY_RET",
                 sourceLabel: row.sourceLabel,
                 values: (
                   (row.weeklySales as Record<string, unknown>)
@@ -1511,7 +1514,8 @@ function buildCommercialRows(
       return;
     }
     const row = matches[0];
-    const goalCompatible = singleMonth && !nonDealerNarrowed;
+    const goalCompatible =
+      isMonthToDateCommercialPeriod(filters) && !nonDealerNarrowed;
     if (kind === "lead-goals")
       row.leadGoal = goalCompatible ? source.value : null;
     else if (kind === "sales-goals")
@@ -1539,6 +1543,14 @@ function buildCommercialRows(
     warnings.push(
       "Metas mensais não foram comparadas a um intervalo de mais de uma competência."
     );
+  if (
+    singleMonth &&
+    !isMonthToDateCommercialPeriod(filters) &&
+    (leadImport || salesGoalImport)
+  )
+    warnings.push(
+      "Metas mensais não foram comparadas a um período que não começa no dia 1 da competência."
+    );
   if (nonDealerNarrowed && (leadImport || salesGoalImport))
     warnings.push(
       "Metas comerciais não foram comparadas a um recorte de modelo, canal, campanha ou busca."
@@ -1556,7 +1568,10 @@ function buildCommercialRows(
     );
   for (const group of groupedGoals) {
     if (group.kind === "sales" && !salesCompatible) group.value = null;
-    if (group.kind !== "sales" && (!singleMonth || nonDealerNarrowed))
+    if (
+      group.kind !== "sales" &&
+      (!isMonthToDateCommercialPeriod(filters) || nonDealerNarrowed)
+    )
       group.value = null;
     if (!singleMonth || nonDealerNarrowed) delete group.weeklySales;
   }
@@ -1621,6 +1636,18 @@ export function buildOfficialCommercialPerformance(
   }
 
   const built = buildCommercialRows(dashboard, filters, latest);
+  const dealerSalesKind: CommercialPerformance["dealerSalesKind"] =
+    built.salesImport?.rows.some(
+      row => row.weeklySales?.sourceSheet === "WEEKLY_REG"
+    )
+      ? "registration"
+      : built.salesImport?.rows.some(
+            row => row.weeklySales?.sourceSheet === "WEEKLY_RET"
+          )
+        ? "retail"
+        : built.salesImport?.rows.some(row => row.key.startsWith("WEEKLY_REG:"))
+          ? "registration"
+          : null;
   const updatedAtValues = configured
     .map(kind => latestValue(latest, kind)?.importedAt)
     .filter((value): value is string => Boolean(value));
@@ -1639,7 +1666,8 @@ export function buildOfficialCommercialPerformance(
       !(kind === "sales-goals" && hasManualSalesGoal)
     )
       allWarnings.push(formatMissingSourceWarning(kind));
-  const globallyComparable = built.globalScope && built.singleMonth;
+  const globallyComparable =
+    built.globalScope && isMonthToDateCommercialPeriod(filters);
   if (hasManualSalesGoal && globallyComparable)
     allWarnings.push(
       "Meta total manual aplicada; metas das lojas permanecem no arquivo MetaVendas."
@@ -1653,7 +1681,6 @@ export function buildOfficialCommercialPerformance(
           label: "MTD Registration",
         }
       : null;
-  const retailMetadataPresent = built.salesImport?.retailMtd !== undefined;
   const generalRetailMTD: CommercialGeneralRetail | null =
     typeof built.salesImport?.retailMtd === "number"
       ? {
@@ -1663,19 +1690,32 @@ export function buildOfficialCommercialPerformance(
           label: "Retail",
         }
       : null;
-  if (generalRetailMTD || generalRegistrationMTD) {
-    const dealerSalesTotal = built.work.reduce(
-      (sum, row) => sum + (row.sales ?? 0),
-      0
-    );
-    if (generalRetailMTD && retailMetadataPresent) {
-      if (dealerSalesTotal !== generalRetailMTD.value)
-        allWarnings.push("Total geral Retail MTD não distribuído entre lojas.");
-    } else if (
-      generalRegistrationMTD &&
-      dealerSalesTotal !== generalRegistrationMTD.value
-    ) {
-      allWarnings.push("Total geral MTD não distribuído entre lojas.");
+  const sameMetricGeneral =
+    dealerSalesKind === "registration"
+      ? generalRegistrationMTD
+      : dealerSalesKind === "retail"
+        ? generalRetailMTD
+        : null;
+  if (
+    built.globalScope &&
+    built.salesCompatible &&
+    sameMetricGeneral &&
+    built.salesImport
+  ) {
+    if (sameMetricGeneral.asOf !== built.salesImport.asOf) {
+      allWarnings.push(
+        "Datas do snapshot semanal e do total geral de mesma métrica são diferentes; os valores não foram equiparados."
+      );
+    } else if (built.salesImport.rows.every(row => row.value !== null)) {
+      // Sum each original source once, including collectives; never repeat it per target store.
+      const weeklyTotal = built.salesImport.rows.reduce(
+        (sum, row) => sum + row.value!,
+        0
+      );
+      if (weeklyTotal !== sameMetricGeneral.value)
+        allWarnings.push(
+          `Total geral ${dealerSalesKind === "registration" ? "Registration" : "Retail"} difere do snapshot semanal das fontes individuais e coletivas; valores originais preservados.`
+        );
     }
   }
   const registrationDate = built.salesImport?.registrationAsOf;
@@ -1690,7 +1730,9 @@ export function buildOfficialCommercialPerformance(
   const conversionCompatible =
     built.salesCompatible &&
     (built.salesImport?.rows.some(
-      row => row.weeklySales?.sourceSheet === "WEEKLY_RET"
+      row =>
+        row.weeklySales?.sourceSheet === "WEEKLY_RET" ||
+        row.weeklySales?.sourceSheet === "WEEKLY_REG"
     ) ||
       registrationDateCompatible);
   for (const row of built.work) {
@@ -1716,10 +1758,9 @@ export function buildOfficialCommercialPerformance(
     }) => row
   );
   const leadsTotal = built.work.reduce((sum, row) => sum + row.leads, 0);
-  const leadGoalTotal =
-    built.globalScope && built.singleMonth
-      ? (dashboard.pacing.goal ?? built.leadImport?.total ?? null)
-      : null;
+  const leadGoalTotal = globallyComparable
+    ? (dashboard.pacing.goal ?? built.leadImport?.total ?? null)
+    : null;
   const salesGoalTotal = globallyComparable
     ? hasManualSalesGoal
       ? manualSalesGoal!
@@ -1735,6 +1776,7 @@ export function buildOfficialCommercialPerformance(
     : null;
   return {
     available: true,
+    dealerSalesKind,
     sourceName,
     updatedAt: updatedAtValues.length
       ? (updatedAtValues.sort().at(-1) ?? null)

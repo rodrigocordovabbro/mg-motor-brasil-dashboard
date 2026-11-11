@@ -2,6 +2,16 @@
 
 Este documento resume mudanças do código e da documentação. Uma entrega listada não comprova, por si só, publicação, conectividade externa ou estado futuro dos dados. Entradas anteriores são históricas; o estado vigente está no [README](README.md) e nos [guias técnicos](docs/ARQUITETURA.md).
 
+## 11/11/2026 — Registration por dealer de WEEKLY_REG
+
+Conforme nova orientação, o upload de vendas prioriza `WEEKLY_REG`/`CUSTOMER_NAME`/`Wn_Reg` mesmo quando a aba Retail existe. Preserva W1–W6, W4 como referência mensal quando preenchida, nulos e zeros reais. O reader de snapshots aceita ambas as origens e expõe a identidade Registration ou Retail; tabelas, conversão e rankings do PDF não renomeiam emplacamentos como Retail. Importações antigas não são reescritas. `DAILY_FUP` mantém os totais gerais Registration e Retail e suas datas próprias; a razão executiva global continua Retail/Leads.
+
+O de-para comercial registra `EUROVILLE BH/JF/UB` como grupo explícito de Belo Horizonte, Juiz de Fora e Uberlândia. Nomes originais permanecem na origem; coletivos nunca são rateados ou repetidos nas unidades. A mudança não altera contagem, datas ou nomes de Leads. O arquivo enviado é tratado como importação comercial auditável; verificações e resultado serão registrados no TODO. Sem migration, sincronização de Leads ou publicação do site. Código/documentação e dados comerciais são operações separadas.
+
+Corrigida a colisão entre `%Wn_Reg` e `Wn_Reg`: percentuais são ignorados na seleção de quantidades; fórmulas simples/compartilhadas só usam resultados armazenados, sem avaliação ou preenchimento de ausências. A revisão read-only também levou à centralização do escopo mensal (início no dia 1) e da identidade da métrica; avisos só confrontam fontes da mesma natureza e data em escopo global comparável, incluindo coletivos uma única vez. Datas diferentes geram ressalva sem equiparação.
+
+Validação: **530 testes em 68 arquivos**, TypeScript e build aprovados, 288 links documentais válidos. A leitura real do builder confirmou as 32 fontes do novo snapshot `WEEKLY_REG` e sua projeção para Cliente; Leads e metas foram preservados. Arquivo operacional, dados pessoais, PDFs, diagnósticos privados e scripts de importação/verificação não fazem parte do repositório. Nenhuma publicação foi feita.
+
 ## 10/11/2026 — Exportador no modelo aprovado de quatro páginas
 
 O botão PDF passa a gerar capa, Leads com curva acumulada, gráfico diário por canal e vendas com Top 10/Bottom 10, em A4 paisagem e no idioma da interface. Cards usam números menores e peso suave; tabela Daily totals e card Peak daily volume não são incluídos. O modelo não contém imagens ou indicadores estáticos do arquivo de referência.
