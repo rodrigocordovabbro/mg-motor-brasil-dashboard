@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import ExcelJS from "exceljs";
 import { addIsoDays, getDashboardCutoffDate } from "../shared/dashboardDates";
 import type { V2Lead } from "../shared/v2Types";
 
@@ -15,6 +16,7 @@ const mock = vi.hoisted(() => {
       importedAt: "2026-11-08T12:00:00.000Z" as string | null,
     },
     registryRows: [] as Record<string, unknown>[],
+    contactRows: [] as Record<string, unknown>[],
   };
 });
 
@@ -40,7 +42,11 @@ vi.mock("./v2Leads", async () => {
 });
 
 import { appRouter } from "./routers";
-import { exportV2LeadsCSV } from "./v2LeadsExport";
+import {
+  buildLeadsExportXlsx,
+  exportV2LeadsCSV,
+  exportV2LeadsExcel,
+} from "./v2LeadsExport";
 
 const cutoff = getDashboardCutoffDate();
 const dateFrom = addIsoDays(cutoff, -7);
@@ -60,6 +66,23 @@ function lead(id: number, overrides: Partial<V2Lead> = {}): V2Lead {
     state: "MG",
     crm: "Pendente",
     ...overrides,
+  };
+}
+
+function contactProvenance(
+  id: number,
+  email: string,
+  phone: string,
+  interestVehicle: string,
+  sourceSheet = "Meta"
+): Record<string, unknown> {
+  return {
+    id,
+    sourceSheet,
+    model: "MG 4",
+    version: "Comfort",
+    headersJson: JSON.stringify(["email", "phone_number", "interest_model"]),
+    valuesJson: JSON.stringify([email, phone, interestVehicle]),
   };
 }
 
@@ -92,9 +115,14 @@ function resetSourceAndPool() {
       createdAt: "2026-11-08T12:00:00.000Z",
     },
   ];
-  mock.execute.mockImplementation(async (sql: string) => {
+  mock.contactRows = [];
+  mock.execute.mockImplementation(async (sql: string, ids?: number[]) => {
     if (sql.includes("FROM v2_sources")) return [[mock.source], []];
     if (sql.includes("FROM v2_dealer_registry")) return [mock.registryRows, []];
+    if (sql.includes("WHERE l.id IN")) {
+      const selected = new Set(ids ?? []);
+      return [mock.contactRows.filter(row => selected.has(Number(row.id))), []];
+    }
     throw new Error(`Consulta inesperada no fixture: ${sql}`);
   });
 }
@@ -212,9 +240,11 @@ describe("leads.exportCSV", () => {
       dateTo: cutoff,
     });
 
-    expect(result.csv.startsWith("\uFEFFData;Hora;Lead;Modelo;Versão")).toBe(
-      true
-    );
+    expect(
+      result.csv.startsWith(
+        "\uFEFFData;Hora;Nome;E-mail;Telefone;Carro de interesse;Modelo;Versão"
+      )
+    ).toBe(true);
     expect(result.csv).toContain("\r\n");
     expect(result.csv).toContain("'=2+2");
     expect(result.csv).toContain("'\\t@canal".replace("\\t", "\t"));
@@ -223,9 +253,7 @@ describe("leads.exportCSV", () => {
     expect(result.csv).toContain('"versão\r\ncompleta"');
     expect(result.csv).toContain("🚗");
     expect(result.csv).toMatch(/;0;'/u);
-    expect(result.csv).not.toMatch(
-      /headersJson|valuesJson|payload|email|telefone|\bid\b/i
-    );
+    expect(result.csv).not.toMatch(/headersJson|valuesJson|payload|\bid\b/i);
   });
 
   it("aplica apenas a projeção autorizada: UF agrupada para não-admin e nome conforme clientMode", async () => {
@@ -276,6 +304,12 @@ describe("leads.exportCSV", () => {
         dateTo: addIsoDays(cutoff, 1),
       })
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(
+      api.leads.exportExcel({
+        dateFrom: cutoff,
+        dateTo: addIsoDays(cutoff, 1),
+      })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(mock.readRows).not.toHaveBeenCalled();
     expect(mock.execute).not.toHaveBeenCalled();
   });
@@ -286,6 +320,9 @@ describe("leads.exportCSV", () => {
 
     await expect(
       api.leads.exportCSV({ dateFrom, dateTo: cutoff })
+    ).rejects.toThrow("fonte de Leads não está configurada");
+    await expect(
+      api.leads.exportExcel({ dateFrom, dateTo: cutoff })
     ).rejects.toThrow("fonte de Leads não está configurada");
     expect(mock.readRows).not.toHaveBeenCalled();
   });
@@ -318,7 +355,311 @@ describe("leads.exportCSV", () => {
     await expect(
       api.leads.exportCSV({ dateFrom, dateTo: cutoff })
     ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    await expect(
+      api.leads.exportExcel({ dateFrom, dateTo: cutoff })
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
     expect(mock.execute).not.toHaveBeenCalled();
     expect(mock.readRows).not.toHaveBeenCalled();
+  });
+});
+
+describe("leads.exportExcel and complete opportunity details", () => {
+  it("enriquece toda a população filtrada em lotes de cinquenta, sem payload privado", async () => {
+    const selected = Array.from({ length: 61 }, (_, index) =>
+      lead(index + 1, {
+        date: addIsoDays(dateFrom, index % 8),
+        hour: index % 24,
+        campaign: "Campanha completa",
+        dealer: "Dealer completo",
+      })
+    );
+    mock.rows.push(
+      ...selected,
+      lead(100, { campaign: "Outra campanha" }),
+      lead(101, { dealer: "Outro dealer" })
+    );
+    mock.contactRows.push(
+      ...selected.map(row =>
+        contactProvenance(
+          row.id,
+          `person-${row.id}@example.invalid`,
+          `+55011${String(row.id).padStart(4, "0")}`,
+          "MG 4 Comfort"
+        )
+      )
+    );
+
+    const result = await exportV2LeadsCSV({
+      dateFrom,
+      dateTo: cutoff,
+      campaign: "Campanha completa",
+      dealer: "Dealer completo",
+      page: 9999,
+    });
+
+    expect(result.count).toBe(61);
+    expect(result.csv).toContain("person-61@example.invalid");
+    expect(result.csv).toContain("'+550110061");
+    expect(result.csv).not.toContain("headersJson");
+    expect(result.csv).not.toContain("valuesJson");
+    expect(result.csv).not.toContain("payload");
+    expect(result.csv).not.toMatch(/\bid\b/i);
+
+    const contactCalls = mock.execute.mock.calls.filter(([sql]) =>
+      String(sql).includes("WHERE l.id IN")
+    );
+    expect(contactCalls).toHaveLength(2);
+    expect(contactCalls.map(([, ids]) => (ids as number[]).length)).toEqual([
+      50, 11,
+    ]);
+    const excel = await exportV2LeadsExcel({
+      dateFrom,
+      dateTo: cutoff,
+      campaign: "Campanha completa",
+      dealer: "Dealer completo",
+      page: 9999,
+    });
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(
+      Buffer.from(excel.xlsxBase64, "base64") as unknown as Parameters<
+        typeof workbook.xlsx.load
+      >[0]
+    );
+    const sheet = workbook.getWorksheet("Oportunidades")!;
+    expect(excel.count).toBe(61);
+    expect(sheet.rowCount).toBe(62);
+    expect(sheet.autoFilter).toBe("A1:N62");
+    const emails = Array.from(
+      { length: 61 },
+      (_, index) => sheet.getCell(index + 2, 4).value
+    );
+    expect(emails).toContain("person-61@example.invalid");
+    expect(emails).toHaveLength(61);
+  });
+
+  it("vincula contatos por ID físico quando duas oportunidades têm o mesmo nome", async () => {
+    mock.rows.push(
+      lead(201, { name: "Pessoa repetida", date: cutoff, hour: 12 }),
+      lead(202, { name: "Pessoa repetida", date: cutoff, hour: 11 })
+    );
+    mock.contactRows.push(
+      contactProvenance(201, "first@example.invalid", "+550000000201", "MG S5"),
+      contactProvenance(202, "second@example.invalid", "+550000000202", "IM 6")
+    );
+
+    const result = await exportV2LeadsCSV({ dateFrom, dateTo: cutoff });
+
+    expect(result.count).toBe(2);
+    expect(result.csv).toContain("first@example.invalid");
+    expect(result.csv).toContain("second@example.invalid");
+    expect(result.csv).toContain("'+550000000201");
+    expect(result.csv).toContain("'+550000000202");
+    expect(result.csv).toContain("MG S5");
+    expect(result.csv).toContain("IM 6");
+  });
+
+  it("mantém o interesse original da mesma linha no modo apresentação, sem exportar nome nem contatos", async () => {
+    mock.rows.push(
+      lead(301, {
+        name: "Nome privado",
+        email: "private@example.invalid",
+        phone: "+55000000301",
+        model: "MG4",
+        version: "Conforto",
+        date: cutoff,
+      })
+    );
+    mock.contactRows.push(
+      contactProvenance(
+        301,
+        "must-not-be-read@example.invalid",
+        "+55000000999",
+        "MG S5 original"
+      )
+    );
+
+    const result = await exportV2LeadsCSV({
+      dateFrom,
+      dateTo: cutoff,
+      clientMode: true,
+    });
+
+    expect(result.nameMasked).toBe(true);
+    expect(result.csv).toContain("Nome oculto no modo cliente");
+    expect(result.csv).toContain("Oculto no modo apresentação");
+    expect(result.csv).toContain("MG S5 original");
+    expect(result.csv).not.toContain("private@example.invalid");
+    expect(result.csv).not.toContain("must-not-be-read@example.invalid");
+    expect(result.csv).not.toContain("+55000000999");
+    expect(
+      mock.execute.mock.calls.some(([sql]) =>
+        String(sql).includes("WHERE l.id IN")
+      )
+    ).toBe(true);
+  });
+
+  it("gera XLSX real em uma aba CRM filtrável com células de texto e telefone intacto", async () => {
+    mock.rows.push(
+      lead(401, {
+        name: "Nome XLSX",
+        channel: "=canal",
+        date: cutoff,
+        hour: 0,
+      }),
+      lead(402, { name: "Segundo XLSX", date: cutoff, hour: 1 })
+    );
+    mock.contactRows.push(
+      contactProvenance(
+        401,
+        "xlsx@example.invalid",
+        "+550110000401",
+        "MG 4 XPower"
+      ),
+      contactProvenance(402, "zero@example.invalid", "001234", "MG S5")
+    );
+
+    const result = await caller().api.leads.exportExcel({
+      dateFrom,
+      dateTo: cutoff,
+      locale: "pt-BR",
+    });
+
+    expect(result.fileName).toBe(`leads_${dateFrom}_${cutoff}.xlsx`);
+    expect(result.mimeType).toBe(
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    expect(result.count).toBe(2);
+    const bytes = Buffer.from(result.xlsxBase64, "base64");
+    expect(bytes.subarray(0, 2).toString("ascii")).toBe("PK");
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(
+      bytes as unknown as Parameters<typeof workbook.xlsx.load>[0]
+    );
+    expect(workbook.worksheets.map(sheet => sheet.name)).toEqual([
+      "Oportunidades",
+    ]);
+    const worksheet = workbook.getWorksheet("Oportunidades")!;
+    expect(worksheet.autoFilter).toBe("A1:N3");
+    expect(worksheet.views[0]).toMatchObject({ state: "frozen", ySplit: 1 });
+    expect(
+      Array.from(worksheet.getRow(1).values as unknown[]).slice(1)
+    ).toEqual([
+      "Data",
+      "Hora",
+      "Nome",
+      "E-mail",
+      "Telefone",
+      "Carro de interesse",
+      "Modelo",
+      "Versão",
+      "Canal",
+      "Campanha",
+      "Concessionária",
+      "Cidade",
+      "UF",
+      "CRM",
+    ]);
+
+    const plusPhone = worksheet.getCell(2, 5);
+    const leadingZeroPhone = worksheet.getCell(3, 5);
+    expect(plusPhone.value).toBe("001234");
+    expect(leadingZeroPhone.value).toBe("+550110000401");
+    expect(plusPhone.type).toBe(ExcelJS.ValueType.String);
+    expect(leadingZeroPhone.type).toBe(ExcelJS.ValueType.String);
+    expect(plusPhone.numFmt).toBe("@");
+    expect(plusPhone.hyperlink).toBeUndefined();
+    expect(worksheet.getCell(3, 9).value).toBe("=canal");
+    expect(worksheet.getCell(3, 9).type).toBe(ExcelJS.ValueType.String);
+  });
+
+  it("mantém cabeçalhos EN e mascara nome, e-mail e telefone no XLSX de apresentação", async () => {
+    mock.role = "client_admin";
+    mock.rows.push(
+      lead(501, {
+        name: "Nome que não pode sair",
+        email: "private-en@example.invalid",
+        phone: "+55000000501",
+        date: cutoff,
+      })
+    );
+    mock.contactRows.push(
+      contactProvenance(
+        501,
+        "private-provenance@example.invalid",
+        "+55000000901",
+        "MG S5 original"
+      )
+    );
+
+    const result = await caller().api.leads.exportExcel({
+      dateFrom,
+      dateTo: cutoff,
+      clientMode: true,
+      locale: "en",
+    });
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(
+      Buffer.from(result.xlsxBase64, "base64") as unknown as Parameters<
+        typeof workbook.xlsx.load
+      >[0]
+    );
+    const worksheet = workbook.getWorksheet("Opportunities")!;
+    expect(
+      Array.from(worksheet.getRow(1).values as unknown[]).slice(1, 7)
+    ).toEqual([
+      "Date",
+      "Time",
+      "Name",
+      "Email",
+      "Phone",
+      "Vehicle of interest",
+    ]);
+    expect(worksheet.getCell(2, 3).value).toBe("Hidden name in client mode");
+    expect(worksheet.getCell(2, 4).value).toBe("Hidden in presentation mode");
+    expect(worksheet.getCell(2, 5).value).toBe("Hidden in presentation mode");
+    expect(worksheet.getCell(2, 6).value).toBe("MG S5 original");
+    expect(result.nameMasked).toBe(true);
+    const cellValues = JSON.stringify(worksheet.getSheetValues());
+    expect(cellValues).not.toContain("private-en@example.invalid");
+    expect(cellValues).not.toContain("private-provenance@example.invalid");
+    expect(cellValues).not.toContain("+55000000901");
+    expect(
+      mock.execute.mock.calls.some(([sql]) =>
+        String(sql).includes("WHERE l.id IN")
+      )
+    ).toBe(true);
+  });
+
+  it("representa desconhecidos explicitamente e rejeita célula XLSX acima de 32.767 caracteres", async () => {
+    mock.rows.push(
+      lead(601, {
+        model: "modelo sem cadastro",
+        version: "versão não cadastrada",
+        date: cutoff,
+      })
+    );
+    const csv = await exportV2LeadsCSV({ dateFrom, dateTo: cutoff });
+    expect(csv.csv).toContain("Não informado");
+
+    await expect(
+      buildLeadsExportXlsx([lead(602, { campaign: "x".repeat(32_768) })], {
+        dateFrom,
+        dateTo: cutoff,
+      })
+    ).rejects.toThrow("32.767");
+  });
+
+  it("bloqueia o perfil Cliente antes de qualquer leitura para os dois formatos", async () => {
+    mock.role = "client";
+    const { api } = caller();
+    await expect(
+      api.leads.exportExcel({ dateFrom, dateTo: cutoff, clientMode: true })
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      api.leads.exportCSV({ dateFrom, dateTo: cutoff, clientMode: true })
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(mock.readRows).not.toHaveBeenCalled();
+    expect(mock.execute).not.toHaveBeenCalled();
   });
 });

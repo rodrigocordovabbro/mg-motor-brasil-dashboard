@@ -100,7 +100,7 @@ A tabela descreve o procedimento atual, não apenas o que a UI mostra. “Saniti
 | `leads.salesGoal`, `leads.updateSalesGoal`                                        | Somente Admin cujo username seja exatamente `rodrigo` | Negado                                                   | Negado                    | Negado                                                               |
 | `leads.syncConnection`, `leads.syncBase`                                          | Consultar conexão/importar base                       | Negado                                                   | Negado                    | Negado                                                               |
 | `leads.modelInsights`                                                             | Exclusivo do Admin                                    | Negado                                                   | Negado                    | Negado                                                               |
-| `leads.exportCSV`                                                                 | Permitido; estado de apresentação pode mascarar nomes | Permitido como leitura/exportação, sem gestão            | Negado                    | Permitido como leitura/exportação, sem gestão                        |
+| `leads.exportCSV`, `leads.exportExcel`                                            | Permitido; apresentação pode mascarar nome/contatos   | Permitido como leitura/exportação, sem gestão            | Negado                    | Permitido como leitura/exportação, sem gestão                        |
 | `mediaPlan.plans`                                                                 | Leitura                                               | Leitura                                                  | Negado                    | Leitura                                                              |
 | `mediaPlan.projections`, `mediaPlan.updateProjections`                            | Somente `admin` com username exatamente `rodrigo`     | Negado                                                   | Negado                    | Negado                                                               |
 | `dispatch.reports`                                                                | Lista completa                                        | Lista de apresentação                                    | Negado                    | Lista de apresentação                                                |
@@ -127,7 +127,7 @@ O `client_admin` não é o mesmo perfil: ele conserva a leitura das quatro abas 
 
 **Atualização de 12/11/2026:** a aba Leads trata seus registros como oportunidades e mostra nome completo, e-mail, telefone e carro de interesse. Somente as linhas da página canônica recebem esses campos selecionados da proveniência pelo ID; headers, values, payloads e demais colunas privadas não saem na resposta. Dados ausentes não são inventados nem recuperados de outra pessoa de mesmo nome. O perfil `client` continua com `recent.rows=[]`, sem contatos, e as permissões de contas não mudaram.
 
-O modo apresentação oculta nome, e-mail e telefone no texto e nos atributos da tabela. Essa máscara é visual: não modifica o papel nem promete remover os dados da resposta protegida de uma conta autorizada. O CSV preserva o contrato anterior; o PDF agregado não inclui linhas de oportunidades nem contatos.
+O modo apresentação oculta nome, e-mail e telefone no texto e nos atributos da tabela. Essa máscara é visual: não modifica o papel nem promete remover os dados da resposta protegida de uma conta autorizada. Excel/CSV exportam os campos selecionados do recorte integral e aplicam a máscara aos três dados pessoais quando `clientMode` é solicitado; o PDF agregado não inclui linhas de oportunidades nem contatos.
 
 Não declarar “dados sanitizados automaticamente anônimos”. A remoção de campos pessoais do Overview do `client` é uma regra específica de `dashboardForOverviewClient`, não uma propriedade de todo dado V2.
 
@@ -148,20 +148,22 @@ O manifesto atual de rotas de página está em [`client/public/manus-routes.json
 
 A UI de Admin também expõe o modo de apresentação. Esse modo é uma projeção de visualização, não um novo papel e não substitui a autorização do backend. O Admin é o único perfil que recebe o módulo Usuários, os uploads comerciais e a sincronização/importação externa.
 
-## 6. Exportação CSV: máscara, antiformula e limites
+## 6. Exportação Excel/CSV: máscara, antiformula e limites
 
-A rota `leads.exportCSV` usa [`server/v2LeadsExport.ts`](../server/v2LeadsExport.ts) e é permitida para Admin, `client_admin` e BBRO; o novo `client` não alcança a rota. A exportação:
+As rotas `leads.exportCSV` e `leads.exportExcel` usam [`server/v2LeadsExport.ts`](../server/v2LeadsExport.ts) e são permitidas para Admin, `client_admin` e BBRO; o `client` não alcança essas rotas. A exportação:
 
 - ignora paginação e usa todos os registros do recorte aplicado, preservando filtros de período, modelo, canal, campanha, dealer e busca;
-- exige que a fonte de Leads esteja pronta; fonte não configurada produz erro específico, não um CSV vazio enganoso;
+- mantém nome completo, e-mail, telefone e carro de interesse, além dos campos operacionais; lê apenas a proveniência da mesma oportunidade por IDs parametrizados em lotes limitados, sem retornar payloads/colunas privadas;
+- exige que a fonte de Leads esteja pronta; fonte não configurada produz erro específico, não um arquivo vazio enganoso;
 - respeita a validação de período do dashboard, incluindo data final até D-1 e período máximo de três anos;
-- rejeita mais de `100.000` linhas ou saída acima de `16 MiB`;
-- usa BOM UTF-8, CRLF, separador `;` e escape de aspas para compatibilidade com planilhas;
-- protege campos textuais contra injeção de fórmula quando há controles iniciais ou prefixos `=`, `+`, `-` ou `@`, incluindo o caso com espaços/controles antes do caractere; a hora numérica não passa por esse caminho;
-- mascara o nome somente quando o input `clientMode` é verdadeiro, retornando `nameMasked` para conferência da UI; agrupa UF para não-Admin;
-- na UI, confirma que o período da resposta corresponde ao recorte solicitado e, quando solicitado, que a resposta informou nome mascarado.
+- rejeita mais de `100.000` linhas, CSV acima de `16 MiB`, Excel acima de `12 MiB` binários/`16 MiB` base64 ou célula Excel acima de `32.767` caracteres, sem truncar oportunidades ou contatos. Células são conferidas antes de criar o escritor; erros interrompem produtor ZIP e stream;
+- no CSV, usa BOM UTF-8, CRLF, separador `;` e escape de aspas; protege campos textuais contra injeção de fórmula com controles iniciais ou prefixos `=`, `+`, `-` ou `@`, incluindo espaços/controles antes do caractere; a hora numérica não passa por esse caminho;
+- no Excel, atribui dados como strings/células tipadas, sem fórmulas ou hyperlinks; telefone é texto, preservando zeros e prefixo internacional;
+- mascara nome, e-mail e telefone somente quando `clientMode` é verdadeiro; `nameMasked` confirma essa projeção para a UI. Agrupa UF para não-Admin;
+- na UI, confirma período, formato e máscara solicitados, mantém trava compartilhada entre Excel/CSV e descarta downloads após mudança de filtro ou desmontagem;
+- não faz upload público nem salva arquivos pessoais no repositório; Excel retorna base64 autenticado, convertido em binário apenas para download local.
 
-**Limitação importante:** `clientMode` é uma flag de apresentação do request, não uma autorização por papel. O servidor não força máscara de nome apenas por o papel ser `client_admin` ou `bbro`; a UI desses perfis passa atualmente `clientMode=false`. Portanto, não documentar “CSV sempre mascarado” sem uma mudança de código que imponha essa regra no backend.
+**Limitação importante:** `clientMode` é uma flag de apresentação do request, não uma autorização por papel. O servidor não força máscara apenas por o papel ser `client_admin` ou `bbro`; a UI desses perfis passa atualmente `clientMode=false`. Portanto, não documentar “Excel/CSV sempre mascarado” sem uma mudança que imponha essa regra no backend.
 
 ### 6.1 Resumo PDF da Overview — 10/11/2026
 

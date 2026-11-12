@@ -129,7 +129,7 @@ Na navegação de [`Home.tsx`](../client/src/pages/Home.tsx), `Leads` é o módu
 | `leads.dashboard`                                              | `v2Procedure`                                        | dashboard; `dashboardForOverviewClient` para `client`, `dashboardForClient` para os demais não-admin |
 | `leads.syncConnection`, `leads.syncBase`                       | `adminProcedure`                                     | estado e importação server-side da base Google                                                       |
 | `leads.modelInsights`                                          | `adminProcedure`                                     | análise integral filtrada por modelo e comparação histórica                                          |
-| `leads.exportCSV`                                              | `exportReadProcedure` — todos, exceto `client`       | CSV integral do recorte autenticado                                                                  |
+| `leads.exportCSV`, `leads.exportExcel`                         | `exportReadProcedure` — todos, exceto `client`       | Excel/CSV integral com campos completos do recorte autenticado                                       |
 | `leads.goal`, `leads.updateGoal`                               | `adminProcedure`                                     | meta mensal de Leads e auditoria                                                                     |
 | `leads.salesGoal`, `leads.updateSalesGoal`                     | `ownerProcedure`                                     | meta total mensal de vendas para `rodrigo`                                                           |
 | `mediaPlan.plans`                                              | `mediaPlanReadProcedure` — não overview-only         | plano aprovado mais overrides                                                                        |
@@ -215,7 +215,7 @@ O pacing simples de `makePacing` usa o acumulado MTD da competência até D-1: d
 
 O contrato [`V2Lead`](../shared/v2Types.ts) aceita esses campos opcionais. Aliases são explícitos e o fallback do interesse usa apenas modelo/versão da própria linha. Ausência e proveniência malformada não criam dados; headers, values e payloads nunca são serializados. Não há associação por nome nem mudança de contagem, filtros ou datas.
 
-[`V2OpportunityTable.tsx`](../client/src/components/V2OpportunityTable.tsx) apresenta nome completo, e-mail, telefone, carro de interesse e as dimensões operacionais existentes, com nomes sem truncamento, idiomas PT/EN e rolagem horizontal. O modo apresentação oculta nome/e-mail/telefone no DOM da tabela. As projeções de papel continuam iguais: Cliente restrito não recebe linhas individuais; perfis já autorizados à aba Leads conservam sua leitura. CSV mantém o contrato anterior; PDF da Overview continua agregado e não inclui contatos.
+[`V2OpportunityTable.tsx`](../client/src/components/V2OpportunityTable.tsx) apresenta nome completo, e-mail, telefone, carro de interesse e as dimensões operacionais existentes, com nomes sem truncamento, idiomas PT/EN e rolagem horizontal. O modo apresentação oculta nome/e-mail/telefone no DOM da tabela. As projeções de papel continuam iguais: Cliente restrito não recebe linhas individuais; perfis já autorizados à aba Leads conservam sua leitura. Excel/CSV preservam os campos completos na exportação integral conforme as mesmas regras de apresentação; PDF da Overview continua agregado e não inclui contatos.
 
 ## 5. Análise por modelo e administração
 
@@ -233,11 +233,11 @@ A nova superfície administrativa é `leads.modelInsights`, implementada em [`se
 
 O endpoint é administrativo; o campo de contrato documenta `audience: "admin"`. Comparação anterior não coberta retorna `NOT_AVAILABLE`, não zero. Uma tela vazia, fonte ausente ou amostra baixa permanece rotulada como tal. [`shared/adminModelInsights.ts`](../shared/adminModelInsights.ts) é o contrato de tipos dessa superfície.
 
-## 6. Exportação CSV autenticada
+## 6. Exportação Excel/CSV autenticada
 
-O botão [`V2LeadsExportButton.tsx`](../client/src/components/V2LeadsExportButton.tsx) chama `leads.exportCSV` por tRPC com a sessão atual. [`server/v2LeadsExport.ts`](../server/v2LeadsExport.ts) verifica que a fonte está pronta, lê o recorte completo, ignora `input.page`, usa o mesmo período, cache, registro de dealers, predicado canônico e ordenação do dashboard, e retorna o CSV na resposta autenticada.
+O botão [`V2LeadsExportButton.tsx`](../client/src/components/V2LeadsExportButton.tsx) oferece Excel `.xlsx` e CSV, chamando `leads.exportExcel` ou `leads.exportCSV` por tRPC com a sessão atual. [`server/v2LeadsExport.ts`](../server/v2LeadsExport.ts) verifica que a fonte está pronta, lê o recorte completo, ignora `input.page` e usa o mesmo período, cache, registro de dealers, predicado canônico e ordenação do dashboard. Depois, recupera os campos selecionados de contato/interesse pelo mesmo ID físico em lotes parametrizados; um índice por ID evita buscas quadráticas sem modificar cache ou deduplicação.
 
-O arquivo contém todos os registros do recorte aplicado, não somente a página atual. O modo de apresentação mascara nomes; para papéis não-admin a apresentação agrupa UF conforme a projeção autorizada. O gerador usa BOM UTF-8, CRLF, separador `;`, proteção contra injeção de fórmula e limites técnicos de linhas/bytes. Não há URL pública de exportação nem acesso por uma rota sem sessão.
+Os dois arquivos mantêm nome completo, e-mail, telefone, carro de interesse e os campos operacionais de todas as oportunidades do recorte, não somente da página atual. O modo de apresentação mascara nome, e-mail e telefone; para papéis não-admin a apresentação agrupa UF conforme a projeção autorizada. CSV usa BOM UTF-8, CRLF, separador `;` e antiformula. Excel preserva telefone como string/texto, sem transformar dados em fórmulas ou hyperlinks, e retorna o binário em base64 autenticado para download local. Limites técnicos de linhas/bytes/células rejeitam recortes acima do suportado sem truncar. Não há URL pública, acesso sem sessão ou salvamento de arquivos no repositório. O frontend compartilha a trava entre formatos, verifica recorte/máscara/formato e descarta respostas obsoletas após mudança de filtro ou desmontagem.
 
 ## 7. Comercial: Retail geral, Registration e snapshots por dealer
 

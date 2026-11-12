@@ -14,6 +14,15 @@ export type LeadsExportResult = {
   period: { dateFrom: string; dateTo: string; cutoffDate: string };
 };
 
+export type LeadsExcelExportResult = {
+  fileName: string;
+  mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  xlsxBase64: string;
+  count: number;
+  nameMasked: boolean;
+  period: { dateFrom: string; dateTo: string; cutoffDate: string };
+};
+
 /** Ignore pagination while keeping all applied dimension/search filters. */
 export function leadsExportFilterKey(input: LeadsExportInput) {
   return JSON.stringify({

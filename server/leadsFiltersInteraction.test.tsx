@@ -912,7 +912,8 @@ it("aba Leads exporta os filtros aplicados, ignora a página e bloqueia durante 
   const renderedExportButton = exportButton.type(exportButton.props);
   const exportControl = findElement(
     renderedExportButton,
-    element => element.type === "button"
+    element =>
+      element.type === "button" && element.props["data-export-format"] === "csv"
   );
   await exportControl.props.onClick();
   expect(mock.exportCSV).toHaveBeenCalledWith({

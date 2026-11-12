@@ -302,6 +302,59 @@ describe("V2 opportunity detail extraction", () => {
 });
 
 describe("V2 opportunity detail enrichment", () => {
+  it("uses only the requested opportunity's model/version when no provenance row is returned", async () => {
+    state.execute.mockResolvedValueOnce([[], []]);
+    const result = await enrichV2LeadContacts(
+      [lead(101, { model: "MG4", version: "Conforto" })],
+      executor
+    );
+    expect(result[0]).toMatchObject({
+      id: 101,
+      email: null,
+      phone: null,
+      interestVehicle: "MG 4 · Comfort",
+    });
+  });
+
+  it("indexes full exports once rather than searching all rows for every contact", async () => {
+    const rows = Array.from({ length: 101 }, (_, index) => lead(index + 1));
+    const search = vi.spyOn(rows, "find");
+    state.execute.mockImplementation(async (_sql: string, ids: number[]) => [
+      ids.map(id =>
+        source("Meta", ["email"], [`row-${id}@example.invalid`], { id })
+      ),
+      [],
+    ]);
+    const result = await enrichV2LeadContacts(rows, executor);
+    expect(search).not.toHaveBeenCalled();
+    expect(state.execute).toHaveBeenCalledTimes(3);
+    expect(result).toHaveLength(101);
+    expect(result.map(row => row.id)).toEqual(rows.map(row => row.id));
+    expect(result[100].email).toBe("row-101@example.invalid");
+  });
+
+  it("keeps the first canonical occurrence for repeated IDs and ignores unsolicited IDs", async () => {
+    const rows = [
+      lead(101, { model: "MG4", version: "Conforto" }),
+      lead(101, { model: "MG S5", version: "Deluxe" }),
+    ];
+    state.execute.mockResolvedValueOnce([
+      [
+        source("Meta", [], [], { id: 101 }),
+        source("Meta", ["email"], ["unrequested@example.invalid"], { id: 999 }),
+      ],
+      [],
+    ]);
+    const result = await enrichV2LeadContacts(rows, executor);
+    expect(state.execute.mock.calls[0][1]).toEqual([101]);
+    expect(result).toHaveLength(2);
+    expect(result.map(row => row.interestVehicle)).toEqual([
+      "MG 4 · Comfort",
+      "MG 4 · Comfort",
+    ]);
+    expect(JSON.stringify(result)).not.toContain("unrequested@example.invalid");
+  });
+
   it("matches same-named opportunities by ID, preserves order, and uses one parameterized page query", async () => {
     const rows = [lead(101, { name: "Pessoa" }), lead(102, { name: "Pessoa" })];
     state.execute.mockResolvedValueOnce([

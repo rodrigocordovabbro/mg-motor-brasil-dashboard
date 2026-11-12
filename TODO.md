@@ -2,6 +2,16 @@
 
 > **Registro acumulado de resultados e evidências datadas.** Itens antigos descrevem a etapa em que foram registrados; decisões e pendências superadas não são o contrato atual. Consulte o [README](README.md) e os [guias técnicos](docs/ARQUITETURA.md). O canônico atual é o GitHub privado `rodrigocordovabbro/mg-motor-brasil-dashboard` (`dashboard-v2`/trabalho, `main`/checkpoints), confirmado em 09/11/2026; tentativas bloqueadas/destinos anteriores são históricos. A publicação continua separada.
 
+## Exportação completa Excel/CSV da aba Leads — 12/11/2026
+
+- [x] Manter nome completo, e-mail, telefone e carro de interesse também no arquivo exportado, junto de todas as colunas operacionais já existentes; disponibilizar Excel real `.xlsx` e preservar CSV compatível, seguindo a estrutura da tabela de oportunidades/CRM.
+- [x] Exportar toda a população canônica dos filtros aplicados, não apenas a página de 50 linhas; enriquecer pela mesma identidade de oportunidade com consultas parametrizadas em lotes limitados. Não modificar filtros, D-1, deduplicação, KPIs, fontes, contas ou dados; ausência permanece não informada.
+- [x] Preservar telefone como texto no Excel, incluindo zeros e prefixo internacional; não criar fórmulas ou hyperlinks com dados pessoais. Mascarar nome, e-mail e telefone em modo apresentação, manter os papéis autorizados e os limites de arquivo, bloquear downloads obsoletos/concorrentes e manter PT/EN.
+- [x] Conferir arquivos e testes por fixtures, TypeScript/build e revisão somente leitura; documentar a entrega, sem versionar arquivos operacionais ou publicar o site.
+- [ ] Salvar a melhoria e sua documentação no GitHub privado canônico, por avanço normal, sem publicação.
+
+Evidência de 12/11: **582 testes em 71 arquivos** na suíte completa, **81 testes focados em 5 arquivos**, TypeScript e build aprovados. Fixtures com 61 oportunidades comprovaram que Excel e CSV incluem mais de uma página com a mesma ordem/filtros, contatos por ID e interesse original; XLSX foi reaberto no ExcelJS para conferir 14 colunas, cabeçalho congelado/filtros, strings e telefones `+55`/zeros. Revisão somente leitura identificou e foram corrigidos interesse no modo apresentação, correspondência exata da máscara, hora ausente explícita, fallback pela mesma oportunidade e encerramento seguro do ZIP. Testes cobrem erro antes de criar o escritor, overflow/finalização com abort/destroy, ausência de dados, fontes, D-1, perfis, fórmula CSV, strings Excel, filtro obsoleto e trava compartilhada. Nenhum acesso a dados reais, sync, migration, importação, alteração de conta ou publicação foi executado nesta melhoria; documentos/links e integridade são conferidos antes do salvamento.
+
 ## Oportunidades completas na aba Leads — 12/11/2026
 
 - [x] Exibir nome completo, e-mail, telefone e carro de interesse na tabela da aba Leads, tratando cada Lead dessa aba como uma oportunidade. Preservar data, canal, campanha, concessionária, cidade/UF, CRM, filtros e paginação.

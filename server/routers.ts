@@ -18,7 +18,7 @@ import { publicProcedure, router } from "./_core/trpc";
 import { loginV2, logoutV2, readV2Session } from "./v2Auth";
 import { getV2Dashboard } from "./v2Leads";
 import { getAdminModelInsights } from "./v2AdminModelInsights";
-import { exportV2LeadsCSV } from "./v2LeadsExport";
+import { exportV2LeadsCSV, exportV2LeadsExcel } from "./v2LeadsExport";
 import {
   syncLeadsFromGoogle,
   getLeadsSyncConnectionStatus,
@@ -96,6 +96,12 @@ const filters = z
         path: ["dateFrom"],
       });
   });
+const leadsExportInput = filters.and(
+  z.object({
+    clientMode: z.boolean().optional(),
+    locale: z.enum(["pt-BR", "en"]).optional(),
+  })
+);
 const commercialUpload = z.object({
   kind: z.enum(["lead-goals", "sales-goals", "sales"]),
   competence,
@@ -434,10 +440,22 @@ export const appRouter = router({
       }
     }),
     exportCSV: exportReadProcedure
-      .input(filters.and(z.object({ clientMode: z.boolean().optional() })))
+      .input(leadsExportInput)
       .mutation(async ({ ctx, input }) => {
         try {
           return await exportV2LeadsCSV(input, {
+            groupStates: ctx.v2User.role !== "admin",
+          });
+        } catch (error) {
+          if (ctx.v2User.role !== "admin") genericClientDataError();
+          throw error;
+        }
+      }),
+    exportExcel: exportReadProcedure
+      .input(leadsExportInput)
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await exportV2LeadsExcel(input, {
             groupStates: ctx.v2User.role !== "admin",
           });
         } catch (error) {

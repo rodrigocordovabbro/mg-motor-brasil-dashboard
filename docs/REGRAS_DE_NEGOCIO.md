@@ -78,7 +78,7 @@ Na aba específica **Leads**, cada Lead é tratado como uma **oportunidade**, n�
 
 O enriquecimento ocorre somente depois dos filtros, ordenação e paginação, pelo ID da mesma linha selecionada. Os campos reais vêm dos cabeçalhos/valores da proveniência persistida, por aliases explícitos; não se busca contato de outra ocorrência com nome parecido. Quando o interesse original está ausente, usa-se modelo/versão da própria oportunidade. Campo ausente permanece informado como não disponível; nenhum registro é removido apenas por ter contato incompleto.
 
-Admin, ADM Cliente e BBRO conservam a leitura da aba já autorizada. Cliente restrito continua sem registros individuais. Nome, e-mail e telefone ficam ocultos na tabela em modo apresentação; isso é uma máscara visual de uma sessão autorizada, não uma nova permissão. Filtros, D-1, KPIs e a paginação de 50 linhas não mudam. CSV conserva suas colunas anteriores; PDF da Overview permanece agregado e sem oportunidades individuais/contatos.
+Admin, ADM Cliente e BBRO conservam a leitura da aba já autorizada. Cliente restrito continua sem registros individuais. Nome, e-mail e telefone ficam ocultos na tabela em modo apresentação; isso é uma máscara visual de uma sessão autorizada, não uma nova permissão. Filtros, D-1, KPIs e a paginação de 50 linhas não mudam. Excel/CSV mantêm os campos completos do recorte integral, com a mesma máscara quando solicitada; PDF da Overview permanece agregado e sem oportunidades individuais/contatos.
 
 ## 3. Calendário, D-1, filtros e escopo
 
@@ -243,15 +243,16 @@ O estado efetivo não atribui todo `OK` a Wini:
 
 Implementação: [`shared/v2Dispatch.ts`](../shared/v2Dispatch.ts), [`server/v2Dispatch.ts`](../server/v2Dispatch.ts) e [`client/src/components/V2DispatchControl.tsx`](../client/src/components/V2DispatchControl.tsx).
 
-## 11. Exportação CSV
+## 11. Exportação Excel e CSV
 
-A rota de CSV usa o mesmo período, D-1, filtros dimensionais, busca, cadastro de dealers e ordem do dashboard. Ela ignora `page` e exporta a população filtrada completa, sem truncar silenciosamente.
+As rotas `leads.exportExcel` e `leads.exportCSV` usam o mesmo período, D-1, filtros dimensionais, busca, cadastro de dealers e ordem do dashboard. Ignoram `page` e exportam a população filtrada completa, sem truncar silenciosamente. Os contatos são enriquecidos pela mesma identidade física em consultas parametrizadas de até 50 IDs, sem alterar a população ou inserir dados no cache analítico.
 
-- Headers pt-BR: `Data`, `Hora`, `Lead`, `Modelo`, `Versão`, `Canal`, `Campanha`, `Concessionária`, `Cidade`, `UF`, `CRM`.
-- O arquivo usa BOM UTF-8, CRLF, escaping de campos e proteção contra fórmulas. Campos raw de modelo e dealer continuam raw no CSV.
-- O limite é de 100.000 linhas e 16 MiB; acima disso a exportação falha e pede um recorte menor.
-- `admin` exporta com nomes e UF sem a projeção agrupada.
-- `client_admin` e `bbro` podem exportar com a projeção de perfil não administrativo: nomes podem ser mascarados quando `clientMode` está ativo e a UF é agrupada para apresentação.
+- Ambos preservam nome completo, e-mail, telefone e carro de interesse, além de data, hora, modelo, versão, canal, campanha, concessionária, cidade, UF e CRM; podem usar headers PT-BR/inglês. Informação ausente não é preenchida com dado presumido.
+- O CSV usa BOM UTF-8, CRLF, separador `;`, escaping de campos e proteção contra fórmulas. Campos raw de modelo e dealer continuam raw nos dois formatos.
+- Excel é um arquivo `.xlsx` real; nome, e-mail e telefone são strings, com telefone formatado como texto para conservar zeros e `+55`. Dados não viram fórmulas ou hyperlinks. A planilha conserva a estrutura de tabela/CRM, com cabeçalho congelado e filtros.
+- O limite de linhas é 100.000. CSV aceita até 16 MiB UTF-8; Excel limita o ZIP binário a 12 MiB e seu conteúdo base64 a 16 MiB. Células Excel acima de 32.767 caracteres são rejeitadas antes de abrir o escritor. Falhas de geração/tamanho interrompem o ZIP/stream, sem truncar contatos ou oportunidades.
+- `admin` pode exportar contatos completos e UF sem a projeção agrupada; `clientMode` continua aplicável quando solicita apresentação.
+- `client_admin` e `bbro` podem exportar com a projeção de perfil não administrativo: nome, e-mail e telefone ficam mascarados quando `clientMode` está ativo e a UF é agrupada para apresentação.
 - `client` é o perfil de visão geral e não pode acessar a exportação.
 
 Implementação: [`server/v2LeadsExport.ts`](../server/v2LeadsExport.ts) e rota protegida em [`server/routers.ts`](../server/routers.ts).

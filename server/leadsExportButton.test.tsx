@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { LeadsExportResult } from "../shared/leadsExport";
+import type {
+  LeadsExportResult,
+  LeadsExcelExportResult,
+} from "../shared/leadsExport";
 import type { V2Filters } from "../shared/v2Types";
 
 const hooks = vi.hoisted(() => ({
@@ -10,6 +13,7 @@ const hooks = vi.hoisted(() => ({
   refs: [] as any[],
   effects: [] as (() => unknown)[],
   mutate: vi.fn(),
+  mutateExcel: vi.fn(),
   createObjectURL: vi.fn(),
   revokeObjectURL: vi.fn(),
   link: {
@@ -53,7 +57,12 @@ vi.mock("react", async importOriginal => {
 vi.mock("@/lib/trpc", () => ({
   trpc: {
     useUtils: () => ({
-      client: { leads: { exportCSV: { mutate: hooks.mutate } } },
+      client: {
+        leads: {
+          exportCSV: { mutate: hooks.mutate },
+          exportExcel: { mutate: hooks.mutateExcel },
+        },
+      },
     }),
   },
 }));
@@ -112,8 +121,13 @@ function render(
   });
 }
 
-function button(tree: any) {
-  return tree.props.children[0];
+function button(tree: any, format: "csv" | "xlsx" = "csv"): any {
+  if (!tree) return undefined;
+  if (Array.isArray(tree))
+    return tree.map(child => button(child, format)).find(Boolean);
+  if (tree.type === "button" && tree.props["data-export-format"] === format)
+    return tree;
+  return button(tree.props?.children, format);
 }
 
 async function settle<T>(promise: Promise<T>) {
@@ -131,6 +145,7 @@ beforeEach(() => {
   hooks.refs = [];
   hooks.effects = [];
   hooks.mutate.mockReset();
+  hooks.mutateExcel.mockReset();
   hooks.createObjectURL.mockReset().mockReturnValue("blob:test-export");
   hooks.revokeObjectURL.mockReset();
   hooks.link.href = "";
@@ -154,6 +169,116 @@ afterEach(() => {
 });
 
 describe("V2LeadsExportButton", () => {
+  const xlsxResult = (
+    changes: Partial<LeadsExcelExportResult> = {}
+  ): LeadsExcelExportResult => ({
+    fileName: "leads_2026-10-01_2026-10-31.xlsx",
+    mimeType:
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    xlsxBase64: Buffer.from([0x50, 0x4b, 0x03, 0x04, 1, 2, 3]).toString(
+      "base64"
+    ),
+    count: 51,
+    nameMasked: false,
+    period: {
+      dateFrom: filters.dateFrom,
+      dateTo: filters.dateTo,
+      cutoffDate: "2026-10-31",
+    },
+    ...changes,
+  });
+
+  it("offers Excel and CSV with contact fields in both languages", () => {
+    const en = render({ locale: "en" });
+    expect(button(en, "xlsx").props.children).toContain("Download Excel");
+    expect(button(en, "csv").props.children).toContain("Download CSV");
+    expect(button(en, "xlsx").props.title).toContain(
+      "full name, email, phone and vehicle"
+    );
+    const pt = render();
+    expect(button(pt, "xlsx").props.children).toContain("Exportar Excel");
+    expect(button(pt, "csv").props.title).toContain(
+      "nome completo, e-mail, telefone"
+    );
+  });
+
+  it("downloads Excel bytes, not base64 text, with the applied filters and no pagination", async () => {
+    const result = xlsxResult();
+    hooks.mutateExcel.mockResolvedValue(result);
+    await settle(button(render(), "xlsx").props.onClick());
+    expect(hooks.mutateExcel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ...filters,
+        page: undefined,
+        clientMode: false,
+      })
+    );
+    expect(hooks.mutate).not.toHaveBeenCalled();
+    const blob = hooks.createObjectURL.mock.calls[0][0] as Blob;
+    expect(blob.type).toBe(result.mimeType);
+    expect(Array.from(new Uint8Array(await blob.arrayBuffer()))).toEqual([
+      0x50, 0x4b, 0x03, 0x04, 1, 2, 3,
+    ]);
+    expect(hooks.link.download).toBe(result.fileName);
+    expect(hooks.link.click).toHaveBeenCalledOnce();
+    expect(hooks.values[1]).toContain("51 oportunidades exportadas (Excel)");
+    vi.advanceTimersByTime(1000);
+    expect(hooks.revokeObjectURL).toHaveBeenCalledWith("blob:test-export");
+  });
+
+  it("uses one lock across Excel and CSV while exporting", async () => {
+    const pending = deferred<LeadsExcelExportResult>();
+    hooks.mutateExcel.mockReturnValue(pending.promise);
+    const tree = render();
+    const first = button(tree, "xlsx").props.onClick();
+    await button(tree, "csv").props.onClick();
+    expect(hooks.mutateExcel).toHaveBeenCalledOnce();
+    expect(hooks.mutate).not.toHaveBeenCalled();
+    expect(button(render(), "xlsx").props.disabled).toBe(true);
+    expect(button(render(), "csv").props.disabled).toBe(true);
+    pending.resolve(xlsxResult({ count: 0 }));
+    await settle(first);
+  });
+
+  it("rejects an unmasked Excel response in presentation mode", async () => {
+    hooks.mutateExcel.mockResolvedValue(xlsxResult({ nameMasked: false }));
+    await settle(button(render({ clientMode: true }), "xlsx").props.onClick());
+    expect(hooks.createObjectURL).not.toHaveBeenCalled();
+    expect(hooks.values[2]).toBe(true);
+  });
+
+  it("does not download an Excel response with stale filters or the wrong format", async () => {
+    const pending = deferred<LeadsExcelExportResult>();
+    hooks.mutateExcel.mockReturnValue(pending.promise);
+    const request = button(render(), "xlsx").props.onClick();
+    render({ filters: { ...filters, dealer: "Dealer diferente" } });
+    pending.resolve(xlsxResult());
+    await settle(request);
+    expect(hooks.createObjectURL).not.toHaveBeenCalled();
+    hooks.mutateExcel.mockResolvedValue(exportResult());
+    await settle(button(render(), "xlsx").props.onClick());
+    expect(hooks.createObjectURL).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-Excel binary content and a mismatched period", async () => {
+    hooks.mutateExcel.mockResolvedValue(
+      xlsxResult({ xlsxBase64: Buffer.from("not a ZIP").toString("base64") })
+    );
+    await settle(button(render(), "xlsx").props.onClick());
+    expect(hooks.createObjectURL).not.toHaveBeenCalled();
+    hooks.mutateExcel.mockResolvedValue(
+      xlsxResult({
+        period: {
+          dateFrom: "2026-10-02",
+          dateTo: filters.dateTo,
+          cutoffDate: "2026-10-31",
+        },
+      })
+    );
+    await settle(button(render(), "xlsx").props.onClick());
+    expect(hooks.createObjectURL).not.toHaveBeenCalled();
+  });
+
   it("bloqueia zero registros, estado não READY do pai e o botão ocupado", async () => {
     expect(button(render({ count: 0 })).props.disabled).toBe(true);
     expect(button(render({ count: 51, disabled: true })).props.disabled).toBe(
@@ -168,6 +293,15 @@ describe("V2LeadsExportButton", () => {
 
     pending.resolve(exportResult({ count: 0 }));
     await settle(request);
+  });
+
+  it("rejects a masked response when the requested view includes complete contacts", async () => {
+    hooks.mutate.mockResolvedValue(exportResult({ nameMasked: true }));
+    await settle(button(render({ clientMode: false }), "csv").props.onClick());
+    expect(hooks.createObjectURL).not.toHaveBeenCalled();
+    hooks.mutateExcel.mockResolvedValue(xlsxResult({ nameMasked: true }));
+    await settle(button(render({ clientMode: false }), "xlsx").props.onClick());
+    expect(hooks.createObjectURL).not.toHaveBeenCalled();
   });
 
   it("envia um snapshot com todas as dimensões, modo cliente e page indefinida", async () => {
@@ -285,7 +419,7 @@ describe("V2LeadsExportButton", () => {
     expect(hooks.link.download).toBe("leads-client-2026-10.csv");
     expect(hooks.link.click).toHaveBeenCalledOnce();
     expect(hooks.link.remove).toHaveBeenCalledOnce();
-    expect(hooks.values[1]).toContain("51 Leads exportados");
+    expect(hooks.values[1]).toContain("51 oportunidades exportadas (CSV)");
     expect(hooks.revokeObjectURL).not.toHaveBeenCalled();
 
     vi.advanceTimersByTime(999);

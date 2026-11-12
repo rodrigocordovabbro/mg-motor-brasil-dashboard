@@ -24,7 +24,7 @@ Este estado não torna o repositório público e não deve ser descrito como uma
 | **Plano de mídia**         | Leitura dos planos e projeções; a gravação de projeções é uma operação administrativa restrita.                                                         |
 | **Fontes comerciais**      | Prévia e confirmação de metas de Leads, metas de vendas e vendas por dealer a partir de XLSX. Totais gerais permanecem separados das linhas por dealer. |
 | **Contas**                 | Listagem, criação, alteração de papel/ativação e redefinição de senha pelo Administrador.                                                               |
-| **Exportação**             | CSV do recorte completo aplicado, não apenas da página visível, com apresentação conforme o papel e o idioma.                                           |
+| **Exportação**             | Excel `.xlsx` e CSV do recorte completo aplicado, com nome, e-mail, telefone, carro de interesse e os campos operacionais da tabela.                    |
 
 Principais fontes do comportamento V2: [`v2LeadsSync`](server/v2LeadsSync.ts), [`v2LeadCounting`](server/v2LeadCounting.ts), [`v2HistoricalLeadPace`](server/v2HistoricalLeadPace.ts), [`v2AdminModelInsights`](server/v2AdminModelInsights.ts), [`v2LeadsExport`](server/v2LeadsExport.ts), [`v2CommercialParser`](server/v2CommercialParser.ts) e [`v2Permissions`](server/v2Permissions.ts).
 
@@ -139,13 +139,17 @@ A curva histórica usa as linhas reais filtradas pelo dashboard e as referência
 
 A consolidação de modelos usa aliases explícitos do cadastro. Modelo não reconhecido não é inferido por substring e permanece como não identificado. Os insights administrativos calculam mix, matrizes por estado/canal/dealer/campanha, comparação com uma janela anterior, gaps de qualidade e oportunidades; os denominadores acompanham os resultados e registros sem dimensão confiável não são apagados silenciosamente. Esse recurso é exclusivo de `admin`.
 
-A exportação CSV:
+A exportação da aba Leads oferece **Exportar Excel / Download Excel** (`.xlsx`) e **Exportar CSV / Download CSV**:
 
 - usa exatamente o recorte filtrado completo, ignorando a paginação da tabela;
 - pode gerar cabeçalhos PT-BR ou inglês;
+- mantém nome completo, e-mail, telefone e carro de interesse, junto de data, hora, modelo, versão, canal, campanha, concessionária, cidade, UF e CRM;
+- recupera somente os campos selecionados da mesma oportunidade em lotes parametrizados, sem incluir payloads ou alterar a contagem;
 - exige fonte de Leads pronta e rejeita recortes acima dos limites definidos no código;
-- protege campos textuais contra injeção de fórmulas de planilha;
-- no modo cliente, mascara nomes; para perfis não administradores, a apresentação de UF é agrupada.
+- preserva telefones como texto no Excel, incluindo zeros à esquerda e prefixo internacional; campos ausentes permanecem não informados;
+- mantém a proteção antiformula no CSV e não transforma strings de dados em fórmulas ou hyperlinks no XLSX;
+- no modo apresentação, mascara nome, e-mail e telefone nos dois formatos; para perfis não administradores, a apresentação de UF é agrupada;
+- bloqueia os dois downloads durante a exportação e descarta respostas se o recorte/modo mudar. Nenhum arquivo é salvo no Git nem enviado publicamente.
 
 ### Tabela de oportunidades da aba Leads
 
@@ -153,7 +157,7 @@ Na aba **Leads**, cada registro é tratado como uma **oportunidade**, não como 
 
 Os contatos e o interesse são lidos da proveniência persistida da mesma linha selecionada, usando seu ID, somente após a contagem e a paginação canônicas. Não há associação por nome, nova deduplicação, importação ou preenchimento inventado. Quando o interesse original não está disponível, o carro usa modelo/versão da própria oportunidade; campos não informados permanecem explícitos. Acrescentar contatos não modifica KPIs, D-1 ou a população dos gráficos.
 
-Admin, ADM Cliente e BBRO conservam o acesso já autorizado à aba; o Cliente restrito continua sem linhas individuais. No modo apresentação, nome, e-mail e telefone não aparecem no texto nem nos atributos da tabela. Isso é uma proteção visual, não um novo papel. A API envia apenas os campos selecionados, nunca headers, values, payloads ou outras colunas privadas da origem. Esta atualização é da tabela: o CSV mantém seu contrato de colunas anterior, e o PDF da Overview continua agregado e sem contatos.
+Admin, ADM Cliente e BBRO conservam o acesso já autorizado à aba; o Cliente restrito continua sem linhas individuais ou exportação da base Excel/CSV. No modo apresentação, nome, e-mail e telefone não aparecem no texto nem nos atributos da tabela. Isso é uma proteção visual, não um novo papel. A API envia apenas os campos selecionados, nunca headers, values, payloads ou outras colunas privadas da origem. Excel e CSV mantêm os campos completos da oportunidade conforme o recorte e o modo autorizados; o PDF da Overview continua agregado e sem contatos.
 
 ### Resumo PDF da Overview
 

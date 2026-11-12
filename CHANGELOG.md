@@ -2,6 +2,16 @@
 
 Este documento resume mudanças do código e da documentação. Uma entrega listada não comprova, por si só, publicação, conectividade externa ou estado futuro dos dados. Entradas anteriores são históricas; o estado vigente está no [README](README.md) e nos [guias técnicos](docs/ARQUITETURA.md).
 
+## 12/11/2026 — Exportação Excel/CSV com os campos completos da oportunidade
+
+O download da aba Leads mantém nome completo, e-mail, telefone e carro de interesse junto das dimensões operacionais, para toda a população dos filtros aplicados e não apenas a página visível. O CSV continua compatível com Excel; um novo botão gera `.xlsx` real, preservando telefone como texto, zeros à esquerda e prefixo internacional. Os formatos mantêm PT/EN, fonte pronta, D-1, ordenação canônica e dados ausentes explícitos.
+
+A proveniência é consultada somente pela identidade da oportunidade em lotes parametrizados de até 50 IDs, sem payloads ou alteração do cache/contador. Um índice linear por ID evita buscas quadráticas no recorte completo. Em modo apresentação, nome, e-mail e telefone ficam mascarados nos dois arquivos. Permissões permanecem para Admin, ADM Cliente e BBRO; Cliente restrito continua sem exportação individual. Limites de arquivo/célula rejeitam recortes excessivos, sem truncar valores; dados Excel não são fórmulas ou hyperlinks e o CSV conserva proteção antiformula.
+
+O frontend compartilha a trava entre os dois botões, verifica período/máscara/formato, descarta respostas obsoletas e revoga URLs de download. PDF da Overview continua agregado. Sem alteração de conta, migration, importação, sincronização, dados operacionais versionados ou publicação; resultados de validação desta entrega ficam registrados no TODO.
+
+Validação: **582 testes/71 arquivos** na suíte completa, **81 testes focados/5 arquivos**, TypeScript e build aprovados. XLSX com 61 oportunidades foi reaberto para conferir população integral, 14 colunas, filtros e telefone como string. A revisão independente levou a preservar o interesse original também na apresentação, exigir a máscara exata, explicitar hora ausente e manter fallback da própria linha. Células excessivas são rejeitadas antes de abrir o escritor; testes de overflow/finalização comprovam abort/destroy do ZIP e stream sem truncamento.
+
 ## 12/11/2026 — Oportunidades completas na aba Leads
 
 A tabela passa a identificar seus registros como oportunidades e exibir nome completo, e-mail, telefone e carro de interesse, mantendo data, canal, campanha, concessionária, cidade/UF, CRM, filtros e paginação. Nomes não são truncados, os campos têm espaço adequado e a tabela permite rolagem em telas menores. PT-BR/inglês e informações ausentes são apresentados explicitamente.

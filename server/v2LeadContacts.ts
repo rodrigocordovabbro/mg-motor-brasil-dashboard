@@ -271,7 +271,15 @@ function validLeadId(value: unknown): number | null {
 }
 
 function nullContactRow(row: V2Lead): V2Lead {
-  return { ...row, email: null, phone: null, interestVehicle: null };
+  return {
+    ...row,
+    email: null,
+    phone: null,
+    interestVehicle:
+      validLeadId(row.id) === null
+        ? null
+        : fallbackInterestVehicle(row.model, row.version),
+  };
 }
 
 /**
@@ -284,13 +292,14 @@ export async function enrichV2LeadContacts(
   executor: LeadContactExecutor = getV2Pool()
 ): Promise<V2Lead[]> {
   if (rows.length === 0) return [];
-  const ids = [
-    ...new Set(
-      rows
-        .map(row => validLeadId(row.id))
-        .filter((id): id is number => id !== null)
-    ),
-  ];
+  // The same bounded lookup also serves full exports. Index once rather than
+  // searching the complete population for every returned provenance row.
+  const canonicalById = new Map<number, V2Lead>();
+  for (const row of rows) {
+    const id = validLeadId(row.id);
+    if (id !== null && !canonicalById.has(id)) canonicalById.set(id, row);
+  }
+  const ids = [...canonicalById.keys()];
   const byId = new Map<number, V2LeadContactDetails>();
   for (
     let offset = 0;
@@ -305,18 +314,14 @@ export async function enrichV2LeadContacts(
     for (const sourceRow of sourceRows) {
       const id = validLeadId(sourceRow.id);
       if (id === null || byId.has(id)) continue;
-      const matchingLead = rows.find(row => validLeadId(row.id) === id);
+      const matchingLead = canonicalById.get(id);
+      if (!matchingLead) continue;
       byId.set(
         id,
-        extractV2LeadContactDetails(
-          sourceRow as V2LeadContactSource,
-          matchingLead
-            ? { model: matchingLead.model, version: matchingLead.version }
-            : {
-                model: String(sourceRow.model ?? ""),
-                version: String(sourceRow.version ?? ""),
-              }
-        )
+        extractV2LeadContactDetails(sourceRow as V2LeadContactSource, {
+          model: matchingLead.model,
+          version: matchingLead.version,
+        })
       );
     }
   }
