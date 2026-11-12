@@ -8,9 +8,11 @@
 - [x] Exportar toda a população canônica dos filtros aplicados, não apenas a página de 50 linhas; enriquecer pela mesma identidade de oportunidade com consultas parametrizadas em lotes limitados. Não modificar filtros, D-1, deduplicação, KPIs, fontes, contas ou dados; ausência permanece não informada.
 - [x] Preservar telefone como texto no Excel, incluindo zeros e prefixo internacional; não criar fórmulas ou hyperlinks com dados pessoais. Mascarar nome, e-mail e telefone em modo apresentação, manter os papéis autorizados e os limites de arquivo, bloquear downloads obsoletos/concorrentes e manter PT/EN.
 - [x] Conferir arquivos e testes por fixtures, TypeScript/build e revisão somente leitura; documentar a entrega, sem versionar arquivos operacionais ou publicar o site.
-- [ ] Salvar a melhoria e sua documentação no GitHub privado canônico, por avanço normal, sem publicação.
+- [x] Salvar a melhoria e sua documentação no GitHub privado canônico, por avanço normal, sem publicação.
 
 Evidência de 12/11: **582 testes em 71 arquivos** na suíte completa, **81 testes focados em 5 arquivos**, TypeScript e build aprovados. Fixtures com 61 oportunidades comprovaram que Excel e CSV incluem mais de uma página com a mesma ordem/filtros, contatos por ID e interesse original; XLSX foi reaberto no ExcelJS para conferir 14 colunas, cabeçalho congelado/filtros, strings e telefones `+55`/zeros. Revisão somente leitura identificou e foram corrigidos interesse no modo apresentação, correspondência exata da máscara, hora ausente explícita, fallback pela mesma oportunidade e encerramento seguro do ZIP. Testes cobrem erro antes de criar o escritor, overflow/finalização com abort/destroy, ausência de dados, fontes, D-1, perfis, fórmula CSV, strings Excel, filtro obsoleto e trava compartilhada. Nenhum acesso a dados reais, sync, migration, importação, alteração de conta ou publicação foi executado nesta melhoria; documentos/links e integridade são conferidos antes do salvamento.
+
+Envio Git confirmado em 12/11: implementação `5e69deff6a0008db7d6c770f1e678d3896cb8f79` aceita em `origin/main` e `origin/dashboard-v2`, com árvore limpa, somente 16 arquivos de código/testes/documentação e 291 links locais válidos. Esta anotação de conclusão é documental; não altera o código validado nem publica o site.
 
 ## Oportunidades completas na aba Leads — 12/11/2026
 
