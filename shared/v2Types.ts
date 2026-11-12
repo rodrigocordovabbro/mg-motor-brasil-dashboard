@@ -42,6 +42,10 @@ export type V2Lead = {
   city: string;
   state: string;
   crm: string;
+  /** Optional opportunity detail; analytical reads intentionally omit these fields. */
+  email?: string | null;
+  phone?: string | null;
+  interestVehicle?: string | null;
 };
 export type V2Pacing = {
   competence: string;

@@ -123,7 +123,11 @@ O `client_admin` não é o mesmo perfil: ele conserva a leitura das quatro abas 
 
 ### 4.2 O que “sanitizado” não quer dizer
 
-`dashboardForClient` remove avisos e diagnósticos técnicos, normaliza rótulos e agrupa estados; `dispatchForClient` troca título/arquivo, remove informações/notas e apresenta o revisor como `Equipe MG`. Essas projeções não são uma garantia geral de anonimização. Para `client_admin` e `bbro`, a leitura da tabela de Leads pode continuar contendo os campos da linha retornada pela fonte, inclusive nome quando o modo de apresentação não estiver ativo. O histórico de controle também retorna o username do ator que alterou a célula para os perfis autorizados.
+`dashboardForClient` remove avisos e diagnósticos técnicos, normaliza rótulos e agrupa estados; `dispatchForClient` troca título/arquivo, remove informações/notas e apresenta o revisor como `Equipe MG`. Essas projeções não são uma garantia geral de anonimização. Para `client_admin` e `bbro`, a leitura da tabela de Leads contém os campos individuais autorizados da oportunidade, inclusive nome, e-mail e telefone. O histórico de controle também retorna o username do ator que alterou a célula para os perfis autorizados.
+
+**Atualização de 12/11/2026:** a aba Leads trata seus registros como oportunidades e mostra nome completo, e-mail, telefone e carro de interesse. Somente as linhas da página canônica recebem esses campos selecionados da proveniência pelo ID; headers, values, payloads e demais colunas privadas não saem na resposta. Dados ausentes não são inventados nem recuperados de outra pessoa de mesmo nome. O perfil `client` continua com `recent.rows=[]`, sem contatos, e as permissões de contas não mudaram.
+
+O modo apresentação oculta nome, e-mail e telefone no texto e nos atributos da tabela. Essa máscara é visual: não modifica o papel nem promete remover os dados da resposta protegida de uma conta autorizada. O CSV preserva o contrato anterior; o PDF agregado não inclui linhas de oportunidades nem contatos.
 
 Não declarar “dados sanitizados automaticamente anônimos”. A remoção de campos pessoais do Overview do `client` é uma regra específica de `dashboardForOverviewClient`, não uma propriedade de todo dado V2.
 

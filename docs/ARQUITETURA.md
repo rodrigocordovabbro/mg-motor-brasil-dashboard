@@ -209,6 +209,14 @@ A meta global não é comparada quando há filtro dimensional incompatível. O t
 
 O pacing simples de `makePacing` usa o acumulado MTD da competência até D-1: dias fechados, média/dia, projeção, esperado até D-1, restante, necessário/dia e situação (`AHEAD`, `BEHIND`, `ON_TRACK` ou `NO_GOAL`). Gráficos, KPIs e histórico não substituem a fonte nem alteram o banco.
 
+### 4.5 Oportunidades completas na página da aba Leads — 12/11/2026
+
+[`server/v2LeadContacts.ts`](../server/v2LeadContacts.ts) recupera os campos selecionados da proveniência da mesma oportunidade por `v2_leads.id`, em SELECTs parametrizados de até 50 IDs. Somente `getV2Dashboard().recent.rows`, após agregação, ordenação e paginação, recebe e-mail, telefone e carro de interesse; `readV2LeadsForPeriod`, o acumulador e seu cache continuam sem esses campos adicionais. Fonte não configurada e página vazia não disparam a leitura de contatos.
+
+O contrato [`V2Lead`](../shared/v2Types.ts) aceita esses campos opcionais. Aliases são explícitos e o fallback do interesse usa apenas modelo/versão da própria linha. Ausência e proveniência malformada não criam dados; headers, values e payloads nunca são serializados. Não há associação por nome nem mudança de contagem, filtros ou datas.
+
+[`V2OpportunityTable.tsx`](../client/src/components/V2OpportunityTable.tsx) apresenta nome completo, e-mail, telefone, carro de interesse e as dimensões operacionais existentes, com nomes sem truncamento, idiomas PT/EN e rolagem horizontal. O modo apresentação oculta nome/e-mail/telefone no DOM da tabela. As projeções de papel continuam iguais: Cliente restrito não recebe linhas individuais; perfis já autorizados à aba Leads conservam sua leitura. CSV mantém o contrato anterior; PDF da Overview continua agregado e não inclui contatos.
+
 ## 5. Análise por modelo e administração
 
 O dashboard já calcula `modelAnalysis` sobre toda a população filtrada; a paginação da tabela recente não limita essa agregação. [`server/v2ModelAnalysis.ts`](../server/v2ModelAnalysis.ts) concilia somente aliases oficiais, classifica versões como `IDENTIFIED`, `MISSING` ou `INVALID`, mantém modelo/versão desconhecidos explícitos e sanitiza diagnósticos para não expor contatos.

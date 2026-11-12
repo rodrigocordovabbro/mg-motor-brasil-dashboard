@@ -1,6 +1,6 @@
 # MG Motor Brasil — dashboard
 
-> **Estado documental:** 10/11/2026
+> **Estado documental:** 12/11/2026
 
 Painel comercial para acompanhar Leads, metas, vendas, dealers, regiões, CRM, plano de mídia e controles operacionais da MG Motor Brasil. O sistema separa dados reais, metas, projeções e fontes sem cobertura: ausência de fonte ou de período não é convertida automaticamente em zero.
 
@@ -147,6 +147,14 @@ A exportação CSV:
 - protege campos textuais contra injeção de fórmulas de planilha;
 - no modo cliente, mascara nomes; para perfis não administradores, a apresentação de UF é agrupada.
 
+### Tabela de oportunidades da aba Leads
+
+Na aba **Leads**, cada registro é tratado como uma **oportunidade**, não como uma pessoa única. A tabela mostra nome completo, e-mail, telefone e carro de interesse, além de data, canal, campanha, concessionária, cidade/UF e CRM. Mantém os filtros e a paginação de 50 oportunidades; nomes e contatos são legíveis sem truncamento, com rolagem horizontal em telas menores.
+
+Os contatos e o interesse são lidos da proveniência persistida da mesma linha selecionada, usando seu ID, somente após a contagem e a paginação canônicas. Não há associação por nome, nova deduplicação, importação ou preenchimento inventado. Quando o interesse original não está disponível, o carro usa modelo/versão da própria oportunidade; campos não informados permanecem explícitos. Acrescentar contatos não modifica KPIs, D-1 ou a população dos gráficos.
+
+Admin, ADM Cliente e BBRO conservam o acesso já autorizado à aba; o Cliente restrito continua sem linhas individuais. No modo apresentação, nome, e-mail e telefone não aparecem no texto nem nos atributos da tabela. Isso é uma proteção visual, não um novo papel. A API envia apenas os campos selecionados, nunca headers, values, payloads ou outras colunas privadas da origem. Esta atualização é da tabela: o CSV mantém seu contrato de colunas anterior, e o PDF da Overview continua agregado e sem contatos.
+
 ### Resumo PDF da Overview
 
 Na **Overview**, todos os perfis autenticados (`admin`, `client_admin`, `client` e `bbro`) têm o botão **Gerar PDF / Export PDF**. Com o recorte aplicado e os dados carregados, clique e escolha **Salvar como PDF** na janela nativa de impressão. O modelo usa fundo branco MG, cards com números menores e peso suave, A4 paisagem e o idioma da interface, em **quatro páginas**: capa; Leads com curva acumulada, plano e projeção; gráfico diário por canal; vendas e Top 10/Bottom 10. Não inclui tabela Daily totals nem card Peak daily volume.
@@ -165,7 +173,7 @@ Todas as operações V2, exceto as rotas públicas de sessão, passam pela leitu
 - A senha criada pela gestão de contas precisa atender ao mínimo imposto pelo router. Segredos, hashes, cookies, DSNs, JSON de conta de serviço e IDs de fontes nunca entram neste README.
 - `admin` é o único papel com gestão de contas, imports comerciais, insights por modelo e demais procedures administrativas gerais. Alguns controles de metas/projeções têm ainda restrição de proprietário no código.
 - `bbro` e `admin` são os papéis autorizados a validar o Manual/CRM; `client` e `client_admin` são somente leitura.
-- A proveniência privada de Leads, payloads e contatos não é serializada para os clientes. O perfil `client` recebe apenas o Overview agregado; o `client_admin` recebe as leituras liberadas, sem escrita e sem análise por modelo.
+- A proveniência privada de Leads e seus payloads não são serializados. Apenas os campos individuais selecionados da oportunidade, inclusive e-mail/telefone, são retornados aos perfis já autorizados à aba Leads. O perfil `client` recebe somente o Overview agregado e nenhum contato; `client_admin` conserva as leituras liberadas, sem escrita e sem análise por modelo.
 - A sincronização Google usa escopo de leitura e operações transacionais. A exportação controla tamanho, quantidade, apresentação e máscara de nomes.
 - Em Preview HTTPS embutido, a política de sessão deve manter o cookie com `SameSite=None; Secure`, conforme o contrato do runtime WebDev; HTTP local deve ser tratado separadamente.
 

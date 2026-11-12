@@ -143,6 +143,9 @@ function dashboard(): V2Dashboard {
           date: "2026-11-01",
           hour: 12,
           name: "Pessoa privada de fixture",
+          email: "private-opportunity@example.test",
+          phone: "+550000000001",
+          interestVehicle: "MG 4 XPower",
           model: "4",
           version: "",
           channel: "",
@@ -236,6 +239,37 @@ beforeEach(() => {
   state.role = "client";
 });
 describe("permissões na API", () => {
+  it("Cliente somente Overview não recebe os contatos nem as oportunidades individuais", async () => {
+    const d = dashboard();
+    vi.mocked(getV2Dashboard).mockResolvedValue(d as any);
+    const result = await caller().leads.dashboard(filters);
+    expect(result.recent.rows).toEqual([]);
+    const serialized = JSON.stringify(result);
+    for (const field of [
+      d.recent.rows[0].name,
+      d.recent.rows[0].email!,
+      d.recent.rows[0].phone!,
+    ]) {
+      expect(serialized).not.toContain(field);
+    }
+    expect(result.summary.total).toBe(d.summary.total);
+  });
+  it.each(["admin", "client_admin", "bbro"] as const)(
+    "mantém as informações da oportunidade para o perfil autorizado %s",
+    async role => {
+      state.role = role;
+      const d = dashboard();
+      vi.mocked(getV2Dashboard).mockResolvedValue(d as any);
+      const result = await caller().leads.dashboard(filters);
+      expect(result.recent.rows[0]).toMatchObject({
+        name: d.recent.rows[0].name,
+        email: d.recent.rows[0].email,
+        phone: d.recent.rows[0].phone,
+        interestVehicle: d.recent.rows[0].interestVehicle,
+      });
+      expect(result.summary.total).toBe(d.summary.total);
+    }
+  );
   it("cliente não pode executar operações administrativas nem consultar gestão", async () => {
     const c = caller();
     for (const action of [

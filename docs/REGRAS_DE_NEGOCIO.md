@@ -72,6 +72,14 @@ A contagem analítica usa [`server/v2LeadCounting.ts`](../server/v2LeadCounting.
 
 A regra também preserva o label original do modelo. O cadastro canônico é usado somente em filtros e agregações, por aliases explícitos em [`shared/modelRegistry.ts`](../shared/modelRegistry.ts). Estado, região e dealer seguem a mesma separação entre raw e resolução determinística.
 
+### 2.4 Oportunidades e dados completos na aba Leads — 12/11/2026
+
+Na aba específica **Leads**, cada Lead é tratado como uma **oportunidade**, não como uma pessoa única. A tabela conserva a população analítica e exibe nome completo, e-mail, telefone e carro de interesse, além das dimensões operacionais existentes. Não se cria uma deduplicação adicional por nome, e-mail ou telefone ao abrir a aba.
+
+O enriquecimento ocorre somente depois dos filtros, ordenação e paginação, pelo ID da mesma linha selecionada. Os campos reais vêm dos cabeçalhos/valores da proveniência persistida, por aliases explícitos; não se busca contato de outra ocorrência com nome parecido. Quando o interesse original está ausente, usa-se modelo/versão da própria oportunidade. Campo ausente permanece informado como não disponível; nenhum registro é removido apenas por ter contato incompleto.
+
+Admin, ADM Cliente e BBRO conservam a leitura da aba já autorizada. Cliente restrito continua sem registros individuais. Nome, e-mail e telefone ficam ocultos na tabela em modo apresentação; isso é uma máscara visual de uma sessão autorizada, não uma nova permissão. Filtros, D-1, KPIs e a paginação de 50 linhas não mudam. CSV conserva suas colunas anteriores; PDF da Overview permanece agregado e sem oportunidades individuais/contatos.
+
 ## 3. Calendário, D-1, filtros e escopo
 
 O calendário do dashboard usa `America/Sao_Paulo`. O corte operacional é a data-calendário de hoje em São Paulo menos um dia:

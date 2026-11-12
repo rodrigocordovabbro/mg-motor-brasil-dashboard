@@ -30,6 +30,7 @@ import {
   createLegacyLeadCountingAccumulator,
   isLegacyLeadChannelActive,
 } from "./v2LeadCounting";
+import { enrichV2LeadContacts } from "./v2LeadContacts";
 import type {
   V2Dashboard,
   V2Filters,
@@ -567,9 +568,18 @@ export async function getV2Dashboard(input: V2Filters) {
     now,
     extraDealers
   );
+  const dealerPerformance = await getCommercialPerformance(dashboard, input);
+  // Contact provenance is a detail-only projection. It runs after canonical
+  // filtering, aggregation, ordering and pagination, and never participates
+  // in the count cache, filters, KPIs, deduplication or commercial totals.
+  const recentRows =
+    dashboard.status === "READY" && dashboard.recent.rows.length > 0
+      ? await enrichV2LeadContacts(dashboard.recent.rows)
+      : dashboard.recent.rows;
   return {
     ...dashboard,
-    dealerPerformance: await getCommercialPerformance(dashboard, input),
+    recent: { ...dashboard.recent, rows: recentRows },
+    dealerPerformance,
     checkedAt: new Date().toISOString(),
   };
 }

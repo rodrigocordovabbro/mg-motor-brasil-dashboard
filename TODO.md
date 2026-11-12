@@ -2,6 +2,15 @@
 
 > **Registro acumulado de resultados e evidências datadas.** Itens antigos descrevem a etapa em que foram registrados; decisões e pendências superadas não são o contrato atual. Consulte o [README](README.md) e os [guias técnicos](docs/ARQUITETURA.md). O canônico atual é o GitHub privado `rodrigocordovabbro/mg-motor-brasil-dashboard` (`dashboard-v2`/trabalho, `main`/checkpoints), confirmado em 09/11/2026; tentativas bloqueadas/destinos anteriores são históricos. A publicação continua separada.
 
+## Oportunidades completas na aba Leads — 12/11/2026
+
+- [x] Exibir nome completo, e-mail, telefone e carro de interesse na tabela da aba Leads, tratando cada Lead dessa aba como uma oportunidade. Preservar data, canal, campanha, concessionária, cidade/UF, CRM, filtros e paginação.
+- [x] Recuperar os campos reais da proveniência da mesma oportunidade, por identidade da linha selecionada, sem inventar contatos, juntar pessoas por nome ou modificar deduplicação, totais, corte D-1 ou registros da base. Indicar explicitamente informações ausentes.
+- [x] Manter os perfis autorizados e ocultar dados pessoais no modo apresentação; Cliente restrito continua sem oportunidades individuais. Não serializar payloads/colunas privadas, não incluir contatos no PDF agregado nem alterar contas, dados, imports, metas ou migrations.
+- [x] Conferir testes isolados, TypeScript/build e revisão somente leitura; documentar e salvar no GitHub canônico sem dados pessoais e sem publicação do site. O salvamento desta entrega ocorre no avanço normal seguinte das branches; consultar Git para o SHA final.
+
+Evidência de 12/11: **554 testes/70 arquivos** na suíte completa; após ajustes finais de linhas Google Sheets com células finais omitidas e aliases de todas as oito fontes, **57 testes afetados/3 arquivos**, TypeScript e build aprovados. Revisão independente somente leitura concluída sem falhas críticas pendentes. A conferência real, bloqueando SQL de escrita, validou a página de 50 oportunidades: 50 nomes/interesses, 47 e-mails e 47 telefones informados, sem expor os valores no diagnóstico. Campos realmente ausentes continuam não informados; contagem, identidade da fonte e o bloqueio de linhas pessoais no Cliente restrito foram preservados. 291 links locais/âncoras válidos; nenhum arquivo operacional, contato, credencial ou script privado integra o escopo Git. Sem migration, alteração de conta, importação, sincronização ou publicação.
+
 ## Registration por dealer — 11/11/2026
 
 - [x] Ler vendas por dealer prioritariamente de WEEKLY_REG/CUSTOMER_NAME/Wn_Reg, conforme pedido atual, inclusive quando WEEKLY_RET está presente. Preservar W1–W6, W4 como referência mensal quando preenchida, zeros reais e ausência em branco; nunca somar snapshots nem usar TARGET como vendas.

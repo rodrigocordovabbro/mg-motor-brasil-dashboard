@@ -2,6 +2,16 @@
 
 Este documento resume mudanças do código e da documentação. Uma entrega listada não comprova, por si só, publicação, conectividade externa ou estado futuro dos dados. Entradas anteriores são históricas; o estado vigente está no [README](README.md) e nos [guias técnicos](docs/ARQUITETURA.md).
 
+## 12/11/2026 — Oportunidades completas na aba Leads
+
+A tabela passa a identificar seus registros como oportunidades e exibir nome completo, e-mail, telefone e carro de interesse, mantendo data, canal, campanha, concessionária, cidade/UF, CRM, filtros e paginação. Nomes não são truncados, os campos têm espaço adequado e a tabela permite rolagem em telas menores. PT-BR/inglês e informações ausentes são apresentados explicitamente.
+
+O servidor recupera somente os campos selecionados da proveniência da mesma linha paginada, por ID, sem serializar payloads, juntar pessoas por nome ou inserir contatos no cache do contador. Interesse ausente usa apenas modelo/versão da oportunidade. A contagem, deduplicação, D-1, gráficos e base física não mudam. Admin, ADM Cliente e BBRO preservam o acesso existente; Cliente restrito continua sem registros individuais. Em modo apresentação, nome, e-mail e telefone ficam ocultos no texto e nos atributos da tabela.
+
+Esta mudança não amplia o contrato do CSV nem inclui contatos no PDF agregado. Sem migration, importação, sincronização, alteração de conta ou publicação; a validação final está registrada no TODO e o salvamento no GitHub é separado da publicação.
+
+Validação: **554 testes em 70 arquivos** na suíte completa e, depois dos ajustes finais, **57 testes afetados em 3 arquivos**, TypeScript/build aprovados. Corrigido o tratamento de células finais omitidas pelo Google Sheets e cobertos os aliases das oito fontes; ausência real continua explícita. Revisão independente somente leitura aprovada e página real de 50 oportunidades conferida por SELECTs sem imprimir contatos, preservando contagem, versão da fonte e projeção do Cliente restrito. 291 links documentais válidos; nenhum dado operacional foi versionado.
+
 ## 11/11/2026 — Registration por dealer de WEEKLY_REG
 
 Conforme nova orientação, o upload de vendas prioriza `WEEKLY_REG`/`CUSTOMER_NAME`/`Wn_Reg` mesmo quando a aba Retail existe. Preserva W1–W6, W4 como referência mensal quando preenchida, nulos e zeros reais. O reader de snapshots aceita ambas as origens e expõe a identidade Registration ou Retail; tabelas, conversão e rankings do PDF não renomeiam emplacamentos como Retail. Importações antigas não são reescritas. `DAILY_FUP` mantém os totais gerais Registration e Retail e suas datas próprias; a razão executiva global continua Retail/Leads.

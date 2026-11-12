@@ -22,6 +22,7 @@ import { V2HistoricalLeadPaceCard } from "./V2HistoricalLeadPaceCard";
 import { V2LeadsExportButton } from "./V2LeadsExportButton";
 import { V2CommercialSummary } from "./V2CommercialSummary";
 import { V2OverviewPdfButton } from "./V2OverviewPdfButton";
+import { V2OpportunityTable } from "./V2OpportunityTable";
 import { V2OverviewDealerRankings } from "./V2OverviewDealerRankings";
 import { getOverviewPdfSnapshotVersion } from "@/lib/overviewPdfSnapshot";
 import { resolveBrazilianState } from "@shared/stateRegistry";
@@ -163,16 +164,6 @@ function fullDate(value: string, locale: LeadsLocale = "pt-BR") {
     dateStyle: "medium",
     timeZone: "UTC",
   }).format(parsed);
-}
-
-function leadNameForMode(
-  name: string,
-  clientMode: boolean,
-  locale: LeadsLocale = "pt-BR"
-) {
-  return clientMode
-    ? tr(locale, "Nome oculto no modo cliente", "Hidden name in client mode")
-    : name || tr(locale, "Não informado", "N/A");
 }
 
 function formatHour(value: string | number, locale: LeadsLocale = "pt-BR") {
@@ -2257,8 +2248,8 @@ function LeadsTableTab({
     <Card className="overflow-hidden">
       <CardHeading
         eyebrow={tr(locale, "Registros", "Records")}
-        title={tr(locale, "Leads recentes", "Recent Leads")}
-        description={`${numberFormat(data.recent.total, locale)} ${tr(locale, "registros encontrados com os filtros aplicados.", "records found with the applied filters.")}`}
+        title={tr(locale, "Oportunidades", "Opportunities")}
+        description={`${numberFormat(data.recent.total, locale)} ${tr(locale, "oportunidades com os filtros aplicados. Nome, e-mail, telefone e carro de interesse conforme a base; informações ausentes são indicadas.", "opportunities with the applied filters. Name, email, phone and vehicle of interest from the source; missing details are indicated.")}`}
         icon={Users}
         action={
           <V2LeadsExportButton
@@ -2270,94 +2261,11 @@ function LeadsTableTab({
           />
         }
       />
-      <div className="overflow-x-auto">
-        <table className="min-w-[1200px] w-full text-left">
-          <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.13em] text-slate-500">
-            <tr>
-              {[
-                tr(locale, "Data", "Date"),
-                "Lead",
-                tr(locale, "Modelo", "Model"),
-                tr(locale, "Canal", "Channel"),
-                tr(locale, "Campanha", "Campaign"),
-                tr(locale, "Concessionária", "Dealer"),
-                tr(locale, "Cidade/UF", "City/State"),
-                "CRM",
-              ].map(label => (
-                <th key={label} className="px-4 py-3">
-                  {label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 text-xs">
-            {data.recent.rows.length ? (
-              data.recent.rows.map(row => (
-                <tr key={row.id} className="transition hover:bg-slate-50">
-                  <td className="whitespace-nowrap px-4 py-3 text-slate-600">
-                    <span className="font-semibold text-slate-800">
-                      {fullDate(row.date, locale)}
-                    </span>
-                    {row.hour == null ? null : (
-                      <span className="ml-2 text-slate-400">
-                        {formatHour(row.hour, locale)}
-                      </span>
-                    )}
-                  </td>
-                  <td
-                    className="max-w-[190px] truncate px-4 py-3 font-semibold text-slate-800"
-                    title={clientMode ? undefined : row.name}
-                  >
-                    {leadNameForMode(row.name, clientMode, locale)}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {row.model || tr(locale, "N/D", "N/A")}
-                    <span className="block text-[11px] text-slate-400">
-                      {row.version || ""}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {row.channel || tr(locale, "N/D", "N/A")}
-                  </td>
-                  <td
-                    className="max-w-[180px] truncate px-4 py-3 text-slate-600"
-                    title={row.campaign}
-                  >
-                    {row.campaign || tr(locale, "N/D", "N/A")}
-                  </td>
-                  <td
-                    className="max-w-[180px] truncate px-4 py-3 text-slate-600"
-                    title={row.dealer}
-                  >
-                    {row.dealer || tr(locale, "N/D", "N/A")}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {[row.city, row.state].filter(Boolean).join(" / ") ||
-                      tr(locale, "N/D", "N/A")}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">
-                      {row.crm || tr(locale, "N/D", "N/A")}
-                    </span>
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan={8}>
-                  <EmptyDistribution
-                    label={tr(
-                      locale,
-                      "Nenhum lead encontrado com os filtros atuais.",
-                      "No Lead found with the current filters."
-                    )}
-                  />
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <V2OpportunityTable
+        rows={data.recent.rows}
+        clientMode={clientMode}
+        locale={locale}
+      />
       <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-3 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
         <span>
           {tr(locale, "Página", "Page")} {currentPage} {tr(locale, "de", "of")}{" "}
